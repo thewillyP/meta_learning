@@ -50,6 +50,11 @@ class DelayAddConfig:
 
 
 @dataclass(frozen=True)
+class RFLOConfig:
+    time_constant: float
+
+
+@dataclass(frozen=True)
 class LearnConfig:
     train_percent: float
     batch_size: int
@@ -59,7 +64,20 @@ class LearnConfig:
     num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not BPTT)
     num_steps_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
-    learner: Literal["rtrl", "uoro", "rflo", "identity", "bptt"]
+    learner: Union[Literal["rtrl", "uoro", "identity", "bptt"], RFLOConfig]
+    optimizer: Literal["sgd", "sgd_positive", "adam", "sgd_normalized", "sgd_clipped"]
+    hyperparameter_parametrization: Literal["identity", "softplus"]
+
+
+@dataclass(frozen=True)
+class RnnConfig:
+    activation_fn: Literal["tanh", "relu", "identity"]
+    n_h: int
+
+
+@dataclass(frozen=True)
+class FeedForwardConfig:
+    ffn_layers: tuple[tuple[int, Literal["tanh", "relu", "sigmoid", "identity", "softmax"]], ...]
 
 
 @dataclass(frozen=True)
@@ -70,18 +88,9 @@ class GodConfig:
     checkpoint_every_n_minibatches: int
     seed: SeedConfig
     lossFn: Literal["cross_entropy", "cross_entropy_with_integer_labels"]
-    inner_optimizer: Literal["sgd", "sgd_positive", "adam", "sgd_normalized", "sgd_clipped"]
-    outer_optimizer: Literal["sgd", "sgd_positive", "adam", "sgd_normalized", "sgd_clipped"]
-    inner_optimizer_parametrization: Literal["identity", "softplus"]
-    outer_optimizer_parametrization: Literal["identity", "softplus"]
-    activation_fn: Literal["tanh", "relu"]
-    architecture: Literal["rnn", "ffn"]
-    ffn_layers: tuple[tuple[int, Literal["tanh", "relu", "sigmoid", "identity", "softmax"]], ...]
-    n_h: int
-    n_in: int
-    n_out: int
-    inner_time_constant: float
-    outer_time_constant: float
+    transition_function: tuple[Union[RnnConfig], ...]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
+    readout_function: Union[FeedForwardConfig]
+
     tau_task: bool
     inner_uoro_std: float
     outer_uoro_std: float

@@ -44,6 +44,7 @@ class SeedConfig:
 class DelayAddConfig:
     t1: int
     t2: int
+    tau_task: bool
     numVal: int
     numTr: int
     numTe: int
@@ -52,6 +53,17 @@ class DelayAddConfig:
 @dataclass(frozen=True)
 class RFLOConfig:
     time_constant: float
+
+
+@dataclass(frozen=True)
+class UOROConfig:
+    std: float
+
+
+@dataclass(frozen=True)
+class SGDClipConfig:
+    clip_threshold: float
+    clip_sharpness: float
 
 
 @dataclass(frozen=True)
@@ -64,9 +76,10 @@ class LearnConfig:
     num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not BPTT)
     num_steps_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
-    learner: Union[Literal["rtrl", "uoro", "identity", "bptt"], RFLOConfig]
-    optimizer: Literal["sgd", "sgd_positive", "adam", "sgd_normalized", "sgd_clipped"]
+    learner: Union[Literal["rtrl", "identity", "bptt"], RFLOConfig, UOROConfig]
+    optimizer: Union[Literal["sgd", "sgd_positive", "adam", "sgd_normalized"], SGDClipConfig]
     hyperparameter_parametrization: Literal["identity", "softplus"]
+    lanczos_iterations: int
 
 
 @dataclass(frozen=True)
@@ -90,18 +103,3 @@ class GodConfig:
     lossFn: Literal["cross_entropy", "cross_entropy_with_integer_labels"]
     transition_function: tuple[Union[RnnConfig], ...]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
     readout_function: Union[FeedForwardConfig]
-
-    tau_task: bool
-    inner_uoro_std: float
-    outer_uoro_std: float
-    initialization_std: float
-    inner_log_special: bool
-    outer_log_special: bool
-    inner_lanczos_iterations: int
-    outer_lanczos_iterations: int
-    inner_clip: float
-    inner_clip_sharpness: float
-    outer_clip: float
-    outer_clip_sharpness: float
-    inner_log_expensive: Optional[bool] = None
-    outer_log_expensive: Optional[bool] = None

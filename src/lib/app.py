@@ -3,7 +3,7 @@ import boto3
 import random
 import string
 
-from lib.config import SifContainerSource, SlurmParams
+from lib.config import FeedForwardConfig, LearnConfig, NNLayer, SeedConfig, SifContainerSource, SlurmParams, GodConfig
 
 
 def runApp() -> None:
@@ -36,6 +36,58 @@ def runApp() -> None:
         container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
     )
     task.connect(slurm_params, name="slurm")
+
+    # class GodConfig:
+    #     data_root_dir: str
+    #     dataset: Union[Literal["mnist", "fashionmnist"], DelayAddConfig]
+    #     num_base_epochs: int
+    #     checkpoint_every_n_minibatches: int
+    #     seed: SeedConfig
+    #     lossFn: Literal["cross_entropy", "cross_entropy_with_integer_labels"]
+    #     transition_function: dict[int, Union[RnnConfig]]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
+    #     readout_function: Union[FeedForwardConfig]
+    #     learners: dict[int, LearnConfig]
+
+    config = GodConfig(
+        data_root_dir="/tmp",
+        dataset="mnist",
+        num_base_epochs=1,
+        checkpoint_every_n_minibatches=1e3,
+        seed=SeedConfig(
+            data_seed=1,
+            parameter_seed=1,
+            test_seed=1
+        ),
+        lossFn="cross_entropy_with_integer_labels",
+        transition_function={
+            0: NNLayer(
+                n=32,
+                activation_fn="tanh",
+            ),
+            1: NNLayer(
+                n=32,
+                activation_fn="tanh",
+            )
+        },
+        readout_function=FeedForwardConfig(
+            ffw_layers={
+                0: NNLayer(
+                    n=10,
+                    activation_fn="identity"
+                )
+            }
+        ),
+        learners={
+            0: LearnConfig(
+                train_percent=80,
+                batch_size=100,
+                log_immediate_influence_tensor=False,
+                log_influence_tensor=False,
+                num_examples_in_minibatch=
+            )
+        }
+
+    )
 
     # Create hyperparameters for sweeping
     hyperparam_config = {

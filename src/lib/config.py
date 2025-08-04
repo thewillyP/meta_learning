@@ -61,36 +61,49 @@ class UOROConfig:
 
 
 @dataclass(frozen=True)
-class SGDClipConfig:
+class SGDConfig:
+    learning_rate: float
+
+@dataclass(frozen=True)
+class SGDPositiveConfig(SGDConfig): ...
+
+@dataclass(frozen=True)
+class SGDNormalizedConfig(SGDConfig): ...
+
+@dataclass(frozen=True)
+class SGDClipConfig(SGDConfig):
     clip_threshold: float
     clip_sharpness: float
+
+@dataclass(frozen=True)
+class AdamConfig:
+    learning_rate: float
 
 
 @dataclass(frozen=True)
 class LearnConfig:
-    train_percent: float
-    batch_size: int
-    log_influence_tensor: bool
+    train_percent: float  # % data devote to learn, meta 1 validation, meta 2 validation, etc
+    batch_size: int  # batch size can change per validation set
+    log_influence_tensor: bool  
     log_immediate_influence_tensor: bool
-    learning_rate: float
     num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not BPTT)
     num_steps_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
     learner: Union[Literal["rtrl", "identity", "bptt"], RFLOConfig, UOROConfig]
-    optimizer: Union[Literal["sgd", "sgd_positive", "adam", "sgd_normalized"], SGDClipConfig]
+    optimizer: Union[SGDConfig, SGDPositiveConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
     hyperparameter_parametrization: Literal["identity", "softplus"]
     lanczos_iterations: int
 
 
 @dataclass(frozen=True)
-class RnnConfig:
-    activation_fn: Literal["tanh", "relu", "identity"]
-    n_h: int
+class NNLayer:
+    n: int
+    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
 
 
 @dataclass(frozen=True)
 class FeedForwardConfig:
-    ffn_layers: tuple[tuple[int, Literal["tanh", "relu", "sigmoid", "identity", "softmax"]], ...]
+    ffw_layers: dict[int, NNLayer]
 
 
 @dataclass(frozen=True)
@@ -100,6 +113,7 @@ class GodConfig:
     num_base_epochs: int
     checkpoint_every_n_minibatches: int
     seed: SeedConfig
-    lossFn: Literal["cross_entropy", "cross_entropy_with_integer_labels"]
-    transition_function: tuple[Union[RnnConfig], ...]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
+    lossFn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
+    transition_function: dict[int, Union[NNLayer]]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
     readout_function: Union[FeedForwardConfig]
+    learners: dict[int, LearnConfig]

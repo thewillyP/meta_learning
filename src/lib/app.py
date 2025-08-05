@@ -44,7 +44,7 @@ def runApp() -> None:
         singularity_binds="",
         container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
     )
-    task.connect(slurm_params, name="slurm")
+    task.connect(slurm_params.__dict__, name="slurm")
 
     config = GodConfig(
         data_root_dir="/tmp",

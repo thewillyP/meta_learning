@@ -64,16 +64,20 @@ class UOROConfig:
 class SGDConfig:
     learning_rate: float
 
+
 @dataclass(frozen=True)
 class SGDPositiveConfig(SGDConfig): ...
 
+
 @dataclass(frozen=True)
 class SGDNormalizedConfig(SGDConfig): ...
+
 
 @dataclass(frozen=True)
 class SGDClipConfig(SGDConfig):
     clip_threshold: float
     clip_sharpness: float
+
 
 @dataclass(frozen=True)
 class AdamConfig:
@@ -83,11 +87,10 @@ class AdamConfig:
 @dataclass(frozen=True)
 class LearnConfig:
     train_percent: float  # % data devote to learn, meta 1 validation, meta 2 validation, etc
-    batch_size: int  # batch size can change per validation set
-    log_influence_tensor: bool  
+    log_influence_tensor: bool
     log_immediate_influence_tensor: bool
-    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex
-    num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not BPTT)
+    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
+    num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT)
     num_steps_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
     learner: Union[Literal["rtrl", "identity", "bptt"], RFLOConfig, UOROConfig]
     optimizer: Union[SGDConfig, SGDPositiveConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]

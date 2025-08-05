@@ -2,6 +2,9 @@ import clearml
 import boto3
 import random
 import string
+from dataclasses import asdict
+from dacite import from_dict
+
 
 from lib.config import (
     FeedForwardConfig,
@@ -44,7 +47,8 @@ def runApp() -> None:
         singularity_binds="",
         container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
     )
-    task.connect(slurm_params.__dict__, name="slurm")
+    print(asdict(slurm_params))
+    task.connect(asdict(slurm_params), name="slurm")
 
     config = GodConfig(
         data_root_dir="/tmp",
@@ -96,9 +100,13 @@ def runApp() -> None:
         },
     )
 
-    config: GodConfig = task.connect(config, name="config")
-    task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
+    _config = task.connect(asdict(config), name="config")
+    config: GodConfig = from_dict(
+        data_class=GodConfig,
+        data=_config,
+    )
     print(config)
+    task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
 
 
 #     config = from_dict(

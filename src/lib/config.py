@@ -41,6 +41,14 @@ class SeedConfig:
 
 
 @dataclass(frozen=True)
+class MnistConfig: ...
+
+
+@dataclass(frozen=True)
+class FashionMnistConfig: ...
+
+
+@dataclass(frozen=True)
 class DelayAddConfig:
     t1: int
     t2: int
@@ -48,6 +56,18 @@ class DelayAddConfig:
     numVal: int
     numTr: int
     numTe: int
+
+
+@dataclass(frozen=True)
+class RTRLConfig: ...
+
+
+@dataclass(frozen=True)
+class BPTTConfig: ...
+
+
+@dataclass(frozen=True)
+class IdentityConfig: ...
 
 
 @dataclass(frozen=True)
@@ -92,7 +112,7 @@ class LearnConfig:
     num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT)
     num_steps_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
-    learner: Union[Literal["rtrl", "identity", "bptt"], RFLOConfig, UOROConfig]
+    learner: Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig]
     optimizer: Union[SGDConfig, SGDPositiveConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
     hyperparameter_parametrization: Literal["identity", "softplus"]
     lanczos_iterations: int
@@ -112,7 +132,7 @@ class FeedForwardConfig:
 @dataclass(frozen=True)
 class GodConfig:
     data_root_dir: str
-    dataset: Union[Literal["mnist", "fashionmnist"], DelayAddConfig]
+    dataset: Union[MnistConfig, FashionMnistConfig, DelayAddConfig]
     num_base_epochs: int
     checkpoint_every_n_minibatches: int
     seed: SeedConfig

@@ -1,22 +1,12 @@
+from typing import Literal, Union
 import clearml
 import boto3
 import random
 import string
+from cattrs import unstructure, Converter
+from cattrs.strategies import configure_tagged_union
 
-# from dataclasses import asdict
-# from dacite import from_dict
-from cattrs import structure, unstructure
-
-from lib.config import (
-    FeedForwardConfig,
-    LearnConfig,
-    NNLayer,
-    SGDConfig,
-    SeedConfig,
-    SifContainerSource,
-    SlurmParams,
-    GodConfig,
-)
+from lib.config import *
 
 
 def runApp() -> None:
@@ -53,9 +43,9 @@ def runApp() -> None:
 
     config = GodConfig(
         data_root_dir="/tmp",
-        dataset="mnist",
+        dataset=MnistConfig(),
         num_base_epochs=1,
-        checkpoint_every_n_minibatches=1e3,
+        checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
         lossFn="cross_entropy_with_integer_labels",
         transition_function={
@@ -77,7 +67,7 @@ def runApp() -> None:
                 num_examples_in_minibatch=100,
                 num_steps_in_timeseries=1,
                 num_steps_to_avg_in_timeseries=1,
-                learner="bptt",
+                learner=BPTTConfig(),
                 optimizer=SGDConfig(
                     learning_rate=0.01,
                 ),
@@ -91,7 +81,7 @@ def runApp() -> None:
                 num_examples_in_minibatch=100,
                 num_steps_in_timeseries=1,
                 num_steps_to_avg_in_timeseries=1,
-                learner="rtrl",
+                learner=RTRLConfig(),
                 optimizer=SGDConfig(
                     learning_rate=0.01,
                 ),
@@ -101,10 +91,19 @@ def runApp() -> None:
         },
     )
 
-    _config = task.connect(unstructure(config), name="config")
-    config = structure(_config, GodConfig)
-    print(config)
-    task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
+    converter = Converter()
+    configure_tagged_union(Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig], converter)
+    configure_tagged_union(
+        Union[SGDConfig, SGDPositiveConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter
+    )
+    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddConfig], converter)
+
+    _config = task.connect(converter.unstructure(config), name="config")
+    config = converter.structure(_config, GodConfig)
+    import json
+
+    print(json.dumps(vars(config), indent=2, default=str))
+    # task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
 
 
 #     config = from_dict(

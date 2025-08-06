@@ -1,0 +1,32 @@
+"""
+    Data rules
+    - The data should be (sequence length, input dimension)
+    - Sequence length = 1 ~ offline feedforward
+    - num_steps_in_timeseries = 1 ~ online, else offline
+        - both vacuously feedforward if sequence length = 1
+    - num_examples_in_minibatch = n, for both online and offline
+        - online will usually have num_examples_in_minibatch = num_examples, so it ends 
+        - you can use online algorithms in a offline way. i.e. rtrl and bptt should be interchangable
+        - rtrl = bptt when num_steps_to_avg_in_timeseries * num_steps_in_timeseries = sequence_length
+        - while this is about how many examples in parallel, the interpretation of a batch changes
+            - offline: next set of full sequence random examples i.e. 28x28 MNIST
+            - online: next set of 1-length sequence, i.e the next pixel in 728x1 MNIST
+            - regardless, the other entities in the batch are not part of the same sequence but entirely independent
+            - offline resets in between examples
+            - online doesn't reset in between examples
+        - if num_examples_in_minibatch != num_examples for online, then it resets when it moves onto the next minibatch, no different than offline
+        - concrete minibatch vs virtual:
+            - concrete is this
+            - virtual is when online splits a single sequence up into multiple updates. 
+                - each split part becomes its own batch sequentially
+                - for offline, its split into 1, so its always concrete
+    - ***algorithms' should be agnostic to online/offline-ness. whether its successful or not just depends
+    - ***dataset should all be inherently online with offline as a special case of #virtual=1
+    - num_times_to_avg_in_timeseries * num_steps_in_timeseries determines the actual sequence length of a virtual minibatch
+        - this assumes the underlying algorithm takes care of the actual averaging
+    - train_percent is really about how many virtual minibatches one learner gets over the other
+
+    ? I should have preset configurations for offline/online so that I don't have to remember these rules
+    ? jax scan jagged arrays. to deal with padding, I will put random shit, but then pair each sequence
+    with a function that maps to true output which will be used during inference and subsequently learning. 
+    """

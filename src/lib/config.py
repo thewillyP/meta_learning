@@ -123,6 +123,7 @@ class LearnConfig:
 class NNLayer:
     n: int
     activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
+    use_bias: bool
 
 
 @dataclass(frozen=True)

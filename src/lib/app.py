@@ -16,8 +16,64 @@ import torchvision
 
 from lib.config import *
 from lib.datasets import flatten_and_cast, generate_add_task_dataset, standard_dataloader, target_transform
+from lib.env import RNN, GodState, Inference
 from lib.lib_types import *
 from lib.util import create_fractional_list, reshape_timeseries, subset_n
+
+
+def create_env(config: GodConfig, n_in: int, prng: PRNG) -> GodState:
+    base_inference = {}
+    for i, transition_fn in config.transition_function.items():
+        match transition_fn:
+            case NNLayer(n_h, activation_fn, use_bias):
+                prgn1, prng2, prng3, prng = jax.random.split(prng, 4)
+                W_in = jax.random.normal(prgn1, (n_h, n_in)) * jnp.sqrt(1 / n_in)
+                W_rec = jnp.linalg.qr(jax.random.normal(prng2, (n_h, n_h)))[0]
+
+                w_rec = jnp.hstack([W_rec, W_in])
+                if use_bias:
+                    b_rec = jnp.zeros((n_h, 1))
+                    w_rec = jnp.hstack([w_rec, b_rec])
+                w_out = jnp.hstack([W_out, b_out])
+                rnn_parameter = RnnParameter(w_rec=w_rec, w_out=w_out)
+                rnn_config = RnnConfig(
+                    n_h=config.n_h, n_in=config.n_in, n_out=config.n_out, activationFn=config.activation_fn
+                )
+                activation = ACTIVATION(jax.random.normal(prng5, (config.n_h,)))
+                rnn_state = RnnState(rnnConfig=rnn_config, activation=activation, rnnParameter=rnn_parameter)
+
+                env = putter(env, lambda s: s.rnnState, rnn_state)
+
+                if config.inner_learner == "uoro":
+                    a_init = jax.random.normal(prng6, (rnn_config.n_h,))
+                    b_init = toVector(
+                        endowVector(
+                            RnnParameter(
+                                w_rec=jax.random.normal(prng7, rnn_parameter.w_rec.shape),
+                                w_out=jnp.zeros_like(rnn_parameter.w_out),
+                            )
+                        )
+                    )
+                    env = putter(env, lambda s: s.innerUoro, UORO_Param(A=a_init, B=b_init))
+
+                rnn = Inference(
+                    rnn=RNN(
+                        activation=jnp.zeros((n,)),  # will be initialized later
+                        w_rec=jnp.zeros((n, n + config.dataset.n_in + 1)),  # will be initialized later
+                        w_out=jnp.zeros(
+                            (
+                                config.readout_function.ffw_layers[max(config.readout_function.ffw_layers.keys())].n,
+                                n + 1,
+                            )
+                        ),  # will be initialized later
+                        n_h=n,
+                        n_in=config.dataset.n_in,
+                        n_out=config.readout_function.ffw_layers[max(config.readout_function.ffw_layers.keys())].n,
+                        activationFn=activation_fn,
+                    )
+                )
+            case _:
+                raise ValueError("Unsupported transition function")
 
 
 def runApp() -> None:
@@ -62,13 +118,15 @@ def runApp() -> None:
             0: NNLayer(
                 n=32,
                 activation_fn="tanh",
+                use_bias=True,
             ),
             1: NNLayer(
                 n=32,
                 activation_fn="tanh",
+                use_bias=True,
             ),
         },
-        readout_function=FeedForwardConfig(ffw_layers={0: NNLayer(n=10, activation_fn="identity")}),
+        readout_function=FeedForwardConfig(ffw_layers={0: NNLayer(n=10, activation_fn="identity", use_bias=True)}),
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 train_percent=80,

@@ -12,10 +12,12 @@ import jax.numpy as jnp
 import torch
 import numpy as np
 import math
+import torchvision
 
 from lib.config import *
-from lib.types import *
-from lib.util import create_fractional_list, subset_n
+from lib.datasets import flatten_and_cast, generate_add_task_dataset, standard_dataloader, target_transform
+from lib.lib_types import *
+from lib.util import create_fractional_list, reshape_timeseries, subset_n
 
 
 def runApp() -> None:
@@ -51,7 +53,7 @@ def runApp() -> None:
 
     config = GodConfig(
         data_root_dir="/tmp",
-        dataset=MnistConfig(),
+        dataset=MnistConfig(n_in=28),
         num_base_epochs=1,
         checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
@@ -97,6 +99,7 @@ def runApp() -> None:
                 lanczos_iterations=0,
             ),
         },
+        num_virtual_minibatches_per_turn=10,
     )
 
     converter = Converter()
@@ -104,7 +107,7 @@ def runApp() -> None:
     configure_tagged_union(
         Union[SGDConfig, SGDPositiveConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter
     )
-    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddConfig], converter)
+    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
 
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
@@ -127,51 +130,68 @@ def runApp() -> None:
     torch.backends.cudnn.benchmark = True
 
     # Dataset
-
     percentages = create_fractional_list([x.train_percent / 100 for x in config.learners.values()])
     if percentages is None:
         raise ValueError("Learner percentages must sum to 100.")
 
     match config.dataset:
-        case DelayAddConfig(t1, t2, tau_task, n, nTest):
+        case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
             data_size = dict(zip(config.learners.keys(), subset_n(n, percentages)))
-
-            tr_dataset = adder_task(tr_prng, config, config.ts, config.numTr, config.tr_examples_per_epoch)
-            te_dataset = adder_task(test_prng, config, config.ts, config.numTe, config.numTe)
+            dataset_te = generate_add_task_dataset(nTest, t1, t2, tau_task, test_prng)
 
             datasets = {}
             for i, learner in config.learners.items():
                 data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
+                X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
+                n_consume = learner.num_steps_in_timeseries * learner.num_times_to_avg_in_timeseries
+                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
+                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
+                num_virtual_minibatches = X_vl.shape[1]
 
-        case MnistConfig():
-            dataset = FashionMNIST(root=f"{config.data_root_dir}/data", train=True, download=True)
-            _te_dataset = FashionMNIST(root=f"{config.data_root_dir}/data", train=False, download=True)
-            xs = jax.vmap(flatten_and_cast, in_axes=(0, None))(dataset.data.numpy(), config.n_in)
-            sequence_length = xs.shape[1]
+                def get_dataloader(rng: PRNG):
+                    return standard_dataloader(
+                        X_vl, Y_vl, X_vl.shape[0], learner.num_examples_in_minibatch, X_vl.shape[1], rng
+                    )
 
-            ys = jax.vmap(target_transform, in_axes=(0, None))(dataset.targets.numpy(), sequence_length)
-            te_xs = jax.vmap(flatten_and_cast, in_axes=(0, None))(_te_dataset.data.numpy(), config.n_in)
-            te_ys = jax.vmap(target_transform, in_axes=(0, None))(_te_dataset.targets.numpy(), sequence_length)
+                datasets[i] = get_dataloader
+                # 1. check when to reset after consume concrete example
+                # 2. check when is last padded minibatch
+
+        case MnistConfig(n_in) | FashionMnistConfig(n_in):
+            match config.dataset:
+                case MnistConfig():
+                    dataset_factory = torchvision.datasets.MNIST
+                case FashionMnistConfig():
+                    dataset_factory = torchvision.datasets.FashionMNIST
+
+            dataset = dataset_factory(root=f"{config.data_root_dir}/data", train=True, download=True)
+            dataset_te = dataset_factory(root=f"{config.data_root_dir}/data", train=False, download=True)
+            xs = jax.vmap(flatten_and_cast, in_axes=(0, None))(dataset.data.numpy(), n_in)
+            ys = jax.vmap(target_transform, in_axes=(0, None))(dataset.targets.numpy(), xs.shape[1])
+            xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None))(dataset_te.data.numpy(), n_in)
+            ys_te = jax.vmap(target_transform, in_axes=(0, None))(dataset_te.targets.numpy(), xs_te.shape[1])
+            dataset_te = (xs_te, ys_te)
 
             perm = jax.random.permutation(dataset_gen_prng, len(xs))
+            split_indices = jnp.cumsum(subset_n(len(xs), percentages))[:-1]
+            val_indices = jnp.split(perm, split_indices)
 
-            split_idx = int(len(xs) * config.train_val_split_percent)
-            train_idx, val_idx = perm[:split_idx], perm[split_idx:]
+            datasets = {}
+            for (i, learner), val_idx in zip(config.learners.items(), val_indices):
+                X_vl = xs[val_idx]
+                Y_vl = ys[val_idx]
+                n_consume = learner.num_steps_in_timeseries * learner.num_times_to_avg_in_timeseries
+                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
+                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
+                num_virtual_minibatches = X_vl.shape[1]
 
-            xs_train, ys_train = xs[train_idx], ys[train_idx]
-            xs_val, ys_val = xs[val_idx], ys[val_idx]
+                def get_dataloader(rng: PRNG):
+                    return standard_dataloader(
+                        X_vl, Y_vl, X_vl.shape[0], learner.num_examples_in_minibatch, X_vl.shape[1], rng
+                    )
 
-            tr_dataset = Traversable(Traversable(InputOutput(x=xs_train, y=ys_train)))
-            vl_dataset = Traversable(Traversable(InputOutput(x=xs_val, y=ys_val)))
-            te_dataset = Traversable(Traversable(InputOutput(x=te_xs, y=te_ys)))
+                datasets[i] = get_dataloader
 
-            def new_loss_fn(pred, target):
-                label, idx = target
-                return jax.lax.cond(idx == sequence_length - 1, lambda p: _lossFn(p, label), lambda _: 0.0, pred)
-
-            lossFn = new_loss_fn
-        case FashionMnistConfig():
-            pass
         case _:
             raise ValueError("Invalid dataset")
 
@@ -814,45 +834,8 @@ def create_datasets(
     return oho_set, test_set
 
 
-def adder_task(
-    prng: PRNG,
-    config: GodConfig,
-    ts: tuple[int, int],
-    total_size: int,
-    examples_per_epoch: int,
-) -> Traversable[Traversable[InputOutput]]:
-    # Extract parameters from config
-    t1, t2 = ts
-    tau_task = int(1 / config.inner_time_constant) if config.tau_task else 1
-    XS, YS = generate_add_task_dataset(total_size, t1, t2, tau_task, prng)
-    num_updates = total_size // examples_per_epoch
-    # Transform training data
-    XS = transform(XS, num_updates)
-    YS = transform(YS, num_updates)
-
-    return Traversable(Traversable(InputOutput(x=XS, y=YS)))
-
-
 def transform(arr: Array, _t: int):
     return arr.reshape((_t, -1) + arr.shape[1:])
-
-
-def generate_add_task_dataset(N, t_1, t_2, tau_task, rng_key):
-    """y(t) = 0.5 + 0.5 * x(t - t_1) - 0.25 * x(t - t_2)"""
-    N = N // tau_task
-
-    x = jax.random.bernoulli(rng_key, 0.5, (N,)).astype(jnp.float32)
-
-    y = 0.5 + 0.5 * jnp.roll(x, t_1) - 0.25 * jnp.roll(x, t_2)
-
-    X = jnp.asarray([x, 1 - x]).T
-    Y = jnp.asarray([y, 1 - y]).T
-
-    # Temporally stretch according to the desire timescale of change.
-    X = jnp.tile(X, tau_task).reshape((tau_task * N, 2))
-    Y = jnp.tile(Y, tau_task).reshape((tau_task * N, 2))
-
-    return X, Y
 
 
 def create_learner(

@@ -1,5 +1,7 @@
-from collections.abc import Iterable
-from lib.types import FractionalList
+import jax
+import jax.numpy as jnp
+import math
+from lib.lib_types import FractionalList
 
 
 def create_fractional_list(percentages: list[float]) -> FractionalList | None:
@@ -35,3 +37,24 @@ def subset_n(n: int, percentages: FractionalList) -> list[int]:
         subset_sizes[i % len(subset_sizes)] += 1
 
     return subset_sizes
+
+
+def reshape_timeseries(arr: jax.Array, target_time_dim: int) -> tuple[jax.Array, int]:
+    num_examples, time_series_length, *rest = arr.shape
+
+    num_virtual_minibatches = math.ceil(time_series_length / target_time_dim)
+    pad_length = (-time_series_length) % num_virtual_minibatches
+    new_time_dim = (time_series_length + pad_length) // num_virtual_minibatches
+
+    if pad_length > 0:
+        pad_width = [(0, 0), (0, pad_length)] + [(0, 0)] * len(rest)
+        arr_padded = jnp.pad(arr, pad_width, constant_values=0)
+    else:
+        arr_padded = arr
+
+    new_shape = (num_examples, num_virtual_minibatches, new_time_dim) + tuple(rest)
+
+    # Length of non-padded portion in last minibatch
+    last_minibatch_length = new_time_dim - pad_length
+
+    return arr_padded.reshape(new_shape), last_minibatch_length

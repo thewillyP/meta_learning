@@ -38,10 +38,10 @@ class CustomSequential(eqx.Module):
 class RNN(eqx.Module):
     activation: jax.Array
     w_rec: jax.Array
+    b_rec: Optional[jax.Array]
     n_h: int = eqx.field(static=True)
     n_in: int = eqx.field(static=True)
-    n_out: int = eqx.field(static=True)
-    activationFn: Literal["tanh", "relu"] = eqx.field(static=True)
+    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = eqx.field(static=True)
 
 
 class UORO(eqx.Module):

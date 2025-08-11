@@ -1,3 +1,4 @@
+from typing import Callable
 import jax
 import jax.numpy as jnp
 import math
@@ -58,3 +59,19 @@ def reshape_timeseries(arr: jax.Array, target_time_dim: int) -> tuple[jax.Array,
     last_minibatch_length = new_time_dim - pad_length
 
     return arr_padded.reshape(new_shape), last_minibatch_length
+
+
+def get_activation_fn(s: str) -> Callable[[jax.Array], jax.Array]:
+    match s:
+        case "tanh":
+            return jax.nn.tanh
+        case "relu":
+            return jax.nn.relu
+        case "sigmoid":
+            return jax.nn.sigmoid
+        case "identity":
+            return lambda x: x
+        case "softmax":
+            return jax.nn.softmax
+        case _:
+            raise ValueError("Invalid activation function")

@@ -87,10 +87,6 @@ class SGDConfig:
 
 
 @dataclass(frozen=True)
-class SGDPositiveConfig(SGDConfig): ...
-
-
-@dataclass(frozen=True)
 class SGDNormalizedConfig(SGDConfig): ...
 
 
@@ -112,11 +108,11 @@ class LearnConfig:
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT)
     num_times_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
     learner: Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig]
-    optimizer: Union[SGDConfig, SGDPositiveConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
-    hyperparameter_parametrization: Literal["identity", "softplus"]
+    optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
+    hyperparameter_parametrization: Literal["identity", "softplus", "relu"]
     lanczos_iterations: int
-    log_influence_tensor: bool
-    log_immediate_influence_tensor: bool
+    track_logs: bool
+    track_special_logs: bool
 
 
 @dataclass(frozen=True)

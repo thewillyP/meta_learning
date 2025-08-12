@@ -13,64 +13,22 @@ import torch
 import numpy as np
 import copy
 import torchvision
+import equinox as eqx
+import optax
 
 from lib.config import *
 from lib.datasets import flatten_and_cast, generate_add_task_dataset, standard_dataloader, target_transform
-from lib.env import RNN, CustomSequential, General, GodState, Inference, Learning
+from lib.env import (
+    CustomSequential,
+    GodState,
+    Logs,
+)
 from lib.lib_types import *
-from lib.util import create_fractional_list, get_activation_fn, reshape_timeseries, subset_n
-
-
-def create_env(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> GodState:
-    env = GodState(
-        states=None,
-        base_inference=None,
-        start_epoch=0,
-    )
-
-    transition_inference: dict[int, Inference] = {}
-    for i, transition_fn in config.transition_function.items():
-        match transition_fn:
-            case NNLayer(n_h, activation_fn, use_bias):
-                n_in, _ = n_in_shape
-                prgn1, prng2, prng3, prng = jax.random.split(prng, 4)
-                activation = ACTIVATION(jax.random.normal(prgn1, (n_h,)))
-                W_in = jax.random.normal(prng2, (n_h, n_in)) * jnp.sqrt(1 / n_in)
-                W_rec = jnp.linalg.qr(jax.random.normal(prng3, (n_h, n_h)))[0]
-                w_rec = jnp.hstack([W_rec, W_in])
-                b_rec = jnp.zeros((n_h, 1)) if use_bias else None
-
-                transition_inference[i] = Inference(
-                    rnn=RNN(
-                        activation=activation,
-                        w_rec=w_rec,
-                        b_rec=b_rec,
-                        n_h=n_h,
-                        n_in=n_in,
-                        activation_fn=activation_fn,
-                    )
-                )
-
-            case _:
-                raise ValueError("Unsupported transition function")
-
-    match config.readout_function:
-        case FeedForwardConfig(ffw_layers):
-            layers = []
-            n_in, _ = n_in_shape
-            for i, layer in ffw_layers.items():
-                match layer:
-                    case NNLayer(n, activation_fn, use_bias):
-                        layers.append((n, use_bias, get_activation_fn(activation_fn)))
-            prng1, prng = jax.random.split(prng)
-            readout_fn = Inference(readout_fn=CustomSequential(layers, n_in, prng1))
-        case _:
-            raise ValueError("Unsupported readout function")
-
-    env = copy.replace(env, base_inference=(transition_inference, readout_fn))
-
-    states: dict[int, tuple[General, tuple[dict[int, Inference], Inference], Learning]] = {}
-    for i,
+from lib.util import (
+    create_fractional_list,
+    reshape_timeseries,
+    subset_n,
+)
 
 
 def runApp() -> None:
@@ -127,8 +85,6 @@ def runApp() -> None:
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 train_percent=80,
-                log_influence_tensor=False,
-                log_immediate_influence_tensor=False,
                 num_examples_in_minibatch=100,
                 num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
@@ -138,11 +94,11 @@ def runApp() -> None:
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
+                track_logs=True,
+                track_special_logs=False,
             ),
             1: LearnConfig(  # normal OHO
                 train_percent=20,
-                log_influence_tensor=False,
-                log_immediate_influence_tensor=False,
                 num_examples_in_minibatch=100,
                 num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
@@ -152,6 +108,8 @@ def runApp() -> None:
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
+                track_logs=True,
+                track_special_logs=False,
             ),
         },
         num_virtual_minibatches_per_turn=10,

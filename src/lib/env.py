@@ -8,10 +8,13 @@ from lib.lib_types import *
 
 class Logs(eqx.Module):
     gradient: Optional[jax.Array] = eqx.field(default=None)
+
+
+class SpecialLogs(eqx.Module):
     influence_tensor: Optional[jax.Array] = eqx.field(default=None)
     immediate_influence_tensor: Optional[jax.Array] = eqx.field(default=None)
-    jac_eigenvalue: Optional[jax.Array] = eqx.field(default=None)
-    hessian: Optional[jax.Array] = eqx.field(default=None)
+    largest_jac_eigenvalue: Optional[jax.Array] = eqx.field(default=None)
+    jacobian: Optional[jax.Array] = eqx.field(default=None)
 
 
 class CustomSequential(eqx.Module):
@@ -35,40 +38,65 @@ class CustomSequential(eqx.Module):
         return self.model(x)
 
 
-class RNN(eqx.Module):
+class RNNState(eqx.Module):
     activation: jax.Array
-    w_rec: jax.Array
-    b_rec: Optional[jax.Array]
     n_h: int = eqx.field(static=True)
     n_in: int = eqx.field(static=True)
     activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = eqx.field(static=True)
 
 
-class UORO(eqx.Module):
+class RNN(eqx.Module):
+    w_rec: jax.Array
+    b_rec: Optional[jax.Array]
+
+
+class UOROState(eqx.Module):
     A: jax.Array
     B: jax.Array
 
 
 class General(eqx.Module):
-    prng: PRNG
     current_virtual_minibatch: int
     logs: Optional[Logs] = eqx.field(default=None)
+    special_logs: Optional[SpecialLogs] = eqx.field(default=None)
 
 
-class Inference(eqx.Module):
-    rnn: Optional[RNN] = eqx.field(default=None)
-    readout_fn: Optional[CustomSequential] = eqx.field(default=None)
+class InferenceState(eqx.Module):
+    rnn: Optional[RNNState] = eqx.field(default=None)
 
 
-class Learning(eqx.Module):
-    rflo_timeconstant: float = eqx.field(static=True)
+class LearningState(eqx.Module):
     influence_tensor: Optional[JACOBIAN] = eqx.field(default=None)
-    uoro: Optional[UORO] = eqx.field(default=None)
+    uoro: Optional[UOROState] = eqx.field(default=None)
     opt_state: Optional[optax.OptState] = eqx.field(default=None)
+    get_optimizer: Optional[Callable[["Parameter"], optax.GradientTransformation]] = eqx.field(
+        static=True, default=None
+    )
+
+
+class InferenceParameter(eqx.Module):
+    rnn: Optional[RNN] = eqx.field(default=None)
+
+
+class LearningParameter(eqx.Module):
     learning_rate: Optional[jax.Array] = eqx.field(default=None)
+    rflo_timeconstant: Optional[float] = eqx.field(static=True, default=None)
+
+
+class State(eqx.Module):
+    inference_state: Optional[dict[int, InferenceState]] = eqx.field(default=None)
+    learning_state: Optional[LearningState] = eqx.field(default=None)
+
+
+class Parameter(eqx.Module):
+    transition_parameter: Optional[dict[int, InferenceParameter]] = eqx.field(default=None)
+    readout_fn: Optional[CustomSequential] = eqx.field(default=None)
+    learning_parameter: Optional[LearningParameter] = eqx.field(default=None)
 
 
 class GodState(eqx.Module):
-    states: dict[int, tuple[General, tuple[dict[int, Inference], Inference], Learning]]
-    base_inference: tuple[dict[int, Inference], Inference]
+    states: dict[int, State]
+    parameters: dict[int, Parameter]
+    general: dict[int, General]
+    prng: PRNG
     start_epoch: int

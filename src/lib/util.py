@@ -1,7 +1,9 @@
 from typing import Callable
 import jax
+import jax.flatten_util
 import jax.numpy as jnp
 import math
+import equinox as eqx
 from lib.lib_types import FractionalList
 
 
@@ -75,3 +77,41 @@ def get_activation_fn(s: str) -> Callable[[jax.Array], jax.Array]:
             return jax.nn.softmax
         case _:
             raise ValueError("Invalid activation function")
+
+
+class Vector[T](eqx.Module):
+    vector: jax.Array
+    nonparams: T
+    to_param: Callable[[jax.Array], T] = eqx.field(static=True)
+
+
+def to_vector[T](tree: T) -> Vector[T]:
+    """Convert a pytree to a Vector, which contains a flattened array and non-parameter parts."""
+    params, nonparams = eqx.filter(tree, eqx.is_inexact_array)
+    vector, to_param = jax.flatten_util.ravel_pytree(params)
+    return Vector(vector=vector, nonparams=nonparams, to_param=to_param)
+
+
+def vector_to_pytree[T](vec: Vector[T]) -> T:
+    """Convert a Vector back to its original pytree structure."""
+    params = vec.to_param(vec.vector)
+    return eqx.combine(params, vec.nonparams)
+
+
+def hyperparameter_reparametrization(
+    reparametrization: str,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    match reparametrization:
+        case "identity":
+            reparam_fn = lambda lr: lr
+            reparam_inverse = lambda lr: lr
+        case "softplus":
+            reparam_fn = jax.nn.softplus
+            reparam_inverse = lambda y: jnp.log(jnp.expm1(y))
+        case "relu":
+            reparam_fn = lambda x: jnp.maximum(x, 0.0)
+            reparam_inverse = lambda y: y  # Note: not strictly correct, as relu is not invertible
+        case _:
+            raise ValueError("Invalid hyperparameter reparametrization")
+
+    return reparam_fn, reparam_inverse

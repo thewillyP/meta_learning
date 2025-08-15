@@ -4,7 +4,8 @@ import jax.flatten_util
 import jax.numpy as jnp
 import math
 import equinox as eqx
-from lib.lib_types import FractionalList
+import optax
+from lib.lib_types import LOSS, FractionalList
 
 
 def create_fractional_list(percentages: list[float]) -> FractionalList | None:
@@ -77,6 +78,44 @@ def get_activation_fn(s: str) -> Callable[[jax.Array], jax.Array]:
             return jax.nn.softmax
         case _:
             raise ValueError("Invalid activation function")
+
+
+def get_loss_fn(s: str) -> Callable[[jax.Array, jax.Array], LOSS]:
+    match s:
+        case "cross_entropy":
+            return lambda a, b: LOSS(optax.safe_softmax_cross_entropy(a, b))
+        case "cross_entropy_with_integer_labels":
+            return lambda a, b: LOSS(optax.losses.softmax_cross_entropy_with_integer_labels(a, b))
+        case "mse":
+            return lambda a, b: LOSS(optax.losses.squared_error(a, b).mean())
+        case _:
+            raise ValueError("Invalid loss function")
+
+
+def accuracy_hard(preds: jnp.ndarray, labels: jnp.ndarray) -> float:
+    pred_classes = jnp.argmax(preds, axis=-1)
+    return jnp.mean(pred_classes == labels).item()
+
+
+def accuracy_soft(preds: jnp.ndarray, labels: jnp.ndarray) -> float:
+    pred_classes = jnp.argmax(preds, axis=-1)
+    true_classes = jnp.argmax(labels, axis=-1)
+    return jnp.mean(pred_classes == true_classes).item()
+
+
+def accuracy_with_sequence_filter(preds: jnp.ndarray, labels: jnp.ndarray, n: int) -> float:
+    class_indices = labels[0]
+    sequence_numbers = labels[1]
+    pred_classes = jnp.argmax(preds, axis=-1)
+
+    mask = sequence_numbers == n
+    filtered_preds = pred_classes[mask]
+    filtered_labels = class_indices[mask]
+
+    if filtered_labels.size == 0:
+        return float("nan")
+
+    return jnp.mean(filtered_preds == filtered_labels).item()
 
 
 class Vector[T](eqx.Module):

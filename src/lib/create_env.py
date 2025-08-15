@@ -33,7 +33,7 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
             case NNLayer(n_h, activation_fn, use_bias):
-                n_in, _ = n_in_shape
+                n_in, *_ = n_in_shape
                 prng1, prng = jax.random.split(prng, 2)
                 activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
                 transition_state[i] = InferenceState(
@@ -51,10 +51,11 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
 
 def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> Parameter:
     transition_parameter: dict[int, InferenceParameter] = {}
+    n_in_size = 0
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
             case NNLayer(n_h, activation_fn, use_bias):
-                n_in, _ = n_in_shape
+                n_in, *_ = n_in_shape
                 prgn1, prng2, prng = jax.random.split(prng, 3)
                 W_in = jax.random.normal(prgn1, (n_h, n_in)) * jnp.sqrt(1 / n_in)
                 W_rec = jnp.linalg.qr(jax.random.normal(prng2, (n_h, n_h)))[0]
@@ -66,19 +67,21 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
                         b_rec=b_rec,
                     )
                 )
+                n_in_size += n_h
             case _:
                 raise ValueError("Unsupported transition function")
 
     match config.readout_function:
         case FeedForwardConfig(ffw_layers):
             layers = []
-            n_in, _ = n_in_shape
+            data_in, *_ = n_in_shape
+            n_in_size += data_in
             for i, layer in ffw_layers.items():
-                match layer:
+                match layer:  # purely for pattern matching, no other case should actually exist
                     case NNLayer(n, activation_fn, use_bias):
                         layers.append((n, use_bias, get_activation_fn(activation_fn)))
             prng1, prng = jax.random.split(prng, 2)
-            readout_fn = CustomSequential(layers, n_in, prng1)
+            readout_fn = CustomSequential(layers, n_in_size, prng1)
         case _:
             raise ValueError("Unsupported readout function")
 
@@ -93,13 +96,13 @@ def create_learning_parameter(
     parameter = LearningParameter()
     match learn_config.optimizer:
         case SGDConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
         case SGDNormalizedConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
         case SGDClipConfig(learning_rate, threshold, sharpness):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
         case AdamConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
 
     match learn_config.learner:
         case RFLOConfig(time_constant):

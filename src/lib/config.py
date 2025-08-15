@@ -133,6 +133,7 @@ class FeedForwardConfig:
 
 @dataclass(frozen=True)
 class GodConfig:
+    clearml_run: bool
     data_root_dir: str
     dataset: Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig]
     num_base_epochs: int
@@ -143,4 +144,5 @@ class GodConfig:
     readout_function: Union[FeedForwardConfig]
     learners: dict[int, LearnConfig]
     data: dict[int, DataConfig]
-    num_virtual_minibatches_per_turn: int
+    num_virtual_minibatches_per_turn: int  # for data loading purposes
+    ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference

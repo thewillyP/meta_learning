@@ -126,7 +126,7 @@ class Vector[T](eqx.Module):
 
 def to_vector[T](tree: T) -> Vector[T]:
     """Convert a pytree to a Vector, which contains a flattened array and non-parameter parts."""
-    params, nonparams = eqx.filter(tree, eqx.is_inexact_array)
+    params, nonparams = eqx.partition(tree, eqx.is_inexact_array)
     vector, to_param = jax.flatten_util.ravel_pytree(params)
     return Vector(vector=vector, nonparams=nonparams, to_param=to_param)
 

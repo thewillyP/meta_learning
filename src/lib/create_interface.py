@@ -28,7 +28,9 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
         def get_state(env: GodState, i) -> jax.Array:
             return to_vector(
                 (
-                    dict(islice(env.inference_states.items(), i + 1)),
+                    dict(islice(env.inference_states.items(), i + 1))
+                    if not config.ignore_validation_inference_recurrence
+                    else env.inference_states[0],
                     dict(islice(env.learning_states.items(), i)),
                     dict(islice(env.parameters.items(), i)),
                 )

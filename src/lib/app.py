@@ -62,6 +62,7 @@ def runApp() -> None:
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
+        clearml_run=True,
         data_root_dir="/tmp",
         dataset=MnistConfig(n_in=28),
         num_base_epochs=1,
@@ -107,17 +108,18 @@ def runApp() -> None:
             0: DataConfig(
                 train_percent=80,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=1,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=20,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=1,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         num_virtual_minibatches_per_turn=10,
+        ignore_validation_inference_recurrence=True,
     )
 
     converter = Converter()
@@ -127,7 +129,10 @@ def runApp() -> None:
 
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
-    task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
+    # task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
+
+    if not config.clearml_run:
+        return
 
     # RNG Stuff
     data_prng = PRNG(jax.random.key(config.seed.data_seed))
@@ -157,13 +162,14 @@ def runApp() -> None:
             n_in_shape = dataset_te[0].shape[1:]
 
             datasets = {}
+            virtual_minibatches: dict[int, int] = {}
             for i, data_config in config.data.items():
                 data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
                 X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
                 n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                num_virtual_minibatches = X_vl.shape[1]
+                virtual_minibatches[i] = X_vl.shape[1]
 
                 def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
@@ -192,17 +198,18 @@ def runApp() -> None:
             dataset_te = (xs_te, ys_te)
 
             perm = jax.random.permutation(dataset_gen_prng, len(xs))
-            split_indices = jnp.cumsum(subset_n(len(xs), percentages))[:-1]
+            split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
             val_indices = jnp.split(perm, split_indices)
 
             datasets = {}
+            virtual_minibatches: dict[int, int] = {}
             for (i, data_config), val_idx in zip(config.data.items(), val_indices):
                 X_vl = xs[val_idx]
                 Y_vl = ys[val_idx]
                 n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                num_virtual_minibatches = X_vl.shape[1]
+                virtual_minibatches[i] = X_vl.shape[1]
 
                 def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
@@ -213,6 +220,13 @@ def runApp() -> None:
 
         case _:
             raise ValueError("Invalid dataset")
+
+    print(virtual_minibatches)
+    if config.ignore_validation_inference_recurrence:
+        if not all(virtual_minibatches[k] == 1 for i, k in enumerate(sorted(virtual_minibatches.keys())) if i > 0):
+            raise ValueError(
+                "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
+            )
 
     learn_interfaces = create_learn_interfaces(config)
     inference_interface = create_transition_interfaces(config)
@@ -225,6 +239,7 @@ def runApp() -> None:
     # 4. resetting?
     # 5. data loading?
     # 6. combining vl data with prev data when building meta learning function?
+    # 7. need to specify what learner to use for each validation inference as well
 
 
 # def create_learner(

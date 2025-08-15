@@ -44,8 +44,6 @@ def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
         get_rnn_state=lambda env: None,
         put_rnn_state=lambda env, _: env,
         get_rnn_param=lambda env: None,
-        put_logs=lambda env, _: env,
-        put_special_logs=lambda env, _: env,
         get_prng=lambda env: (None, env),
     )
 

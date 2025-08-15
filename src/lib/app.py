@@ -84,10 +84,6 @@ def runApp() -> None:
         readout_function=FeedForwardConfig(ffw_layers={0: NNLayer(n=10, activation_fn="identity", use_bias=True)}),
         learners={
             0: LearnConfig(  # normal feedforward backprop
-                train_percent=80,
-                num_examples_in_minibatch=100,
-                num_steps_in_timeseries=1,
-                num_times_to_avg_in_timeseries=1,
                 learner=BPTTConfig(),
                 optimizer=SGDConfig(
                     learning_rate=0.01,
@@ -98,10 +94,6 @@ def runApp() -> None:
                 track_special_logs=False,
             ),
             1: LearnConfig(  # normal OHO
-                train_percent=20,
-                num_examples_in_minibatch=100,
-                num_steps_in_timeseries=1,
-                num_times_to_avg_in_timeseries=1,
                 learner=RTRLConfig(),
                 optimizer=SGDConfig(
                     learning_rate=0.01,
@@ -112,14 +104,26 @@ def runApp() -> None:
                 track_special_logs=False,
             ),
         },
+        data={
+            0: DataConfig(
+                train_percent=80,
+                num_examples_in_minibatch=100,
+                num_steps_in_timeseries=1,
+                num_times_to_avg_in_timeseries=1,
+            ),
+            1: DataConfig(
+                train_percent=20,
+                num_examples_in_minibatch=100,
+                num_steps_in_timeseries=1,
+                num_times_to_avg_in_timeseries=1,
+            ),
+        },
         num_virtual_minibatches_per_turn=10,
     )
 
     converter = Converter()
     configure_tagged_union(Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig], converter)
-    configure_tagged_union(
-        Union[SGDConfig, SGDPositiveConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter
-    )
+    configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
     configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
 
     _config = task.connect(converter.unstructure(config), name="config")
@@ -143,27 +147,27 @@ def runApp() -> None:
     torch.backends.cudnn.benchmark = True
 
     # Dataset
-    percentages = create_fractional_list([x.train_percent / 100 for x in config.learners.values()])
+    percentages = create_fractional_list([x.train_percent / 100 for x in config.data.values()])
     if percentages is None:
         raise ValueError("Learner percentages must sum to 100.")
 
     match config.dataset:
         case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
-            data_size = dict(zip(config.learners.keys(), subset_n(n, percentages)))
+            data_size = dict(zip(config.data.keys(), subset_n(n, percentages)))
             dataset_te = generate_add_task_dataset(nTest, t1, t2, tau_task, test_prng)
 
             datasets = {}
-            for i, learner in config.learners.items():
+            for i, data_config in config.data.items():
                 data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
                 X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
-                n_consume = learner.num_steps_in_timeseries * learner.num_times_to_avg_in_timeseries
+                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
                 num_virtual_minibatches = X_vl.shape[1]
 
                 def get_dataloader(rng: PRNG):
                     return standard_dataloader(
-                        X_vl, Y_vl, X_vl.shape[0], learner.num_examples_in_minibatch, X_vl.shape[1], rng
+                        X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
                     )
 
                 datasets[i] = get_dataloader
@@ -190,17 +194,17 @@ def runApp() -> None:
             val_indices = jnp.split(perm, split_indices)
 
             datasets = {}
-            for (i, learner), val_idx in zip(config.learners.items(), val_indices):
+            for (i, data_config), val_idx in zip(config.data.items(), val_indices):
                 X_vl = xs[val_idx]
                 Y_vl = ys[val_idx]
-                n_consume = learner.num_steps_in_timeseries * learner.num_times_to_avg_in_timeseries
+                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
                 num_virtual_minibatches = X_vl.shape[1]
 
                 def get_dataloader(rng: PRNG):
                     return standard_dataloader(
-                        X_vl, Y_vl, X_vl.shape[0], learner.num_examples_in_minibatch, X_vl.shape[1], rng
+                        X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
                     )
 
                 datasets[i] = get_dataloader

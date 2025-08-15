@@ -69,9 +69,6 @@ class LearningState(eqx.Module):
     influence_tensor: Optional[JACOBIAN] = eqx.field(default=None)
     uoro: Optional[UOROState] = eqx.field(default=None)
     opt_state: Optional[optax.OptState] = eqx.field(default=None)
-    get_optimizer: Optional[Callable[["Parameter"], optax.GradientTransformation]] = eqx.field(
-        static=True, default=None
-    )
 
 
 class InferenceParameter(eqx.Module):
@@ -83,11 +80,6 @@ class LearningParameter(eqx.Module):
     rflo_timeconstant: Optional[float] = eqx.field(static=True, default=None)
 
 
-class State(eqx.Module):
-    inference_state: Optional[dict[int, InferenceState]] = eqx.field(default=None)
-    learning_state: Optional[LearningState] = eqx.field(default=None)
-
-
 class Parameter(eqx.Module):
     transition_parameter: Optional[dict[int, InferenceParameter]] = eqx.field(default=None)
     readout_fn: Optional[CustomSequential] = eqx.field(default=None)
@@ -95,7 +87,8 @@ class Parameter(eqx.Module):
 
 
 class GodState(eqx.Module):
-    states: dict[int, State]
+    learning_states: dict[int, LearningState]
+    inference_states: dict[int, dict[int, InferenceState]]
     parameters: dict[int, Parameter]
     general: dict[int, General]
     prng: PRNG

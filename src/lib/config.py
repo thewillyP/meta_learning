@@ -102,11 +102,15 @@ class AdamConfig:
 
 
 @dataclass(frozen=True)
-class LearnConfig:
+class DataConfig:
     train_percent: float  # % data devote to learn, meta 1 validation, meta 2 validation, etc
     num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT)
     num_times_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
+
+
+@dataclass(frozen=True)
+class LearnConfig:
     learner: Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig]
     optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
     hyperparameter_parametrization: Literal["identity", "softplus", "relu"]
@@ -138,4 +142,5 @@ class GodConfig:
     transition_function: dict[int, Union[NNLayer]]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
     readout_function: Union[FeedForwardConfig]
     learners: dict[int, LearnConfig]
+    data: dict[int, DataConfig]
     num_virtual_minibatches_per_turn: int

@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 import copy
 import equinox as eqx
-import optax
 
 from lib.config import *
 from lib.env import (
@@ -18,9 +17,9 @@ from lib.env import (
     Parameter,
     RNNState,
     SpecialLogs,
-    State,
     UOROState,
 )
+from lib.interface import LearnInterface
 from lib.lib_types import *
 from lib.util import (
     get_activation_fn,
@@ -86,128 +85,117 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
     return Parameter(transition_parameter=transition_parameter, readout_fn=readout_fn)
 
 
-def create_learning(
+def create_learning_parameter(
     learn_config: LearnConfig,
-    env: GodState,
-    parameter: Parameter,
-    prng: PRNG,
-) -> tuple[LearningState, LearningParameter]:
-    state = LearningState()
-    match learn_config.learner:
-        case RTRLConfig() | RFLOConfig() | UOROConfig():
-            flat_state = to_vector(env)
-            flat_param = to_vector(parameter)
-            prng1, prng = jax.random.split(prng, 2)
-            influence_tensor = jax.random.normal(prng1, (flat_state.vector.size, flat_param.vector.size))
-            state = copy.replace(state, influence_tensor=JACOBIAN(influence_tensor))
-            match learn_config.learner:
-                case UOROConfig():
-                    prng1, prng2, prng3, prng = jax.random.split(prng, 4)
-
-                    def edit_fn(leaf):
-                        if isinstance(leaf, RNN):
-                            w_rec = jax.random.normal(prng1, leaf.w_rec.shape)
-                            b_rec = jax.random.normal(prng2, leaf.b_rec.shape) if leaf.b_rec is not None else None
-                            return eqx.tree_at(lambda r: (r.w_rec, r.b_rec), leaf, (w_rec, b_rec))
-                        else:
-                            return jnp.zeros_like(leaf)
-
-                    _parameter = jax.tree.map(edit_fn, parameter, is_leaf=lambda x: isinstance(x, RNN))
-
-                    a = jax.random.normal(prng3, (flat_state.vector.size,))
-                    b = to_vector(_parameter).vector
-                    uoro = UOROState(A=a, B=b)
-                    state = copy.replace(state, uoro=uoro)
-        case BPTTConfig():
-            ...
-        case IdentityConfig():
-            ...
-
-    forward, backward = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
-
-    match learn_config.optimizer:
-        case SGDConfig(learning_rate):
-            _opt = optax.sgd(backward(learning_rate))
-            get_optimizer = lambda pr: optax.sgd(forward(pr.learning_parameter.learning_rate))
-        case SGDNormalizedConfig(learning_rate):
-            _opt = optax.chain(
-                optax.normalize_by_update_norm(scale_factor=1.0),
-                optax.sgd(backward(learning_rate)),
-            )
-            get_optimizer = lambda pr: optax.chain(
-                optax.normalize_by_update_norm(scale_factor=1.0),
-                optax.sgd(forward(pr.learning_parameter.learning_rate)),
-            )
-
-        case SGDClipConfig(learning_rate, threshold, sharpness):
-
-            def update_fn(updates, state, _):
-                grads_flat, _ = jax.flatten_util.ravel_pytree(updates)
-                grad_norm = jnp.linalg.norm(grads_flat)
-                clipped_norm = grad_norm - jax.nn.softplus(sharpness * (grad_norm - threshold)) / sharpness
-                scale = clipped_norm / (grad_norm + 1e-6)
-                updates_scaled = jax.tree.map(lambda g: g * scale, updates)
-                return updates_scaled, state
-
-            _opt = optax.chain(
-                optax.GradientTransformation(lambda _: (), update_fn), optax.sgd(backward(learning_rate))
-            )
-            get_optimizer = lambda pr: optax.chain(
-                optax.GradientTransformation(lambda _: (), update_fn),
-                optax.sgd(forward(pr.learning_parameter.learning_rate)),
-            )
-
-        case AdamConfig(learning_rate):
-            _opt = optax.adam(backward(learning_rate))
-            get_optimizer = lambda pr: optax.adam(forward(pr.learning_parameter.learning_rate))
-
-    opt_state = _opt.init(eqx.filter(parameter, eqx.is_inexact_array))
-    state = copy.replace(state, opt_state=opt_state, get_optimizer=get_optimizer)
+) -> LearningParameter:
+    _, backward = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
 
     parameter = LearningParameter()
     match learn_config.optimizer:
         case SGDConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=jnp.array(learning_rate))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
         case SGDNormalizedConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=jnp.array(learning_rate))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
         case SGDClipConfig(learning_rate, threshold, sharpness):
-            parameter = copy.replace(parameter, learning_rate=jnp.array(learning_rate))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
         case AdamConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=jnp.array(learning_rate))
+            parameter = copy.replace(parameter, learning_rate=backward(jnp.array(learning_rate)))
 
     match learn_config.learner:
         case RFLOConfig(time_constant):
             parameter = copy.replace(parameter, rflo_timeconstant=time_constant)
 
-    return state, parameter
+    return parameter
 
 
-def create_env(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> GodState:
+def create_learning_state(
+    learn_config: LearnConfig,
+    env: GodState,
+    parameter: Parameter,
+    learn_interface: LearnInterface[GodState],
+    prng: PRNG,
+) -> LearningState:
+    state = LearningState()
+    match learn_config.learner:
+        case RTRLConfig() | RFLOConfig():
+            flat_state = learn_interface.get_state(env)
+            flat_param = to_vector(parameter)
+            prng1, prng = jax.random.split(prng, 2)
+            influence_tensor = jax.random.normal(prng1, (flat_state.size, flat_param.vector.size))
+            state = copy.replace(state, influence_tensor=JACOBIAN(influence_tensor))
+        case UOROConfig():
+            flat_state = learn_interface.get_state(env)
+            prng1, prng2, prng = jax.random.split(prng, 3)
+
+            # Step 1: Get the tree structure and leaves
+            leaves = jax.tree_util.tree_leaves(parameter, is_leaf=lambda x: isinstance(x, CustomSequential))
+            treedef = jax.tree_util.tree_structure(parameter, is_leaf=lambda x: isinstance(x, CustomSequential))
+
+            # Step 2: Split keys for each leaf
+            keys = jax.random.split(prng1, len(leaves))
+            keys_tree = jax.tree_util.tree_unflatten(treedef, keys)
+
+            # Step 3: Function to edit each leaf
+            def edit_fn(leaf, key):
+                if isinstance(leaf, CustomSequential):
+                    return jax.tree.map(lambda x: jnp.zeros_like(x) if eqx.is_array(x) else x, leaf)
+                else:
+                    return jax.random.normal(key, leaf.shape) if eqx.is_array(leaf) else leaf
+
+            _parameter = jax.tree.map(edit_fn, parameter, keys_tree, is_leaf=lambda x: isinstance(x, CustomSequential))
+
+            a = jax.random.normal(prng2, (flat_state.size,))
+            b = to_vector(_parameter).vector
+            uoro = UOROState(A=a, B=b)
+            state = copy.replace(state, uoro=uoro)
+        case BPTTConfig():
+            ...
+        case IdentityConfig():
+            ...
+
+    _opt = learn_interface.get_optimizer(env)
+    opt_state = _opt.init(eqx.filter(parameter, eqx.is_inexact_array))
+    state = copy.replace(state, opt_state=opt_state)
+
+    return state
+
+
+def create_env(
+    config: GodConfig, n_in_shape: tuple[int, ...], learn_interfaces: dict[int, LearnInterface[GodState]], prng: PRNG
+) -> GodState:
     prng1, prng2, prng = jax.random.split(prng, 3)
     env = GodState(
-        states={},
+        learning_states={},
+        inference_states={},
         parameters={},
-        logs={},
+        general={},
         prng=prng1,
         start_epoch=0,
     )
-    parameter = create_inference_parameter(config, n_in_shape, prng2)
+    general: dict[int, General] = {}
 
-    for _, learn_config in sorted(config.learners.items()):
-        prng1, prng2, prng = jax.random.split(prng, 3)
-
-        # Create inference state
+    # Create inference states
+    for _, data_config in sorted(config.data.items()):
+        prng1, prng = jax.random.split(prng, 2)
         load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
-        vl_prngs = jax.random.split(prng1, learn_config.num_examples_in_minibatch)
-        transition_state_vl = load_state(config, n_in_shape, vl_prngs)
+        vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
+        transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
+        env = copy.replace(
+            env, inference_states={**env.inference_states, len(env.inference_states): transition_state_vl}
+        )
 
-        # Add inference state to env
-        env = copy.replace(env, states={**env.states, len(env.states): State(inference_state=transition_state_vl)})
+    parameter = create_inference_parameter(config, n_in_shape, prng2)
+    env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
+
+    for i, (_, learn_config) in enumerate(sorted(config.learners.items())):
+        prng1, prng = jax.random.split(prng, 2)
 
         # Create learning state and new parameter
         prev_parameter = parameter
-        learning_state_vl, _parameter = create_learning(learn_config, env, prev_parameter, prng2)
-        parameter = Parameter(learning_parameter=_parameter)
+        learning_parameter = create_learning_parameter(learn_config)
+        parameter = Parameter(learning_parameter=learning_parameter)
+        env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
+        learning_state_vl = create_learning_state(learn_config, env, prev_parameter, learn_interfaces[i], prng1)
 
         if learn_config.track_logs:
             logs = Logs(gradient=jnp.zeros_like(to_vector(prev_parameter).vector))
@@ -228,20 +216,19 @@ def create_env(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> Go
         else:
             special_logs = None
 
-        general = General(current_virtual_minibatch=0, logs=logs, special_logs=special_logs)
-
-        # Add final state and prev parameter
-        env = copy.replace(
-            env,
-            states={
-                **env.states,
-                len(env.states): State(inference_state=transition_state_vl, learning_state=learning_state_vl),
-            },
-            parameters={**env.parameters, len(env.parameters): prev_parameter},
-            general={**env.logs, len(env.logs): general},
+        general[len(env.general)] = General(
+            current_virtual_minibatch=0,
+            logs=logs,
+            special_logs=special_logs,
         )
 
-    # Add final parameter
-    env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
+        # Add final state
+        env = copy.replace(
+            env,
+            learning_states={
+                **env.learning_states,
+                len(env.learning_states): learning_state_vl,
+            },
+        )
 
     return env

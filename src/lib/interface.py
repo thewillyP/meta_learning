@@ -14,8 +14,6 @@ class InferenceInterface[ENV]:
     get_rnn_state: Callable[[ENV], RNNState]
     put_rnn_state: Callable[[ENV, RNNState], ENV]
     get_rnn_param: Callable[[ENV], RNN]
-    put_logs: Callable[[ENV, Logs], ENV]
-    put_special_logs: Callable[[ENV, SpecialLogs], ENV]
     get_prng: Callable[[ENV], tuple[PRNG, ENV]]
 
 

@@ -62,7 +62,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
                 parameters=env.parameters | {i: to_vector(env.parameters[i]).to_param(param)},
             ),
             get_sgd_param=lambda env, i=j: env.parameters[i + 1].learning_parameter.learning_rate,
-            get_optimizer=lambda env, i=j: get_optimizer(learn_config)(env.parameters[i + 1]),
+            get_optimizer=lambda env, i=j, _lc=learn_config: get_optimizer(_lc)(env.parameters[i + 1]),
             get_opt_state=lambda env, i=j: env.learning_states[i].opt_state,
             put_opt_state=lambda env, opt_state, i=j: copy.replace(
                 env,

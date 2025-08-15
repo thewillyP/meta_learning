@@ -165,7 +165,7 @@ def runApp() -> None:
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
                 num_virtual_minibatches = X_vl.shape[1]
 
-                def get_dataloader(rng: PRNG):
+                def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
                         X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
                     )
@@ -202,7 +202,7 @@ def runApp() -> None:
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
                 num_virtual_minibatches = X_vl.shape[1]
 
-                def get_dataloader(rng: PRNG):
+                def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
                         X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
                     )

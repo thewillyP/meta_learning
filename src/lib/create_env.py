@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import copy
 import equinox as eqx
+from dataclasses import replace
 
 from lib.config import *
 from lib.env import (
@@ -96,17 +97,17 @@ def create_learning_parameter(
     parameter = LearningParameter()
     match learn_config.optimizer:
         case SGDConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
         case SGDNormalizedConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
         case SGDClipConfig(learning_rate, threshold, sharpness):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
         case AdamConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
 
     match learn_config.learner:
         case RFLOConfig(time_constant):
-            parameter = copy.replace(parameter, rflo_timeconstant=time_constant)
+            parameter = replace(parameter, rflo_timeconstant=time_constant)
 
     return parameter
 
@@ -125,7 +126,7 @@ def create_learning_state(
             flat_param = to_vector(parameter)
             prng1, prng = jax.random.split(prng, 2)
             influence_tensor = jax.random.normal(prng1, (flat_state.size, flat_param.vector.size))
-            state = copy.replace(state, influence_tensor=JACOBIAN(influence_tensor))
+            state = replace(state, influence_tensor=JACOBIAN(influence_tensor))
         case UOROConfig():
             flat_state = learn_interface.get_state(env)
             prng1, prng2, prng = jax.random.split(prng, 3)
@@ -150,7 +151,7 @@ def create_learning_state(
             a = jax.random.normal(prng2, (flat_state.size,))
             b = to_vector(_parameter).vector
             uoro = UOROState(A=a, B=b)
-            state = copy.replace(state, uoro=uoro)
+            state = replace(state, uoro=uoro)
         case BPTTConfig():
             ...
         case IdentityConfig():
@@ -158,7 +159,7 @@ def create_learning_state(
 
     _opt = learn_interface.get_optimizer(env)
     opt_state = _opt.init(eqx.filter(parameter, eqx.is_inexact_array))
-    state = copy.replace(state, opt_state=opt_state)
+    state = replace(state, opt_state=opt_state)
 
     return state
 
@@ -183,12 +184,10 @@ def create_env(
         load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
         vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
         transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        env = copy.replace(
-            env, inference_states={**env.inference_states, len(env.inference_states): transition_state_vl}
-        )
+        env = replace(env, inference_states={**env.inference_states, len(env.inference_states): transition_state_vl})
 
     parameter = create_inference_parameter(config, n_in_shape, prng2)
-    env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
+    env = replace(env, parameters={**env.parameters, len(env.parameters): parameter})
 
     for i, (_, learn_config) in enumerate(sorted(config.learners.items())):
         prng1, prng = jax.random.split(prng, 2)
@@ -197,7 +196,7 @@ def create_env(
         prev_parameter = parameter
         learning_parameter = create_learning_parameter(learn_config)
         parameter = Parameter(learning_parameter=learning_parameter)
-        env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
+        env = replace(env, parameters={**env.parameters, len(env.parameters): parameter})
         learning_state_vl = create_learning_state(learn_config, env, prev_parameter, learn_interfaces[i], prng1)
 
         if learn_config.track_logs:
@@ -226,7 +225,7 @@ def create_env(
         )
 
         # Add final state
-        env = copy.replace(
+        env = replace(
             env,
             learning_states={
                 **env.learning_states,

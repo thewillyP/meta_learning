@@ -62,7 +62,7 @@ def runApp() -> None:
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=True,
+        clearml_run=False,
         data_root_dir="/tmp",
         dataset=MnistConfig(n_in=28),
         num_base_epochs=1,
@@ -129,7 +129,7 @@ def runApp() -> None:
 
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
-    # task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
+    task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
 
     if not config.clearml_run:
         return
@@ -239,7 +239,6 @@ def runApp() -> None:
     # 4. resetting?
     # 5. data loading?
     # 6. combining vl data with prev data when building meta learning function?
-    # 7. need to specify what learner to use for each validation inference as well
 
 
 # def create_learner(

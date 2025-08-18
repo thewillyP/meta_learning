@@ -11,17 +11,12 @@ import jax
 import jax.numpy as jnp
 import torch
 import numpy as np
-import copy
 import torchvision
-import equinox as eqx
 
 from lib.config import *
 from lib.create_env import create_env
 from lib.create_interface import create_learn_interfaces, create_transition_interfaces
 from lib.datasets import flatten_and_cast, generate_add_task_dataset, standard_dataloader, target_transform
-from lib.env import (
-    GodState,
-)
 from lib.lib_types import *
 from lib.util import (
     create_fractional_list,

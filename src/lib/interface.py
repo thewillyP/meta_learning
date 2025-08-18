@@ -9,12 +9,19 @@ from lib.lib_types import JACOBIAN, PRNG
 
 
 @dataclass(frozen=True)
+class ClassificationInterface[DATA]:
+    get_input: Callable[[DATA], jax.Array]
+    get_target: Callable[[DATA], jax.Array]
+
+
+@dataclass(frozen=True)
 class InferenceInterface[ENV]:
     get_readout_param: Callable[[ENV], CustomSequential]
     get_rnn_state: Callable[[ENV], RNNState]
     put_rnn_state: Callable[[ENV, RNNState], ENV]
     get_rnn_param: Callable[[ENV], RNN]
     get_prng: Callable[[ENV], tuple[PRNG, ENV]]
+    get_rflo_timeconstant: Callable[[ENV], float]
 
 
 @dataclass(frozen=True)
@@ -45,6 +52,7 @@ def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
         put_rnn_state=lambda env, _: env,
         get_rnn_param=lambda env: None,
         get_prng=lambda env: (None, env),
+        get_rflo_timeconstant=lambda env: None,
     )
 
 

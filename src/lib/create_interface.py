@@ -2,7 +2,7 @@ import copy
 from itertools import islice
 import jax
 
-from lib.config import GodConfig
+from lib.config import GodConfig, RFLOConfig
 from lib.env import GodState
 from lib.interface import (
     InferenceInterface,
@@ -130,12 +130,18 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
 def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, InferenceInterface]]:
     default_interpreter: InferenceInterface[GodState] = get_default_inference_interface()
     interpreters: dict[int, dict[int, InferenceInterface[GodState]]] = {}
+    match config.learners[min(config.learners.keys())].learner:
+        case RFLOConfig(_time_constant):
+            time_constant = _time_constant
+        case _:
+            time_constant = 1.0
 
     for j, _ in enumerate(sorted(config.data.items())):
         _interpreter = copy.replace(
             default_interpreter,
             get_readout_param=lambda env: env.parameters[0].readout_fn,
             get_prng=lambda env: get_prng(env),
+            get_rflo_timeconstant=lambda env: time_constant,
         )
         for k, _ in sorted(config.transition_function.items()):
             interpreter = copy.replace(

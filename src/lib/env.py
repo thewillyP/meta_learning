@@ -34,7 +34,7 @@ class CustomSequential(eqx.Module):
 
         self.model = eqx.nn.Sequential(layers)
 
-    def __call__(self, x):
+    def __call__(self, x: jax.Array) -> jax.Array:
         return self.model(x)
 
 

@@ -45,3 +45,14 @@
 I get to choose what my inference functions gradient gets computed wrt. 
 for level 1, to the first interface.state
 for level 2, to the second interface.state
+
+
+
+Regarding batch gradients, what I actually want is to 
+grad . sum . vmap . f
+instead of 
+sum . vmap . grad . f 
+
+because
+1. the size of the influence tensor is invariant actually. 
+2. the former is computationally more efficient because were computing the grad of a scalar once instead of in parallel and then summing

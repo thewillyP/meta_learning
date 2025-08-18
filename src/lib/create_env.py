@@ -119,15 +119,14 @@ def create_learning_state(
     prng: PRNG,
 ) -> LearningState:
     state = LearningState()
+    flat_state = learn_interface.get_state(env)
+    flat_param = to_vector(parameter)
     match learn_config.learner:
         case RTRLConfig() | RFLOConfig():
-            flat_state = learn_interface.get_state(env)
-            flat_param = to_vector(parameter)
             prng1, prng = jax.random.split(prng, 2)
             influence_tensor = jax.random.normal(prng1, (flat_state.size, flat_param.vector.size))
             state = copy.replace(state, influence_tensor=JACOBIAN(influence_tensor))
         case UOROConfig():
-            flat_state = learn_interface.get_state(env)
             prng1, prng2, prng = jax.random.split(prng, 3)
 
             # Step 1: Get the tree structure and leaves
@@ -157,7 +156,7 @@ def create_learning_state(
             ...
 
     _opt = learn_interface.get_optimizer(env)
-    opt_state = _opt.init(eqx.filter(parameter, eqx.is_inexact_array))
+    opt_state = _opt.init(flat_param.vector)
     state = copy.replace(state, opt_state=opt_state)
 
     return state

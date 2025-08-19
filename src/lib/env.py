@@ -91,5 +91,5 @@ class GodState(eqx.Module):
     inference_states: dict[int, dict[int, InferenceState]]
     parameters: dict[int, Parameter]
     general: dict[int, General]
-    prng: PRNG
+    prng: dict[int, PRNG]
     start_epoch: int

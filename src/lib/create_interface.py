@@ -14,9 +14,9 @@ from lib.util import to_vector
 from lib.util_lib import get_optimizer
 
 
-def get_prng(env: GodState) -> tuple[jax.Array, GodState]:
-    prng, new_prng = jax.random.split(env.prng)
-    return prng, copy.replace(env, prng=new_prng)
+def get_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
+    prng, new_prng = jax.random.split(env.prng[i])
+    return prng, copy.replace(env, prng=env.prng | {i: new_prng})
 
 
 def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodState]]:
@@ -120,7 +120,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
                     )
                 },
             ),
-            get_prng=lambda env: get_prng(env),
+            get_prng=lambda env, i=j: get_prng(env, i),
         )
         interpreters[j] = interpreter
 
@@ -140,7 +140,7 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
         _interpreter = copy.replace(
             default_interpreter,
             get_readout_param=lambda env: env.parameters[0].readout_fn,
-            get_prng=lambda env: get_prng(env),
+            get_prng=lambda env, i=j: get_prng(env, i),
             get_rflo_timeconstant=lambda env: time_constant,
         )
         for k, _ in sorted(config.transition_function.items()):

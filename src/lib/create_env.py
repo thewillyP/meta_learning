@@ -171,7 +171,10 @@ def create_env(
         inference_states={},
         parameters={},
         general={},
-        prng=prng1,
+        prng={
+            i: jax.random.split(key, v.num_examples_in_minibatch)
+            for i, (v, key) in enumerate(zip(config.data.values(), jax.random.split(prng1, len(config.data))))
+        },
         start_epoch=0,
     )
     general: dict[int, General] = {}

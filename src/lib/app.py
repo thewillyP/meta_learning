@@ -14,6 +14,7 @@ import numpy as np
 import torchvision
 
 from lib.config import *
+from lib.create_axes import create_axes
 from lib.create_env import create_env
 from lib.create_interface import create_learn_interfaces, create_transition_interfaces
 from lib.datasets import flatten_and_cast, generate_add_task_dataset, standard_dataloader, target_transform
@@ -226,8 +227,11 @@ def runApp() -> None:
     learn_interfaces = create_learn_interfaces(config)
     inference_interface = create_transition_interfaces(config)
     env = create_env(config, n_in_shape, learn_interfaces, env_prng)
+    axes = create_axes(env, inference_interface)
     # pretty print env
     print(env)
+    for fn in axes.values():
+        print(fn(env))
     # 1. create inference function dict[int, Callable] for each level
     # 2. create meta learning function that hierarchically takes dict[int, Callable]
     # 3. inrepreter config to get dict[int, Callable] that will be passed into the folds above

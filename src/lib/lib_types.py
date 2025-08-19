@@ -2,6 +2,7 @@ from typing import NewType
 from dataclasses import dataclass
 import jax
 from jaxtyping import PyTree
+import equinox as eqx
 
 PRNG = NewType("PRNG", jax.Array)
 FractionalList = NewType("FractionalList", list[float])
@@ -17,13 +18,11 @@ REC_PARAM = NewType("REC_PARAM", jax.Array)  # is a vector
 LOSS = NewType("LOSS", jax.Array)  # is a scalar
 
 
-@dataclass(frozen=True)
-class traverse[DATA]:
+class traverse[DATA](eqx.Module):
     d: DATA
 
 
-@dataclass(frozen=True)
-class batched[DATA]:
+class batched[DATA](eqx.Module):
     b: DATA
 
 

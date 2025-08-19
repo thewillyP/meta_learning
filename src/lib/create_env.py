@@ -30,10 +30,10 @@ from lib.util import (
 
 def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> dict[int, InferenceState]:
     transition_state: dict[int, InferenceState] = {}
+    n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
             case NNLayer(n_h, activation_fn, use_bias):
-                n_in, *_ = n_in_shape
                 prng1, prng = jax.random.split(prng, 2)
                 activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
                 transition_state[i] = InferenceState(
@@ -44,6 +44,7 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                         activation_fn=activation_fn,
                     )
                 )
+                n_in = n_h  # Update n_in for the next layer
             case _:
                 raise ValueError("Unsupported transition function")
     return transition_state
@@ -52,15 +53,15 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
 def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> Parameter:
     transition_parameter: dict[int, InferenceParameter] = {}
     n_in_size = 0
+    n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
             case NNLayer(n_h, activation_fn, use_bias):
-                n_in, *_ = n_in_shape
                 prgn1, prng2, prng = jax.random.split(prng, 3)
                 W_in = jax.random.normal(prgn1, (n_h, n_in)) * jnp.sqrt(1 / n_in)
                 W_rec = jnp.linalg.qr(jax.random.normal(prng2, (n_h, n_h)))[0]
                 w_rec = jnp.hstack([W_rec, W_in])
-                b_rec: jax.Array | None = jnp.zeros((n_h, 1)) if use_bias else None
+                b_rec: jax.Array | None = jnp.zeros((n_h,)) if use_bias else None
                 transition_parameter[i] = InferenceParameter(
                     rnn=RNN(
                         w_rec=w_rec,
@@ -68,6 +69,7 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
                     )
                 )
                 n_in_size += n_h
+                n_in = n_h  # Update n_in for the next layer
             case _:
                 raise ValueError("Unsupported transition function")
 

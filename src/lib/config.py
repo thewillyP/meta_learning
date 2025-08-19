@@ -146,3 +146,4 @@ class GodConfig:
     data: dict[int, DataConfig]
     num_virtual_minibatches_per_turn: int  # for data loading purposes
     ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
+    readout_uses_input_data: bool

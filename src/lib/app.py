@@ -1,4 +1,4 @@
-from typing import Literal, Union
+from typing import Union
 import clearml
 import boto3
 import random
@@ -18,6 +18,8 @@ from lib.create_axes import create_axes
 from lib.create_env import create_env
 from lib.create_interface import create_learn_interfaces, create_transition_interfaces
 from lib.datasets import flatten_and_cast, generate_add_task_dataset, standard_dataloader, target_transform
+from lib.inference import create_inferences
+from lib.interface import ClassificationInterface
 from lib.lib_types import *
 from lib.util import (
     create_fractional_list,
@@ -116,6 +118,7 @@ def runApp() -> None:
         },
         num_virtual_minibatches_per_turn=10,
         ignore_validation_inference_recurrence=True,
+        readout_uses_input_data=False,
     )
 
     converter = Converter()
@@ -225,13 +228,27 @@ def runApp() -> None:
 
     learn_interfaces = create_learn_interfaces(config)
     inference_interface = create_transition_interfaces(config)
+    data_interface = ClassificationInterface[tuple[jax.Array, jax.Array]](
+        get_input=lambda data: data[0],
+        get_target=lambda data: data[1],
+    )
     env = create_env(config, n_in_shape, learn_interfaces, env_prng)
-    axes = create_axes(inference_interface)
+    axes = create_axes(env, inference_interface)
     # pretty print env
     print(env)
-    for fn in axes.values():
+    for _env in axes.values():
         print(f"Function for axes")
-        print(fn(env))
+        print(_env)
+
+    inferences = create_inferences(config, inference_interface, data_interface, axes)
+    inference = inferences[0]
+    # make test data
+    x = jnp.ones((100, 5, n_in_shape[0]))
+    y = jnp.ones((100, 5, 10))
+    env, out = inference(env, batched(traverse((x, y))))
+    print("Inference")
+    print(out)
+    print(env)
     # 1. create inference function dict[int, Callable] for each level
     # 2. create meta learning function that hierarchically takes dict[int, Callable]
     # 3. inrepreter config to get dict[int, Callable] that will be passed into the folds above

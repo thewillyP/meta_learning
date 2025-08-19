@@ -5,7 +5,7 @@ import optax
 
 from lib.config import LearnConfig
 from lib.env import RNN, CustomSequential, Logs, RNNState, SpecialLogs, UOROState
-from lib.lib_types import JACOBIAN, PRNG
+from lib.lib_types import JACOBIAN, PRNG, batched
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class InferenceInterface[ENV]:
     put_rnn_state: Callable[[ENV, RNNState], ENV]
     get_rnn_param: Callable[[ENV], RNN]
     get_prng: Callable[[ENV], tuple[PRNG, ENV]]
+    _get_prng: Callable[[ENV], batched[PRNG]]
     get_rflo_timeconstant: Callable[[ENV], float]
 
 
@@ -52,6 +53,7 @@ def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
         put_rnn_state=lambda env, _: env,
         get_rnn_param=lambda env: None,
         get_prng=lambda env: (None, env),
+        _get_prng=lambda env: None,
         get_rflo_timeconstant=lambda env: None,
     )
 

@@ -10,13 +10,20 @@ from lib.interface import (
     get_default_inference_interface,
     get_default_learn_interface,
 )
+from lib.lib_types import batched
 from lib.util import to_vector
 from lib.util_lib import get_optimizer
 
 
-def get_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
-    prng, new_prng = jax.random.split(env.prng[i])
-    return prng, copy.replace(env, prng=env.prng | {i: new_prng})
+def get_inference_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
+    """Assumes you will be operating in vmapped mode so no need to deal with as batched mode"""
+    prng, new_prng = jax.random.split(env.prng[i].b)
+    return prng, copy.replace(env, prng=env.prng | {i: batched(new_prng)})
+
+
+def get_learning_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
+    prng, new_prng = jax.random.split(env.prng_learning[i])
+    return prng, copy.replace(env, prng_learning=env.prng_learning | {i: new_prng})
 
 
 def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodState]]:
@@ -120,7 +127,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
                     )
                 },
             ),
-            get_prng=lambda env, i=j: get_prng(env, i),
+            get_prng=lambda env, i=j: get_learning_prng(env, i),
         )
         interpreters[j] = interpreter
 
@@ -140,7 +147,8 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
         _interpreter = copy.replace(
             default_interpreter,
             get_readout_param=lambda env: env.parameters[0].readout_fn,
-            get_prng=lambda env, i=j: get_prng(env, i),
+            get_prng=lambda env, i=j: get_inference_prng(env, i),
+            _get_prng=lambda env, i=j: env.prng[i],
             get_rflo_timeconstant=lambda env: time_constant,
         )
         for k, _ in sorted(config.transition_function.items()):

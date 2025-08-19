@@ -165,16 +165,17 @@ def create_learning_state(
 def create_env(
     config: GodConfig, n_in_shape: tuple[int, ...], learn_interfaces: dict[int, LearnInterface[GodState]], prng: PRNG
 ) -> GodState:
-    prng1, prng2, prng = jax.random.split(prng, 3)
+    prng1, prng2, prng3, prng = jax.random.split(prng, 4)
     env = GodState(
         learning_states={},
         inference_states={},
         parameters={},
         general={},
         prng={
-            i: jax.random.split(key, v.num_examples_in_minibatch)
+            i: batched(jax.random.split(key, v.num_examples_in_minibatch))
             for i, (v, key) in enumerate(zip(config.data.values(), jax.random.split(prng1, len(config.data))))
         },
+        prng_learning={i: key for i, key in enumerate(jax.random.split(prng2, len(config.learners)))},
         start_epoch=0,
     )
     general: dict[int, General] = {}
@@ -189,7 +190,7 @@ def create_env(
             env, inference_states={**env.inference_states, len(env.inference_states): transition_state_vl}
         )
 
-    parameter = create_inference_parameter(config, n_in_shape, prng2)
+    parameter = create_inference_parameter(config, n_in_shape, prng3)
     env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
 
     for i, (_, learn_config) in enumerate(sorted(config.learners.items())):

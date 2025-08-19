@@ -217,7 +217,6 @@ def runApp() -> None:
         case _:
             raise ValueError("Invalid dataset")
 
-    print(virtual_minibatches)
     if config.ignore_validation_inference_recurrence:
         if not all(virtual_minibatches[k] == 1 for i, k in enumerate(sorted(virtual_minibatches.keys())) if i > 0):
             raise ValueError(
@@ -227,10 +226,11 @@ def runApp() -> None:
     learn_interfaces = create_learn_interfaces(config)
     inference_interface = create_transition_interfaces(config)
     env = create_env(config, n_in_shape, learn_interfaces, env_prng)
-    axes = create_axes(env, inference_interface)
+    axes = create_axes(inference_interface)
     # pretty print env
     print(env)
     for fn in axes.values():
+        print(f"Function for axes")
         print(fn(env))
     # 1. create inference function dict[int, Callable] for each level
     # 2. create meta learning function that hierarchically takes dict[int, Callable]

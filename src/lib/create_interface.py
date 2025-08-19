@@ -134,7 +134,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
     return interpreters
 
 
-def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, InferenceInterface]]:
+def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, InferenceInterface[GodState]]]:
     default_interpreter: InferenceInterface[GodState] = get_default_inference_interface()
     interpreters: dict[int, dict[int, InferenceInterface[GodState]]] = {}
     match config.learners[min(config.learners.keys())].learner:

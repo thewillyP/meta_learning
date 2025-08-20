@@ -1,9 +1,26 @@
 import jax
 import jax.numpy as jnp
 from typing import Iterator
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, IterableDataset
 
 from lib.lib_types import PRNG
+
+
+class IteratorWrapper[T](IterableDataset[T]):
+    def __init__(self, iterator: Iterator[T]):
+        self.iterator = iterator
+
+    def __iter__(self):
+        for item in self.iterator:
+            yield item
+
+
+def create_multi_epoch_dataloader[T](
+    iter: Iterator[T], num_minibatches_in_epoch: int
+) -> DataLoader[tuple[jax.Array, jax.Array]]:
+    """Returns a PyTorch DataLoader that sequentially loads virtual minibatches for specific examples"""
+    dataset = IteratorWrapper[T](iter)
+    return DataLoader(dataset, batch_size=num_minibatches_in_epoch, collate_fn=jax_collate_fn(jnp.stack))
 
 
 class VirtualMinibatchDataset(Dataset[tuple[jax.Array, jax.Array]]):
@@ -30,12 +47,24 @@ def create_example_indices_generator(num_examples: int, batch_size: int, rng_key
         yield shuffled_indices[start_idx:end_idx]
 
 
+def jax_collate_fn(f):
+    def _collate(batch):
+        return jax.tree.map(lambda *xs: f(xs), *batch)
+
+    return _collate
+
+
 def create_sequential_virtual_dataloader(
     X_data: jax.Array, Y_data: jax.Array, example_indices, num_virtual_minibatches: int
 ) -> DataLoader[tuple[jax.Array, jax.Array]]:
     """Returns a PyTorch DataLoader that sequentially loads virtual minibatches for specific examples"""
     dataset = VirtualMinibatchDataset(X_data, Y_data, example_indices)
-    return DataLoader(dataset, batch_size=num_virtual_minibatches, shuffle=False)
+    return DataLoader(
+        dataset,
+        batch_size=num_virtual_minibatches,
+        shuffle=False,
+        collate_fn=jax_collate_fn(lambda x: jnp.stack(x).swapaxes(0, 1)),
+    )
 
 
 def standard_dataloader(

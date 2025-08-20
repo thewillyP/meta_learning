@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import math
 import equinox as eqx
 import optax
-from lib.lib_types import LOSS, FractionalList
+from lib.lib_types import LOSS, PRNG, FractionalList
 
 
 def create_fractional_list(percentages: list[float]) -> FractionalList | None:
@@ -154,3 +154,10 @@ def hyperparameter_reparametrization(
             raise ValueError("Invalid hyperparameter reparametrization")
 
     return reparam_fn, reparam_inverse
+
+
+def infinite_keys(key: PRNG):
+    """Generate infinite stream of JAX keys."""
+    while True:
+        key, subkey = jax.random.split(key)
+        yield subkey

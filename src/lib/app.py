@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Callable, Iterator, Union
 import clearml
 import boto3
 import random
@@ -12,17 +12,26 @@ import jax.numpy as jnp
 import torch
 import numpy as np
 import torchvision
+import time
+from toolz import take, mapcat
 
 from lib.config import *
 from lib.create_axes import create_axes
 from lib.create_env import create_env
 from lib.create_interface import create_learn_interfaces, create_transition_interfaces
-from lib.datasets import flatten_and_cast, generate_add_task_dataset, standard_dataloader, target_transform
+from lib.datasets import (
+    create_multi_epoch_dataloader,
+    flatten_and_cast,
+    generate_add_task_dataset,
+    standard_dataloader,
+    target_transform,
+)
 from lib.inference import create_inferences
 from lib.interface import ClassificationInterface
 from lib.lib_types import *
 from lib.util import (
     create_fractional_list,
+    infinite_keys,
     reshape_timeseries,
     subset_n,
 )
@@ -60,7 +69,7 @@ def runApp() -> None:
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/tmp",
         dataset=MnistConfig(n_in=28),
         num_base_epochs=1,
@@ -119,6 +128,7 @@ def runApp() -> None:
         num_virtual_minibatches_per_turn=10,
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
+        num_minibatches_in_epoch=100,
     )
 
     converter = Converter()
@@ -137,7 +147,7 @@ def runApp() -> None:
     data_prng = PRNG(jax.random.key(config.seed.data_seed))
     env_prng = PRNG(jax.random.key(config.seed.parameter_seed))
     test_prng = PRNG(jax.random.key(config.seed.test_seed))
-    dataset_gen_prng, torch_prng = jax.random.split(data_prng, 2)
+    dataloader_prng, dataset_gen_prng, torch_prng = jax.random.split(data_prng, 3)
     torch_seed = jax.random.randint(torch_prng, shape=(), minval=0, maxval=1e6, dtype=jnp.uint32)
     torch_seed = int(torch_seed)
     random.seed(torch_seed)
@@ -160,22 +170,22 @@ def runApp() -> None:
             dataset_te = generate_add_task_dataset(nTest, t1, t2, tau_task, test_prng)
             n_in_shape = dataset_te[0].shape[1:]
 
-            datasets = {}
+            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
-            for i, data_config in config.data.items():
+            for idx, (i, data_config) in enumerate(sorted(config.data.items())):
                 data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
                 X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
                 n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[i] = X_vl.shape[1]
+                virtual_minibatches[idx] = X_vl.shape[1]
 
                 def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
                         X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
                     )
 
-                datasets[i] = get_dataloader
+                datasets[idx] = get_dataloader
                 # 1. check when to reset after consume concrete example
                 # 2. check when is last padded minibatch
 
@@ -200,22 +210,22 @@ def runApp() -> None:
             split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
             val_indices = jnp.split(perm, split_indices)
 
-            datasets = {}
+            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
-            for (i, data_config), val_idx in zip(config.data.items(), val_indices):
+            for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
                 X_vl = xs[val_idx]
                 Y_vl = ys[val_idx]
                 n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[i] = X_vl.shape[1]
+                virtual_minibatches[idx] = X_vl.shape[1]
 
                 def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
                         X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
                     )
 
-                datasets[i] = get_dataloader
+                datasets[idx] = get_dataloader
 
         case _:
             raise ValueError("Invalid dataset")
@@ -225,6 +235,19 @@ def runApp() -> None:
             raise ValueError(
                 "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
             )
+
+    subkeys = jax.random.split(dataloader_prng, len(datasets))
+    first_iterator = datasets[0](subkeys[0])
+    cycling_iterators = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(1, len(datasets))]
+    first_iterator = create_multi_epoch_dataloader(first_iterator, config.num_minibatches_in_epoch)
+    cycling_iterators = [create_multi_epoch_dataloader(it, config.num_minibatches_in_epoch) for it in cycling_iterators]
+    the_dataloader = zip(first_iterator, *cycling_iterators)
+
+    for (x1, y1), (x2, y2) in take(3, the_dataloader):
+        print(f"First dataset: {x1.shape}, {y1.shape}")
+        print(f"Second dataset: {x2.shape}, {y2.shape}")
+
+    return
 
     learn_interfaces = create_learn_interfaces(config)
     inference_interface = create_transition_interfaces(config)
@@ -241,20 +264,223 @@ def runApp() -> None:
         print(_env)
 
     inferences = create_inferences(config, inference_interface, data_interface, axes)
-    inference = inferences[0]
     # make test data
     x = jnp.ones((100, 5, n_in_shape[0]))
     y = jnp.ones((100, 5, 10))
-    env, out = inference(env, batched(traverse((x, y))))
-    print("Inference")
-    print(out)
-    print(env)
-    # 1. create inference function dict[int, Callable] for each level
-    # 2. create meta learning function that hierarchically takes dict[int, Callable]
-    # 3. inrepreter config to get dict[int, Callable] that will be passed into the folds above
-    # 4. resetting?
-    # 5. data loading?
-    # 6. combining vl data with prev data when building meta learning function?
+
+    arr, static = eqx.partition(env, eqx.is_array)
+
+    def make_step(carry, data):
+        model = eqx.combine(carry, static)
+        update_model, out = inferences[0](model, data)
+        carry, _ = eqx.partition(update_model, eqx.is_array)
+        return carry, out
+
+    # Speed comparison with PyTorch RNN
+    print("\n" + "=" * 50)
+    print("SPEED COMPARISON: JAX vs PyTorch RNN")
+    print("=" * 50)
+
+    batch_size, seq_len, input_size = x.shape
+    hidden_size = 32  # From your config
+    output_size = 10
+
+    # Create PyTorch RNN model with 2 layers
+    class PyTorchRNN(torch.nn.Module):
+        def __init__(self, input_size, hidden_size, output_size):
+            super().__init__()
+            self.rnn = torch.nn.RNN(input_size, hidden_size, num_layers=2, batch_first=True)
+            self.linear = torch.nn.Linear(hidden_size, output_size)
+
+        def forward(self, x):
+            out, _ = self.rnn(x)
+            return self.linear(out)
+
+    pytorch_model = PyTorchRNN(input_size, hidden_size, output_size)
+    pytorch_model.eval()
+
+    # Convert JAX data to PyTorch tensors
+    x_torch = torch.from_numpy(np.array(x)).float()
+
+    # Create data for scan (1000 copies of the same data)
+    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 10000, axis=0), batched(traverse((x, y))))
+
+    # Create and compile the scan function
+    jax_scan_fn = (
+        eqx.filter_jit(lambda data, init_model: jax.lax.scan(make_step, init_model, data), donate="all-except-first")
+        .lower(scan_data, arr)
+        .compile()
+    )
+
+    # Create PyTorch batch function for fair comparison
+    def pytorch_batch_forward(model, x_batch):
+        outputs = []
+        for x in x_batch:
+            with torch.no_grad():
+                out = model(x)
+                outputs.append(out)
+        return torch.stack(outputs)
+
+    # Create batch data for PyTorch
+    x_torch_batch = x_torch.unsqueeze(0).repeat(10000, 1, 1, 1)
+
+    # Warmup runs
+    print("Warming up...")
+    for _ in range(5):
+        arr, all_outputs = jax_scan_fn(scan_data, arr)
+        jax.block_until_ready(all_outputs)
+
+        pytorch_batch_outputs = pytorch_batch_forward(pytorch_model, x_torch_batch)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+    # JAX timing with scan
+    print("Timing JAX scan inference...")
+    jax_times = []
+    for _ in range(5):
+        start_time = time.time()
+        arr, all_outputs = jax_scan_fn(scan_data, arr)
+        jax.block_until_ready(all_outputs)
+        end_time = time.time()
+        jax_times.append(end_time - start_time)
+
+    # PyTorch timing with batch
+    print("Timing PyTorch batch inference...")
+    pytorch_times = []
+    for _ in range(5):
+        start_time = time.time()
+        pytorch_batch_outputs = pytorch_batch_forward(pytorch_model, x_torch_batch)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        end_time = time.time()
+        pytorch_times.append(end_time - start_time)
+
+    # Results
+    jax_mean = np.mean(jax_times) * 1000  # Convert to ms
+    jax_std = np.std(jax_times) * 1000
+    pytorch_mean = np.mean(pytorch_times) * 1000
+    pytorch_std = np.std(pytorch_times) * 1000
+
+    # Per-step timing
+    jax_per_step = jax_mean / 10000
+    pytorch_per_step = pytorch_mean / 10000
+
+    print(f"\nResults (10 runs of 1000 steps each):")
+    print(f"JAX Scan Total:      {jax_mean:.3f} ± {jax_std:.3f} ms")
+    print(f"PyTorch Batch Total: {pytorch_mean:.3f} ± {pytorch_std:.3f} ms")
+    print(f"JAX per step:        {jax_per_step:.6f} ms")
+    print(f"PyTorch per step:    {pytorch_per_step:.6f} ms")
+    print(
+        f"Speedup factor:      {pytorch_mean / jax_mean:.2f}x {'(JAX faster)' if jax_mean < pytorch_mean else '(PyTorch faster)'}"
+    )
+
+    print(f"\nData shape: {x.shape}")
+    print(f"Model size: {input_size} -> {hidden_size} (2 layers) -> {output_size}")
+    print(f"Total operations: 1000 steps x {batch_size} batch size")
+
+    # inferences = create_inferences(config, inference_interface, data_interface, axes)
+    # # make test data
+    # x = jnp.ones((100, 5, n_in_shape[0]))
+    # y = jnp.ones((100, 5, 10))
+    # # inference = (
+    # #     eqx.filter_jit(lambda x, y: inferences[0](y, x), donate="all-except-first")
+    # #     .lower(batched(traverse((x, y))), env)
+    # #     .compile()
+    # # )
+
+    # # env, out = inference(env, batched(traverse((x, y))))
+    # # print("Inference")
+    # # print(out)
+    # # print(env)
+    # # 1. create inference function dict[int, Callable] for each level
+    # # 2. create meta learning function that hierarchically takes dict[int, Callable]
+    # # 3. inrepreter config to get dict[int, Callable] that will be passed into the folds above
+    # # 4. resetting?
+    # # 5. data loading?
+    # # 6. combining vl data with prev data when building meta learning function?
+
+    # flat_model, treedef_model = jax.tree_util.tree_flatten(env)
+
+    # def make_step(data, flat_model):
+    #     model = jax.tree_util.tree_unflatten(treedef_model, flat_model)
+    #     update_model, out = inferences[0](model, data)
+    #     flat_update_model = jax.tree_util.tree_leaves(update_model)
+    #     return flat_update_model, out
+
+    # inference = (
+    #     eqx.filter_jit(make_step, donate="all-except-first").lower(batched(traverse((x, y))), flat_model).compile()
+    # )
+
+    # # Speed comparison with PyTorch RNN
+    # print("\n" + "=" * 50)
+    # print("SPEED COMPARISON: JAX vs PyTorch RNN")
+    # print("=" * 50)
+
+    # batch_size, seq_len, input_size = x.shape
+    # hidden_size = 32  # From your config
+    # output_size = 10
+
+    # # Create PyTorch RNN model with 2 layers
+    # class PyTorchRNN(torch.nn.Module):
+    #     def __init__(self, input_size, hidden_size, output_size):
+    #         super().__init__()
+    #         self.rnn = torch.nn.RNN(input_size, hidden_size, num_layers=2, batch_first=True)
+    #         self.linear = torch.nn.Linear(hidden_size, output_size)
+
+    #     def forward(self, x):
+    #         out, _ = self.rnn(x)
+    #         return self.linear(out)
+
+    # pytorch_model = PyTorchRNN(input_size, hidden_size, output_size)
+    # pytorch_model.eval()
+
+    # # Convert JAX data to PyTorch tensors
+    # x_torch = torch.from_numpy(np.array(x)).float()
+
+    # # Warmup runs
+    # print("Warming up...")
+    # for _ in range(10):
+    #     flat_model, _ = inference(batched(traverse((x, y))), flat_model)
+    #     with torch.no_grad():
+    #         _ = pytorch_model(x_torch)
+
+    # # JAX timing
+    # print("Timing JAX inference...")
+    # jax_times = []
+    # for _ in range(1000):
+    #     start_time = time.time()
+    #     flat_model, out_jax = inference(batched(traverse((x, y))), flat_model)
+    #     jax.block_until_ready(out_jax)
+    #     end_time = time.time()
+    #     jax_times.append(end_time - start_time)
+
+    # # PyTorch timing
+    # print("Timing PyTorch RNN...")
+    # pytorch_times = []
+    # with torch.no_grad():
+    #     for _ in range(1000):
+    #         start_time = time.time()
+    #         out_torch = pytorch_model(x_torch)
+    #         if torch.cuda.is_available():
+    #             torch.cuda.synchronize()
+    #         end_time = time.time()
+    #         pytorch_times.append(end_time - start_time)
+
+    # # Results
+    # jax_mean = np.mean(jax_times) * 1000  # Convert to ms
+    # jax_std = np.std(jax_times) * 1000
+    # pytorch_mean = np.mean(pytorch_times) * 1000
+    # pytorch_std = np.std(pytorch_times) * 1000
+
+    # print(f"\nResults (100 runs):")
+    # print(f"JAX Inference:    {jax_mean:.3f} ± {jax_std:.3f} ms")
+    # print(f"PyTorch RNN:      {pytorch_mean:.3f} ± {pytorch_std:.3f} ms")
+    # print(
+    #     f"Speedup factor:   {pytorch_mean / jax_mean:.2f}x {'(JAX faster)' if jax_mean < pytorch_mean else '(PyTorch faster)'}"
+    # )
+
+    # print(f"\nData shape: {x.shape}")
+    # print(f"Model size: {input_size} -> {hidden_size} (2 layers) -> {output_size}")
 
 
 # def create_learner(

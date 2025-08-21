@@ -7,7 +7,7 @@ from toolz import mapcat
 
 from lib.config import *
 from lib.lib_types import PRNG, FractionalList
-from lib.util import create_fractional_list, infinite_keys, reshape_timeseries, subset_n
+from lib.util import infinite_keys, reshape_timeseries, subset_n
 
 
 class PyTreeDataset(Dataset):
@@ -52,7 +52,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                         X_vl,
                         Y_vl,
                         X_vl.shape[0],
-                        data_config.num_examples_in_minibatch,
+                        1,
                         rng,
                     )
 

@@ -1,4 +1,4 @@
-from typing import Callable, Iterator, Union
+from typing import Union
 import clearml
 import boto3
 import random
@@ -11,7 +11,6 @@ import jax
 import jax.numpy as jnp
 import torch
 import numpy as np
-import torchvision
 import time
 from toolz import take, mapcat
 
@@ -19,13 +18,7 @@ from lib.config import *
 from lib.create_axes import create_axes
 from lib.create_env import create_env
 from lib.create_interface import create_learn_interfaces, create_transition_interfaces
-from lib.datasets import (
-    create_multi_epoch_dataloader,
-    flatten_and_cast,
-    generate_add_task_dataset,
-    standard_dataloader,
-    target_transform,
-)
+from lib.datasets import create_dataloader
 from lib.inference import create_inferences
 from lib.interface import ClassificationInterface
 from lib.lib_types import *
@@ -128,7 +121,7 @@ def runApp() -> None:
         num_virtual_minibatches_per_turn=10,
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
-        num_minibatches_in_epoch=100,
+        test_batch_size=100,
     )
 
     converter = Converter()
@@ -138,7 +131,7 @@ def runApp() -> None:
 
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
-    task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
+    # task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
 
     if not config.clearml_run:
         return
@@ -147,7 +140,7 @@ def runApp() -> None:
     data_prng = PRNG(jax.random.key(config.seed.data_seed))
     env_prng = PRNG(jax.random.key(config.seed.parameter_seed))
     test_prng = PRNG(jax.random.key(config.seed.test_seed))
-    dataloader_prng, dataset_gen_prng, torch_prng = jax.random.split(data_prng, 3)
+    dataset_gen_prng, torch_prng = jax.random.split(data_prng, 2)
     torch_seed = jax.random.randint(torch_prng, shape=(), minval=0, maxval=1e6, dtype=jnp.uint32)
     torch_seed = int(torch_seed)
     random.seed(torch_seed)
@@ -164,71 +157,9 @@ def runApp() -> None:
     if percentages is None:
         raise ValueError("Learner percentages must sum to 100.")
 
-    match config.dataset:
-        case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
-            data_size = dict(zip(config.data.keys(), subset_n(n, percentages)))
-            dataset_te = generate_add_task_dataset(nTest, t1, t2, tau_task, test_prng)
-            n_in_shape = dataset_te[0].shape[1:]
-
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
-            virtual_minibatches: dict[int, int] = {}
-            for idx, (i, data_config) in enumerate(sorted(config.data.items())):
-                data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
-                X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
-                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
-                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
-                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[idx] = X_vl.shape[1]
-
-                def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
-                    return standard_dataloader(
-                        X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
-                    )
-
-                datasets[idx] = get_dataloader
-                # 1. check when to reset after consume concrete example
-                # 2. check when is last padded minibatch
-
-        case MnistConfig(n_in) | FashionMnistConfig(n_in):
-            n_in_shape = (n_in,)
-
-            match config.dataset:
-                case MnistConfig():
-                    dataset_factory = torchvision.datasets.MNIST
-                case FashionMnistConfig():
-                    dataset_factory = torchvision.datasets.FashionMNIST
-
-            dataset = dataset_factory(root=f"{config.data_root_dir}/data", train=True, download=True)
-            dataset_te = dataset_factory(root=f"{config.data_root_dir}/data", train=False, download=True)
-            xs = jax.vmap(flatten_and_cast, in_axes=(0, None))(dataset.data.numpy(), n_in)
-            ys = jax.vmap(target_transform, in_axes=(0, None))(dataset.targets.numpy(), xs.shape[1])
-            xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None))(dataset_te.data.numpy(), n_in)
-            ys_te = jax.vmap(target_transform, in_axes=(0, None))(dataset_te.targets.numpy(), xs_te.shape[1])
-            dataset_te = (xs_te, ys_te)
-
-            perm = jax.random.permutation(dataset_gen_prng, len(xs))
-            split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
-            val_indices = jnp.split(perm, split_indices)
-
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
-            virtual_minibatches: dict[int, int] = {}
-            for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
-                X_vl = xs[val_idx]
-                Y_vl = ys[val_idx]
-                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
-                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
-                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[idx] = X_vl.shape[1]
-
-                def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
-                    return standard_dataloader(
-                        X_vl, Y_vl, X_vl.shape[0], data_config.num_examples_in_minibatch, X_vl.shape[1], rng
-                    )
-
-                datasets[idx] = get_dataloader
-
-        case _:
-            raise ValueError("Invalid dataset")
+    dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_length = create_dataloader(
+        config, percentages, dataset_gen_prng, test_prng
+    )
 
     if config.ignore_validation_inference_recurrence:
         if not all(virtual_minibatches[k] == 1 for i, k in enumerate(sorted(virtual_minibatches.keys())) if i > 0):
@@ -236,14 +167,7 @@ def runApp() -> None:
                 "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
             )
 
-    subkeys = jax.random.split(dataloader_prng, len(datasets))
-    first_iterator = datasets[0](subkeys[0])
-    cycling_iterators = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(1, len(datasets))]
-    first_iterator = create_multi_epoch_dataloader(first_iterator, config.num_minibatches_in_epoch)
-    cycling_iterators = [create_multi_epoch_dataloader(it, config.num_minibatches_in_epoch) for it in cycling_iterators]
-    the_dataloader = zip(first_iterator, *cycling_iterators)
-
-    for (x1, y1), (x2, y2) in take(3, the_dataloader):
+    for (x1, y1), (x2, y2) in take(3, dataloader):
         print(f"First dataset: {x1.shape}, {y1.shape}")
         print(f"Second dataset: {x2.shape}, {y2.shape}")
 

@@ -40,6 +40,7 @@
     - the point of padding is orthogonal to actually being able to avoid jagged arrays. 
         - literally you cannot have a dataset with one dimension that is mismatched so we must reshape with pad 
 
+The whole point of the virtual minibatch was so that I would load the virtual minibatches lazily as well in case the time series was super long.
 
 
 I get to choose what my inference functions gradient gets computed wrt. 

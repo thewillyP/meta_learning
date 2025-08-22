@@ -159,14 +159,19 @@ def create_learning_state(
             ...
 
     _opt = learn_interface.get_optimizer(env)
-    opt_state = _opt.init(flat_param.vector)
-    state = copy.replace(state, opt_state=opt_state)
+    if _opt is not None:
+        opt_state = _opt.init(flat_param.vector)
+        state = copy.replace(state, opt_state=opt_state)
 
     return state
 
 
 def create_env(
-    config: GodConfig, n_in_shape: tuple[int, ...], learn_interfaces: dict[int, LearnInterface[GodState]], prng: PRNG
+    config: GodConfig,
+    n_in_shape: tuple[int, ...],
+    learn_interfaces: dict[int, LearnInterface[GodState]],
+    validation_learn_interfaces: dict[int, LearnInterface[GodState]],
+    prng: PRNG,
 ) -> GodState:
     prng1, prng2, prng3, prng = jax.random.split(prng, 4)
     env = GodState(
@@ -248,8 +253,8 @@ def create_env(
         learning_state_vl = create_learning_state(
             config.learners[min(config.learners.keys())],
             env,
-            learn_interfaces[0].get_state_pytree,
-            learn_interfaces[0],
+            learn_interfaces[i].get_state_pytree(env),
+            validation_learn_interfaces[i],
             prng1,
         )
         validation_learning_states[i] = learning_state_vl

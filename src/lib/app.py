@@ -12,7 +12,6 @@ import jax.numpy as jnp
 import torch
 import numpy as np
 import time
-from toolz import take, mapcat
 
 from lib.config import *
 from lib.create_axes import create_axes
@@ -26,12 +25,7 @@ from lib.datasets import create_dataloader
 from lib.inference import create_inferences
 from lib.interface import ClassificationInterface
 from lib.lib_types import *
-from lib.util import (
-    create_fractional_list,
-    infinite_keys,
-    reshape_timeseries,
-    subset_n,
-)
+from lib.util import create_fractional_list
 
 
 def runApp() -> None:
@@ -88,7 +82,7 @@ def runApp() -> None:
         readout_function=FeedForwardConfig(ffw_layers={0: NNLayer(n=10, activation_fn="identity", use_bias=True)}),
         learners={
             0: LearnConfig(  # normal feedforward backprop
-                learner=BPTTConfig(),
+                learner=UOROConfig(1.0),
                 optimizer=SGDConfig(
                     learning_rate=0.01,
                 ),
@@ -178,7 +172,7 @@ def runApp() -> None:
         get_input=lambda data: data[0],
         get_target=lambda data: data[1],
     )
-    env = create_env(config, n_in_shape, learn_interfaces, env_prng)
+    env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     axes = create_axes(env, inference_interface)
     inferences = create_inferences(config, inference_interface, data_interface, axes)
 

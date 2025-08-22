@@ -57,3 +57,5 @@ sum . vmap . grad . f
 because
 1. the size of the influence tensor is invariant actually. 
 2. the former is computationally more efficient because were computing the grad of a scalar once instead of in parallel and then summing
+
+I will assume that the derivative to take for the validation gradient is using the same strategy as first learning level. It will need to take a functiom so I can change what its gets derivatived wrt to. 

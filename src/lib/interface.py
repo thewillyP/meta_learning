@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable
 import jax
+from jaxtyping import PyTree
 import optax
 
 from lib.config import LearnConfig
@@ -27,6 +28,7 @@ class InferenceInterface[ENV]:
 
 @dataclass(frozen=True)
 class LearnInterface[ENV]:
+    get_state_pytree: Callable[[ENV], PyTree]
     get_state: Callable[[ENV], jax.Array]
     put_state: Callable[[ENV, jax.Array], ENV]
     get_param: Callable[[ENV], jax.Array]

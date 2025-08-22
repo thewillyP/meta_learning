@@ -89,6 +89,7 @@ class Parameter(eqx.Module):
 class GodState(eqx.Module):
     learning_states: dict[int, LearningState]
     inference_states: dict[int, dict[int, InferenceState]]
+    validation_learning_states: dict[int, LearningState]
     parameters: dict[int, Parameter]
     general: dict[int, General]
     prng: dict[int, batched[PRNG]]

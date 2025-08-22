@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import copy
 import equinox as eqx
+from itertools import islice
 
 from lib.config import *
 from lib.env import (
@@ -171,6 +172,7 @@ def create_env(
     env = GodState(
         learning_states={},
         inference_states={},
+        validation_learning_states={},
         parameters={},
         general={},
         prng={
@@ -238,5 +240,19 @@ def create_env(
                 len(env.learning_states): learning_state_vl,
             },
         )
+
+    # creat learning states for validation
+    validation_learning_states: dict[int, LearningState] = {}
+    for i, _ in enumerate(islice(config.learners.items(), 1, None), 1):
+        prng1, prng = jax.random.split(prng, 2)
+        learning_state_vl = create_learning_state(
+            config.learners[min(config.learners.keys())],
+            env,
+            learn_interfaces[0].get_state_pytree,
+            learn_interfaces[0],
+            prng1,
+        )
+        validation_learning_states[i] = learning_state_vl
+    env = copy.replace(env, validation_learning_states=validation_learning_states)
 
     return env

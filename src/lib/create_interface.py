@@ -1,6 +1,7 @@
 import copy
 from itertools import islice
 import jax
+from jaxtyping import PyTree
 
 from lib.config import GodConfig, RFLOConfig
 from lib.env import GodState
@@ -32,8 +33,20 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
 
     for j, (_, learn_config) in enumerate(sorted(config.learners.items())):
 
+        def get_state_pytree(env: GodState, i) -> PyTree:
+            return (
+                dict(islice(env.inference_states.items(), i + 1))
+                if not config.ignore_validation_inference_recurrence
+                else env.inference_states[0],
+                dict(islice(env.learning_states.items(), i)),
+                dict(islice(env.parameters.items(), i)),
+            )
+
         def get_state(env: GodState, i) -> jax.Array:
-            return to_vector(
+            return to_vector(get_state_pytree(env, i)).vector
+
+        def put_state(env: GodState, state: jax.Array, i) -> GodState:
+            _inference_states, _learning_states, _params = to_vector(
                 (
                     dict(islice(env.inference_states.items(), i + 1))
                     if not config.ignore_validation_inference_recurrence
@@ -41,17 +54,11 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
                     dict(islice(env.learning_states.items(), i)),
                     dict(islice(env.parameters.items(), i)),
                 )
-            ).vector
-
-        def put_state(env: GodState, state: jax.Array, i) -> GodState:
-            _inference_states, _learning_states, _params = to_vector(
-                (
-                    dict(islice(env.inference_states.items(), i + 1)),
-                    dict(islice(env.learning_states.items(), i)),
-                    dict(islice(env.parameters.items(), i)),
-                )
             ).to_param(state)
-            inference_states = dict(islice(env.inference_states.items(), i + 1, None)) | _inference_states
+            if not config.ignore_validation_inference_recurrence:
+                inference_states = dict(islice(env.inference_states.items(), i + 1, None)) | _inference_states
+            else:
+                inference_states = dict(islice(env.inference_states.items(), 1, None)) | _inference_states
             learning_states = dict(islice(env.learning_states.items(), i, None)) | _learning_states
             params = dict(islice(env.parameters.items(), i, None)) | _params
             return copy.replace(
@@ -63,6 +70,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
 
         interpreter = copy.replace(
             default_interpreter,
+            get_state_pytree=lambda env, i=j: get_state_pytree(env, i),
             get_state=lambda env, i=j: get_state(env, i),
             put_state=lambda env, state, i=j: put_state(env, state, i),
             get_param=lambda env, i=j: to_vector(env.parameters[i]).vector,
@@ -107,6 +115,86 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
                 },
             ),
             learn_config=learn_config,
+            put_logs=lambda env, logs, i=j: copy.replace(
+                env,
+                general=env.general
+                | {
+                    i: copy.replace(
+                        env.general[i],
+                        logs=logs,
+                    )
+                },
+            ),
+            put_special_logs=lambda env, special_logs, i=j: copy.replace(
+                env,
+                general=env.general
+                | {
+                    i: copy.replace(
+                        env.general[i],
+                        special_logs=special_logs,
+                    )
+                },
+            ),
+            get_prng=lambda env, i=j: get_learning_prng(env, i),
+        )
+        interpreters[j] = interpreter
+
+    return interpreters
+
+
+def create_validation_learn_interfaces(
+    config: GodConfig, learn_interfaces: dict[int, LearnInterface[GodState]]
+) -> dict[int, LearnInterface[GodState]]:
+    default_interpreter: LearnInterface[GodState] = get_default_learn_interface()
+    interpreters: dict[int, LearnInterface[GodState]] = {}
+
+    for j, _ in enumerate(islice(config.learners.items(), 1, None), 1):
+
+        def get_state_pytree(env: GodState, i) -> PyTree:
+            return env.inference_states[i]
+
+        def get_state(env: GodState, i) -> jax.Array:
+            return to_vector(get_state_pytree(env, i)).vector
+
+        def put_state(env: GodState, state: jax.Array, i) -> GodState:
+            _inference_states = to_vector(env.inference_states[i]).to_param(state)
+            inference_states = env.inference_states | {i: _inference_states}
+            return copy.replace(
+                env,
+                inference_states=inference_states,
+            )
+
+        interpreter = copy.replace(
+            default_interpreter,
+            get_state_pytree=lambda env, i=j: get_state_pytree(env, i),
+            get_state=lambda env, i=j: get_state(env, i),
+            put_state=lambda env, state, i=j: put_state(env, state, i),
+            get_param=lambda env, i=j: learn_interfaces[i].get_state(env),
+            put_param=lambda env, param, i=j: learn_interfaces[i].put_state(env, param),
+            get_rflo_timeconstant=lambda env: env.parameters[1].learning_parameter.rflo_timeconstant,
+            get_influence_tensor=lambda env, i=j: env.validation_learning_states[i].influence_tensor,
+            put_influence_tensor=lambda env, influence_tensor, i=j: copy.replace(
+                env,
+                validation_learning_states=env.validation_learning_states
+                | {
+                    i: copy.replace(
+                        env.validation_learning_states[i],
+                        influence_tensor=influence_tensor,
+                    )
+                },
+            ),
+            get_uoro=lambda env, i=j: env.validation_learning_states[i].uoro,
+            put_uoro=lambda env, uoro, i=j: copy.replace(
+                env,
+                validation_learning_states=env.validation_learning_states
+                | {
+                    i: copy.replace(
+                        env.validation_learning_states[i],
+                        uoro=uoro,
+                    )
+                },
+            ),
+            learn_config=config.learners[0],
             put_logs=lambda env, logs, i=j: copy.replace(
                 env,
                 general=env.general

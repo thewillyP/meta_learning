@@ -17,7 +17,11 @@ from toolz import take, mapcat
 from lib.config import *
 from lib.create_axes import create_axes
 from lib.create_env import create_env
-from lib.create_interface import create_learn_interfaces, create_transition_interfaces
+from lib.create_interface import (
+    create_learn_interfaces,
+    create_transition_interfaces,
+    create_validation_learn_interfaces,
+)
 from lib.datasets import create_dataloader
 from lib.inference import create_inferences
 from lib.interface import ClassificationInterface
@@ -167,13 +171,8 @@ def runApp() -> None:
                 "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
             )
 
-    for (x1, y1), (x2, y2) in take(3, dataloader):
-        print(f"First dataset: {x1.shape}, {y1.shape}")
-        print(f"Second dataset: {x2.shape}, {y2.shape}")
-
-    return
-
     learn_interfaces = create_learn_interfaces(config)
+    validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)
     inference_interface = create_transition_interfaces(config)
     data_interface = ClassificationInterface[tuple[jax.Array, jax.Array]](
         get_input=lambda data: data[0],
@@ -181,13 +180,11 @@ def runApp() -> None:
     )
     env = create_env(config, n_in_shape, learn_interfaces, env_prng)
     axes = create_axes(env, inference_interface)
-    # pretty print env
-    print(env)
-    for _env in axes.values():
-        print(f"Function for axes")
-        print(_env)
-
     inferences = create_inferences(config, inference_interface, data_interface, axes)
+
+    print(env)
+
+    return
     # make test data
     x = jnp.ones((100, 5, n_in_shape[0]))
     y = jnp.ones((100, 5, 10))

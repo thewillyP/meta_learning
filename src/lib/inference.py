@@ -6,7 +6,7 @@ import equinox as eqx
 
 from lib.config import GodConfig, NNLayer
 from lib.env import RNNState
-from lib.interface import ClassificationInterface, InferenceInterface
+from lib.interface import ClassificationInterface, InferenceInterface, LearnInterface
 from lib.lib_types import batched, traverse
 from lib.util import get_activation_fn
 
@@ -34,7 +34,7 @@ def create_inference[ENV, DATA](
     for i, (_, fn) in enumerate(sorted(config.transition_function.items())):
         match fn:
             case NNLayer():
-
+                # If I really wanted to, I would separate this with a agnostic interface as input
                 def rnn_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
                     rnn = inference_interfaces[i].get_rnn_param(env)
                     rnn_state = inference_interfaces[i].get_rnn_state(env)
@@ -74,3 +74,20 @@ def create_inference[ENV, DATA](
         return env, traverse(outputs)
 
     return inference
+
+
+def reset_env[ENV](
+    env: ENV, inference_interface: InferenceInterface[ENV], learn_interface: LearnInterface[ENV]
+) -> ENV: ...
+
+
+"""
+Things to reset
+
+1. every virtual cycle, reset the inference state since we completed an example
+2. every virtual validation cycle, reset the validation inference state. 
+    - typically this should never carry state but I researve the option to start the next cycle with the last state of the previous cycle
+3. the learning state must be initialized newly every call to validation inference. this is mandatory
+4. I need a learning state for validation since 
+
+"""

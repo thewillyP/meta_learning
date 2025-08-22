@@ -62,6 +62,7 @@ def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
 
 def get_default_learn_interface[ENV]() -> LearnInterface[ENV]:
     return LearnInterface[ENV](
+        get_state_pytree=lambda env: None,
         get_param=lambda env: None,
         put_param=lambda env, _: env,
         get_state=lambda env: None,

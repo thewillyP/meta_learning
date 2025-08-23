@@ -6,8 +6,10 @@ from jaxtyping import PyTree
 from lib.config import GodConfig, RFLOConfig
 from lib.env import GodState
 from lib.interface import (
+    GeneralInterface,
     InferenceInterface,
     LearnInterface,
+    get_default_general_interface,
     get_default_inference_interface,
     get_default_learn_interface,
 )
@@ -259,5 +261,29 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
                 get_rnn_param=lambda env, l=k: env.parameters[0].transition_parameter[l].rnn,
             )
             interpreters.setdefault(j, {})[k] = interpreter
+
+    return interpreters
+
+
+def create_general_interfaces(config: GodConfig) -> dict[int, GeneralInterface[GodState]]:
+    default_interpreter: GeneralInterface[GodState] = get_default_general_interface()
+    interpreters: dict[int, GeneralInterface[GodState]] = {}
+
+    for j, _ in enumerate(sorted(config.data.items())):
+        interpreter = copy.replace(
+            default_interpreter,
+            get_current_virtual_minibatch=lambda env, i=j: env.general[i].current_virtual_minibatch,
+            put_current_virtual_minibatch=lambda env, value, i=j: copy.replace(
+                env,
+                general=env.general
+                | {
+                    i: copy.replace(
+                        env.general[i],
+                        current_virtual_minibatch=value,
+                    )
+                },
+            ),
+        )
+        interpreters[j] = interpreter
 
     return interpreters

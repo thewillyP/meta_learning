@@ -231,7 +231,7 @@ def create_env(
         else:
             special_logs = None
 
-        general[len(env.general)] = General(
+        general[len(general)] = General(
             current_virtual_minibatch=0,
             logs=logs,
             special_logs=special_logs,
@@ -246,6 +246,8 @@ def create_env(
             },
         )
 
+    env = copy.replace(env, general=general)
+
     # creat learning states for validation
     validation_learning_states: dict[int, LearningState] = {}
     for i, _ in enumerate(islice(config.learners.items(), 1, None), 1):
@@ -259,5 +261,22 @@ def create_env(
         )
         validation_learning_states[i] = learning_state_vl
     env = copy.replace(env, validation_learning_states=validation_learning_states)
+
+    return env
+
+
+def reinitialize_env(
+    env: GodState,
+    config: GodConfig,
+    n_in_shape: tuple[int, ...],
+    prng: PRNG,
+) -> GodState:
+    # Create inference states
+    for i, (_, data_config) in enumerate(sorted(config.data.items())):
+        prng1, prng = jax.random.split(prng, 2)
+        load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
+        vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
+        transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
+        env = copy.replace(env, inference_states=env.inference_states | {i: transition_state_vl})
 
     return env

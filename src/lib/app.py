@@ -1,3 +1,4 @@
+import copy
 from typing import Union
 import clearml
 import boto3
@@ -15,14 +16,15 @@ import time
 
 from lib.config import *
 from lib.create_axes import create_axes
-from lib.create_env import create_env
+from lib.create_env import create_env, reinitialize_env
 from lib.create_interface import (
+    create_general_interfaces,
     create_learn_interfaces,
     create_transition_interfaces,
     create_validation_learn_interfaces,
 )
 from lib.datasets import create_dataloader
-from lib.inference import create_inferences
+from lib.inference import add_reset, create_inferences
 from lib.interface import ClassificationInterface
 from lib.lib_types import *
 from lib.util import create_fractional_list
@@ -62,7 +64,7 @@ def runApp() -> None:
     config = GodConfig(
         clearml_run=True,
         data_root_dir="/tmp",
-        dataset=DelayAddOnlineConfig(1, 1, 1, 10, 10),
+        dataset=MnistConfig(28),
         num_base_epochs=1,
         checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
@@ -105,14 +107,14 @@ def runApp() -> None:
         data={
             0: DataConfig(
                 train_percent=20,
-                num_examples_in_minibatch=1,
+                num_examples_in_minibatch=100,
                 num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=80,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=8,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
@@ -168,6 +170,7 @@ def runApp() -> None:
     learn_interfaces = create_learn_interfaces(config)
     validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)
     inference_interface = create_transition_interfaces(config)
+    general_interface = create_general_interfaces(config)
     data_interface = ClassificationInterface[tuple[jax.Array, jax.Array]](
         get_input=lambda data: data[0],
         get_target=lambda data: data[1],
@@ -175,13 +178,24 @@ def runApp() -> None:
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     axes = create_axes(env, inference_interface)
     inferences = create_inferences(config, inference_interface, data_interface, axes)
+    inferences = add_reset(
+        # lambda prng: reinitialize_env(env, config, n_in_shape, prng),
+        lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
+        inferences,
+        inference_interface,
+        general_interface,
+        validation_learn_interfaces,
+        virtual_minibatches,
+    )
 
     print(env)
+    print(virtual_minibatches)
 
-    return
     # make test data
     x = jnp.ones((100, 5, n_in_shape[0]))
     y = jnp.ones((100, 5, 10))
+
+    env = copy.deepcopy(env)
 
     arr, static = eqx.partition(env, eqx.is_array)
 

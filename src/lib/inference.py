@@ -6,9 +6,9 @@ import equinox as eqx
 
 from lib.config import GodConfig, NNLayer
 from lib.env import RNNState
-from lib.interface import ClassificationInterface, InferenceInterface, LearnInterface
-from lib.lib_types import batched, traverse
-from lib.util import get_activation_fn
+from lib.interface import ClassificationInterface, GeneralInterface, InferenceInterface, LearnInterface
+from lib.lib_types import PRNG, batched, traverse
+from lib.util import filter_cond, get_activation_fn
 
 
 def create_inferences[ENV, DATA](
@@ -76,18 +76,56 @@ def create_inference[ENV, DATA](
     return inference
 
 
-def reset_env[ENV](
-    env: ENV, inference_interface: InferenceInterface[ENV], learn_interface: LearnInterface[ENV]
-) -> ENV: ...
+def reset_inference_env[ENV](env0: ENV, env: ENV, inference_interfaces: dict[int, InferenceInterface[ENV]]) -> ENV:
+    for inference_interface in inference_interfaces.values():
+        rnn = inference_interface.get_rnn_state(env0)
+        env = inference_interface.put_rnn_state(env, rnn)
+    return env
 
 
-"""
-Things to reset
+def reset_validation_learn_env[ENV](env0: ENV, env: ENV, learn_interface: LearnInterface[ENV]) -> ENV:
+    influence_tensor = learn_interface.get_influence_tensor(env0)
+    uoro = learn_interface.get_uoro(env0)
+    env = learn_interface.put_influence_tensor(env, influence_tensor)
+    env = learn_interface.put_uoro(env, uoro)
+    return env
 
-1. every virtual cycle, reset the inference state since we completed an example
-2. every virtual validation cycle, reset the validation inference state. 
-    - typically this should never carry state but I researve the option to start the next cycle with the last state of the previous cycle
-3. the learning state must be initialized newly every call to validation inference. this is mandatory
-4. I need a learning state for validation since 
 
-"""
+def add_reset[ENV, DATA](
+    get_env: Callable[[PRNG], ENV],
+    inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]],
+    inference_interfaces: dict[int, dict[int, InferenceInterface[ENV]]],
+    general_interfaces: dict[int, GeneralInterface[ENV]],
+    validation_interfaces: dict[int, LearnInterface[ENV]],
+    virtual_minibatches: dict[int, int],
+) -> dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]]:
+    _inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]] = {}
+    for k, (j, inference) in enumerate(sorted(inferences.items())):
+
+        def reset_inference(
+            env: ENV, data: batched[traverse[DATA]], i=j, k=k, inference=inference
+        ) -> tuple[ENV, batched[traverse[jax.Array]]]:
+            current_virtual_minibatch = general_interfaces[i].get_current_virtual_minibatch(env)
+
+            # def do_reset(env: ENV, i=i) -> ENV:
+            #     prng, env = validation_interfaces[min(validation_interfaces.keys())].get_prng(env)
+            #     env0 = get_env(prng)
+            #     return reset_inference_env(env0, env, inference_interfaces[i])
+
+            # env = filter_cond(
+            #     current_virtual_minibatch % virtual_minibatches[i] == 0,
+            #     do_reset,
+            #     lambda e: e,
+            #     env,
+            # )
+            env = general_interfaces[i].put_current_virtual_minibatch(env, current_virtual_minibatch + 1)
+
+            if k > 0:
+                prng, env = validation_interfaces[min(validation_interfaces.keys())].get_prng(env)
+                env0 = get_env(prng)
+                env = reset_validation_learn_env(env0, env, validation_interfaces[i])
+
+            return inference(env, data)
+
+        _inferences[j] = reset_inference
+    return _inferences

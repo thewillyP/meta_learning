@@ -4,7 +4,9 @@ import jax.flatten_util
 import jax.numpy as jnp
 import math
 import equinox as eqx
+import equinox.internal as eqxi
 import optax
+import jax.lax as lax
 from lib.lib_types import LOSS, PRNG, FractionalList
 
 
@@ -161,3 +163,23 @@ def infinite_keys(key: PRNG):
     while True:
         key, subkey = jax.random.split(key)
         yield subkey
+
+
+def filter_cond(pred, true_fun, false_fun, *operands):
+    """Taken from https://github.com/patrick-kidger/equinox/issues/709"""
+    dynamic, static = eqx.partition(operands, eqx.is_array)
+
+    def _true_fun(_dynamic):
+        _operands = eqx.combine(_dynamic, static)
+        _out = true_fun(*_operands)
+        _dynamic_out, _static_out = eqx.partition(_out, eqx.is_array)
+        return _dynamic_out, eqxi.Static(_static_out)
+
+    def _false_fun(_dynamic):
+        _operands = eqx.combine(_dynamic, static)
+        _out = false_fun(*_operands)
+        _dynamic_out, _static_out = eqx.partition(_out, eqx.is_array)
+        return _dynamic_out, eqxi.Static(_static_out)
+
+    dynamic_out, static_out = lax.cond(pred, _true_fun, _false_fun, dynamic)
+    return eqx.combine(dynamic_out, static_out.value)

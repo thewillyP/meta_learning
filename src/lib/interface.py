@@ -16,6 +16,12 @@ class ClassificationInterface[DATA]:
 
 
 @dataclass(frozen=True)
+class GeneralInterface[ENV]:
+    get_current_virtual_minibatch: Callable[[ENV], int]
+    put_current_virtual_minibatch: Callable[[ENV, int], ENV]
+
+
+@dataclass(frozen=True)
 class InferenceInterface[ENV]:
     get_readout_param: Callable[[ENV], CustomSequential]
     get_rnn_state: Callable[[ENV], RNNState]
@@ -80,4 +86,11 @@ def get_default_learn_interface[ENV]() -> LearnInterface[ENV]:
         put_special_logs=lambda env, _: env,
         learn_config=None,
         get_prng=lambda env: (None, env),
+    )
+
+
+def get_default_general_interface[ENV]() -> GeneralInterface[ENV]:
+    return GeneralInterface[ENV](
+        get_current_virtual_minibatch=lambda env: None,
+        put_current_virtual_minibatch=lambda env, value: env,
     )

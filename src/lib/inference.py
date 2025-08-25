@@ -107,17 +107,17 @@ def add_reset[ENV, DATA](
         ) -> tuple[ENV, batched[traverse[jax.Array]]]:
             current_virtual_minibatch = general_interfaces[i].get_current_virtual_minibatch(env)
 
-            # def do_reset(env: ENV, i=i) -> ENV:
-            #     prng, env = validation_interfaces[min(validation_interfaces.keys())].get_prng(env)
-            #     env0 = get_env(prng)
-            #     return reset_inference_env(env0, env, inference_interfaces[i])
+            def do_reset(env: ENV, i=i) -> ENV:
+                prng, env = validation_interfaces[min(validation_interfaces.keys())].get_prng(env)
+                env0 = get_env(prng)
+                return reset_inference_env(env0, env, inference_interfaces[i])
 
-            # env = filter_cond(
-            #     current_virtual_minibatch % virtual_minibatches[i] == 0,
-            #     do_reset,
-            #     lambda e: e,
-            #     env,
-            # )
+            env = filter_cond(
+                current_virtual_minibatch % virtual_minibatches[i] == 0,
+                do_reset,
+                lambda e: e,
+                env,
+            )
             env = general_interfaces[i].put_current_virtual_minibatch(env, current_virtual_minibatch + 1)
 
             if k > 0:

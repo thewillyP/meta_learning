@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import torch
 import numpy as np
 import time
+import toolz
 
 from lib.config import *
 from lib.create_axes import create_axes
@@ -118,7 +119,7 @@ def runApp() -> None:
                 num_times_to_avg_in_timeseries=1,
             ),
         },
-        num_virtual_minibatches_per_turn=3,
+        num_virtual_minibatches_per_turn=50,
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
         test_batch_size=100,
@@ -176,11 +177,13 @@ def runApp() -> None:
         get_target=lambda data: data[1],
     )
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
+    env0 = copy.deepcopy(env)
     axes = create_axes(env, inference_interface)
     inferences = create_inferences(config, inference_interface, data_interface, axes)
     inferences = add_reset(
-        # lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-        lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
+        # lambda _: env0,
+        lambda prng: reinitialize_env(env, config, n_in_shape, prng),
+        # lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
         inferences,
         inference_interface,
         general_interface,
@@ -191,9 +194,15 @@ def runApp() -> None:
     print(env)
     print(virtual_minibatches)
 
+    # for (tr_x, tr_y), (vl_x, vl_y) in toolz.take(3, dataloader):
+    #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
+    #     print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
+
+    # return
+
     # make test data
-    x = jnp.ones((100, 5, n_in_shape[0]))
-    y = jnp.ones((100, 5, 10))
+    x = jnp.ones((100, 50, n_in_shape[0]))
+    y = jnp.ones((100, 50, 10))
 
     env = copy.deepcopy(env)
 
@@ -232,14 +241,15 @@ def runApp() -> None:
     x_torch = torch.from_numpy(np.array(x)).float()
 
     # Create data for scan (1000 copies of the same data)
-    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 10000, axis=0), batched(traverse((x, y))))
+    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 1000, axis=0), batched(traverse((x, y))))
+
+    def test(data, init_model):
+        print("recompiled")
+        return jax.lax.scan(make_step, init_model, data)
 
     # Create and compile the scan function
-    jax_scan_fn = (
-        eqx.filter_jit(lambda data, init_model: jax.lax.scan(make_step, init_model, data), donate="all-except-first")
-        .lower(scan_data, arr)
-        .compile()
-    )
+    # lambda data, init_model: jax.lax.scan(make_step, init_model, data)
+    jax_scan_fn = eqx.filter_jit(test, donate="all-except-first").lower(scan_data, arr).compile()
 
     # Create PyTorch batch function for fair comparison
     def pytorch_batch_forward(model, x_batch):
@@ -251,22 +261,25 @@ def runApp() -> None:
         return torch.stack(outputs)
 
     # Create batch data for PyTorch
-    x_torch_batch = x_torch.unsqueeze(0).repeat(10000, 1, 1, 1)
+    x_torch_batch = x_torch.unsqueeze(0).repeat(1000, 1, 1, 1)
 
-    # Warmup runs
-    print("Warming up...")
-    for _ in range(5):
-        arr, all_outputs = jax_scan_fn(scan_data, arr)
-        jax.block_until_ready(all_outputs)
+    # # Warmup runs
+    # print("Warming up...")
+    # for _ in range(1):
+    #     arr, all_outputs = jax_scan_fn(scan_data, arr)
+    #     jax.block_until_ready(all_outputs)
 
-        pytorch_batch_outputs = pytorch_batch_forward(pytorch_model, x_torch_batch)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
+    #     pytorch_batch_outputs = pytorch_batch_forward(pytorch_model, x_torch_batch)
+    #     if torch.cuda.is_available():
+    #         torch.cuda.synchronize()
+
+    # with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=True):
+    #     arr, all_outputs = jax_scan_fn(scan_data, arr)
+    #     jax.block_until_ready(all_outputs)
 
     # JAX timing with scan
-    print("Timing JAX scan inference...")
     jax_times = []
-    for _ in range(5):
+    for _ in range(10):
         start_time = time.time()
         arr, all_outputs = jax_scan_fn(scan_data, arr)
         jax.block_until_ready(all_outputs)
@@ -276,7 +289,7 @@ def runApp() -> None:
     # PyTorch timing with batch
     print("Timing PyTorch batch inference...")
     pytorch_times = []
-    for _ in range(5):
+    for _ in range(10):
         start_time = time.time()
         pytorch_batch_outputs = pytorch_batch_forward(pytorch_model, x_torch_batch)
         if torch.cuda.is_available():
@@ -291,8 +304,8 @@ def runApp() -> None:
     pytorch_std = np.std(pytorch_times) * 1000
 
     # Per-step timing
-    jax_per_step = jax_mean / 10000
-    pytorch_per_step = pytorch_mean / 10000
+    jax_per_step = jax_mean / 1000
+    pytorch_per_step = pytorch_mean / 1000
 
     print(f"\nResults (10 runs of 1000 steps each):")
     print(f"JAX Scan Total:      {jax_mean:.3f} ± {jax_std:.3f} ms")

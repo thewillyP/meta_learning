@@ -272,11 +272,13 @@ def reinitialize_env(
     prng: PRNG,
 ) -> GodState:
     # Create inference states
+    inference_states = {}
+    load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
     for i, (_, data_config) in enumerate(sorted(config.data.items())):
         prng1, prng = jax.random.split(prng, 2)
-        load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
         vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
         transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        env = copy.replace(env, inference_states=env.inference_states | {i: transition_state_vl})
+        inference_states[i] = transition_state_vl
+    env = copy.replace(env, inference_states=inference_states)
 
     return env

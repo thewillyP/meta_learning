@@ -1,7 +1,9 @@
-from typing import Callable, Literal, Optional, Union
+from typing import Callable, Literal, Optional
 import equinox as eqx
 import jax
 import optax
+from pyrsistent import PClass, field
+
 
 from lib.lib_types import *
 
@@ -95,3 +97,49 @@ class GodState(eqx.Module):
     prng: dict[int, batched[PRNG]]
     prng_learning: dict[int, PRNG]
     start_epoch: int
+
+
+class GodState(PClass):
+    learning_states: dict[int, LearningState] = field()
+    inference_states: dict[int, dict[int, InferenceState]] = field()
+    validation_learning_states: dict[int, LearningState] = field()
+    parameters: dict[int, Parameter] = field()
+    general: dict[int, General] = field()
+    prng: dict[int, batched[PRNG]] = field()
+    prng_learning: dict[int, PRNG] = field()
+    start_epoch: int = field()
+
+
+# Register as JAX pytree
+def _godstate_tree_flatten(obj: GodState):
+    """Flatten GodState for JAX pytree operations"""
+    leaves = [
+        obj.learning_states,
+        obj.inference_states,
+        obj.validation_learning_states,
+        obj.parameters,
+        obj.general,
+        obj.prng,
+        obj.prng_learning,
+        obj.start_epoch,
+    ]
+    keys = [
+        "learning_states",
+        "inference_states",
+        "validation_learning_states",
+        "parameters",
+        "general",
+        "prng",
+        "prng_learning",
+        "start_epoch",
+    ]
+    return leaves, keys
+
+
+def _godstate_tree_unflatten(keys, leaves):
+    """Unflatten to reconstruct GodState"""
+    return GodState(**dict(zip(keys, leaves)))
+
+
+# Register the pytree
+jax.tree_util.register_pytree_node(GodState, _godstate_tree_flatten, _godstate_tree_unflatten)

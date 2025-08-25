@@ -21,12 +21,12 @@ from lib.util_lib import get_optimizer
 def get_inference_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
     """Assumes you will be operating in vmapped mode so no need to deal with as batched mode"""
     prng, new_prng = jax.random.split(env.prng[i].b)
-    return prng, copy.replace(env, prng=env.prng | {i: batched(new_prng)})
+    return prng, env.set(prng=env.prng | {i: batched(new_prng)})
 
 
 def get_learning_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
     prng, new_prng = jax.random.split(env.prng_learning[i])
-    return prng, copy.replace(env, prng_learning=env.prng_learning | {i: new_prng})
+    return prng, env.set(prng_learning=env.prng_learning | {i: new_prng})
 
 
 def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodState]]:
@@ -63,12 +63,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
                 inference_states = dict(islice(env.inference_states.items(), 1, None)) | _inference_states
             learning_states = dict(islice(env.learning_states.items(), i, None)) | _learning_states
             params = dict(islice(env.parameters.items(), i, None)) | _params
-            return copy.replace(
-                env,
-                inference_states=inference_states,
-                learning_states=learning_states,
-                parameters=params,
-            )
+            return env.set(inference_states=inference_states, learning_states=learning_states, parameters=params)
 
         interpreter = copy.replace(
             default_interpreter,
@@ -76,66 +71,60 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
             get_state=lambda env, i=j: get_state(env, i),
             put_state=lambda env, state, i=j: put_state(env, state, i),
             get_param=lambda env, i=j: to_vector(env.parameters[i]).vector,
-            put_param=lambda env, param, i=j: copy.replace(
-                env,
-                parameters=env.parameters | {i: to_vector(env.parameters[i]).to_param(param)},
+            put_param=lambda env, param, i=j: env.set(
+                parameters=env.parameters | {i: to_vector(env.parameters[i]).to_param(param)}
             ),
             get_sgd_param=lambda env, i=j: env.parameters[i + 1].learning_parameter.learning_rate,
             get_optimizer=lambda env, i=j, _lc=learn_config: get_optimizer(_lc)(env.parameters[i + 1]),
             get_opt_state=lambda env, i=j: env.learning_states[i].opt_state,
-            put_opt_state=lambda env, opt_state, i=j: copy.replace(
-                env,
+            put_opt_state=lambda env, opt_state, i=j: env.set(
                 learning_states=env.learning_states
                 | {
                     i: copy.replace(
                         env.learning_states[i],
                         opt_state=opt_state,
                     )
-                },
+                }
             ),
             get_rflo_timeconstant=lambda env, i=j: env.parameters[i + 1].learning_parameter.rflo_timeconstant,
             get_influence_tensor=lambda env, i=j: env.learning_states[i].influence_tensor,
-            put_influence_tensor=lambda env, influence_tensor, i=j: copy.replace(
-                env,
+            put_influence_tensor=lambda env, influence_tensor, i=j: env.set(
                 learning_states=env.learning_states
                 | {
                     i: copy.replace(
                         env.learning_states[i],
                         influence_tensor=influence_tensor,
                     )
-                },
+                }
             ),
             get_uoro=lambda env, i=j: env.learning_states[i].uoro,
-            put_uoro=lambda env, uoro, i=j: copy.replace(
-                env,
+            put_uoro=lambda env, uoro, i=j: env.set(
                 learning_states=env.learning_states
                 | {
                     i: copy.replace(
                         env.learning_states[i],
                         uoro=uoro,
                     )
-                },
+                }
             ),
             learn_config=learn_config,
-            put_logs=lambda env, logs, i=j: copy.replace(
-                env,
+            put_logs=lambda env, logs, i=j: env.set(
                 general=env.general
                 | {
                     i: copy.replace(
                         env.general[i],
                         logs=logs,
                     )
-                },
+                }
             ),
-            put_special_logs=lambda env, special_logs, i=j: copy.replace(
-                env,
+            put_special_logs=lambda env, special_logs, i=j: env.set(
                 general=env.general
                 | {
                     i: copy.replace(
                         env.general[i],
                         special_logs=special_logs,
                     )
-                },
+                }
             ),
             get_prng=lambda env, i=j: get_learning_prng(env, i),
         )
@@ -161,10 +150,7 @@ def create_validation_learn_interfaces(
         def put_state(env: GodState, state: jax.Array, i) -> GodState:
             _inference_states = to_vector(env.inference_states[i]).to_param(state)
             inference_states = env.inference_states | {i: _inference_states}
-            return copy.replace(
-                env,
-                inference_states=inference_states,
-            )
+            return env.set(inference_states=inference_states)
 
         interpreter = copy.replace(
             default_interpreter,
@@ -175,47 +161,43 @@ def create_validation_learn_interfaces(
             put_param=lambda env, param, i=j: learn_interfaces[i].put_state(env, param),
             get_rflo_timeconstant=lambda env: env.parameters[1].learning_parameter.rflo_timeconstant,
             get_influence_tensor=lambda env, i=j: env.validation_learning_states[i].influence_tensor,
-            put_influence_tensor=lambda env, influence_tensor, i=j: copy.replace(
-                env,
+            put_influence_tensor=lambda env, influence_tensor, i=j: env.set(
                 validation_learning_states=env.validation_learning_states
                 | {
                     i: copy.replace(
                         env.validation_learning_states[i],
                         influence_tensor=influence_tensor,
                     )
-                },
+                }
             ),
             get_uoro=lambda env, i=j: env.validation_learning_states[i].uoro,
-            put_uoro=lambda env, uoro, i=j: copy.replace(
-                env,
+            put_uoro=lambda env, uoro, i=j: env.set(
                 validation_learning_states=env.validation_learning_states
                 | {
                     i: copy.replace(
                         env.validation_learning_states[i],
                         uoro=uoro,
                     )
-                },
+                }
             ),
             learn_config=config.learners[0],
-            put_logs=lambda env, logs, i=j: copy.replace(
-                env,
+            put_logs=lambda env, logs, i=j: env.set(
                 general=env.general
                 | {
                     i: copy.replace(
                         env.general[i],
                         logs=logs,
                     )
-                },
+                }
             ),
-            put_special_logs=lambda env, special_logs, i=j: copy.replace(
-                env,
+            put_special_logs=lambda env, special_logs, i=j: env.set(
                 general=env.general
                 | {
                     i: copy.replace(
                         env.general[i],
                         special_logs=special_logs,
                     )
-                },
+                }
             ),
             get_prng=lambda env, i=j: get_learning_prng(env, i),
         )
@@ -245,8 +227,7 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
             interpreter = copy.replace(
                 _interpreter,
                 get_rnn_state=lambda env, i=j, l=k: env.inference_states[i][l].rnn,
-                put_rnn_state=lambda env, rnn_state, i=j, l=k: copy.replace(
-                    env,
+                put_rnn_state=lambda env, rnn_state, i=j, l=k: env.set(
                     inference_states=env.inference_states
                     | {
                         i: env.inference_states[i]
@@ -256,7 +237,7 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
                                 rnn=rnn_state,
                             )
                         }
-                    },
+                    }
                 ),
                 get_rnn_param=lambda env, l=k: env.parameters[0].transition_parameter[l].rnn,
             )
@@ -273,15 +254,14 @@ def create_general_interfaces(config: GodConfig) -> dict[int, GeneralInterface[G
         interpreter = copy.replace(
             default_interpreter,
             get_current_virtual_minibatch=lambda env, i=j: env.general[i].current_virtual_minibatch,
-            put_current_virtual_minibatch=lambda env, value, i=j: copy.replace(
-                env,
+            put_current_virtual_minibatch=lambda env, value, i=j: env.set(
                 general=env.general
                 | {
                     i: copy.replace(
                         env.general[i],
                         current_virtual_minibatch=value,
                     )
-                },
+                }
             ),
         )
         interpreters[j] = interpreter

@@ -195,12 +195,10 @@ def create_env(
         load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
         vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
         transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        env = copy.replace(
-            env, inference_states={**env.inference_states, len(env.inference_states): transition_state_vl}
-        )
+        env = env.set(inference_states={**env.inference_states, len(env.inference_states): transition_state_vl})
 
     parameter = create_inference_parameter(config, n_in_shape, prng3)
-    env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
+    env = env.set(parameters={**env.parameters, len(env.parameters): parameter})
 
     for i, (_, learn_config) in enumerate(sorted(config.learners.items())):
         prng1, prng = jax.random.split(prng, 2)
@@ -209,7 +207,7 @@ def create_env(
         prev_parameter = parameter
         learning_parameter = create_learning_parameter(learn_config)
         parameter = Parameter(learning_parameter=learning_parameter)
-        env = copy.replace(env, parameters={**env.parameters, len(env.parameters): parameter})
+        env = env.set(parameters={**env.parameters, len(env.parameters): parameter})
         learning_state_vl = create_learning_state(learn_config, env, prev_parameter, learn_interfaces[i], prng1)
 
         if learn_config.track_logs:
@@ -238,15 +236,9 @@ def create_env(
         )
 
         # Add final state
-        env = copy.replace(
-            env,
-            learning_states={
-                **env.learning_states,
-                len(env.learning_states): learning_state_vl,
-            },
-        )
+        env = env.set(learning_states={**env.learning_states, len(env.learning_states): learning_state_vl})
 
-    env = copy.replace(env, general=general)
+    env = env.set(general=general)
 
     # creat learning states for validation
     validation_learning_states: dict[int, LearningState] = {}
@@ -260,7 +252,7 @@ def create_env(
             prng1,
         )
         validation_learning_states[i] = learning_state_vl
-    env = copy.replace(env, validation_learning_states=validation_learning_states)
+    env = env.set(validation_learning_states=validation_learning_states)
 
     return env
 
@@ -279,6 +271,6 @@ def reinitialize_env(
         vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
         transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
         inference_states[i] = transition_state_vl
-    env = copy.replace(env, inference_states=inference_states)
+    # env = env.set(inference_states=inference_states)
 
     return env

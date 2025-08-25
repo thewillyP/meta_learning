@@ -2,21 +2,119 @@ from typing import Callable, Literal, Optional
 import equinox as eqx
 import jax
 import optax
-from pyrsistent import PClass, field
-
+from pyrsistent import PClass, field, pmap, thaw
+from pyrsistent.typing import PMap
+from pyrsistent._pmap import PMap as PMapClass
 
 from lib.lib_types import *
 
 
-class Logs(eqx.Module):
-    gradient: Optional[jax.Array] = eqx.field(default=None)
+def deep_serialize(_, obj):
+    """Recursively serialize pyrsistent objects to Python built-ins"""
+    if isinstance(obj, PClass):
+        serialized = obj.serialize()
+        return {k: deep_serialize(_, v) for k, v in serialized.items()}
+    elif isinstance(obj, PMapClass):
+        thawed = thaw(obj)
+        return {k: deep_serialize(_, v) for k, v in thawed.items()}
+    elif isinstance(obj, dict):  # Handle regular dicts too
+        return {k: deep_serialize(_, v) for k, v in obj.items()}
+    else:
+        return obj
 
 
-class SpecialLogs(eqx.Module):
-    influence_tensor: Optional[jax.Array] = eqx.field(default=None)
-    immediate_influence_tensor: Optional[jax.Array] = eqx.field(default=None)
-    largest_jac_eigenvalue: Optional[jax.Array] = eqx.field(default=None)
-    jacobian: Optional[jax.Array] = eqx.field(default=None)
+# Register PMap as PyTree
+def _pmap_tree_flatten(pm):
+    keys = tuple(sorted(pm.keys()))
+    values = [pm[k] for k in keys]
+    return values, keys
+
+
+def _pmap_tree_unflatten(keys, values):
+    return pmap(zip(keys, values))
+
+
+jax.tree_util.register_pytree_node(PMapClass, _pmap_tree_flatten, _pmap_tree_unflatten)
+
+
+# Generic PClass flatten/unflatten for classes without static fields
+def _pclass_tree_flatten(obj):
+    field_names = tuple(sorted(obj._pclass_fields.keys()))
+    values = [getattr(obj, name) for name in field_names]
+    return values, (type(obj), field_names)
+
+
+def _pclass_tree_unflatten(aux_data, values):
+    cls, field_names = aux_data
+    kwargs = dict(zip(field_names, values))
+    return cls(**kwargs)
+
+
+# Specific flatten/unflatten for RNNState (has static fields)
+def _rnnstate_tree_flatten(obj):
+    # Only activation is dynamic, rest are static
+    dynamic_values = [obj.activation]
+    static_fields = {"n_h": obj.n_h, "n_in": obj.n_in, "activation_fn": obj.activation_fn}
+    return dynamic_values, static_fields
+
+
+def _rnnstate_tree_unflatten(static_fields, values):
+    kwargs = {"activation": values[0]}
+    kwargs.update(static_fields)
+    return RNNState(**kwargs)
+
+
+# Specific flatten/unflatten for LearningParameter (has static fields)
+def _learningparam_tree_flatten(obj):
+    # Only learning_rate is dynamic, rflo_timeconstant is static
+    dynamic_values = [obj.learning_rate]
+    static_fields = {"rflo_timeconstant": obj.rflo_timeconstant}
+    return dynamic_values, static_fields
+
+
+def _learningparam_tree_unflatten(static_fields, values):
+    kwargs = {"learning_rate": values[0]}
+    kwargs.update(static_fields)
+    return LearningParameter(**kwargs)
+
+
+# Specific flatten/unflatten for RNNState (has static fields)
+def _rnnstate_tree_flatten(obj):
+    # Only activation is dynamic, rest are static
+    dynamic_values = [obj.activation]
+    static_fields = {"n_h": obj.n_h, "n_in": obj.n_in, "activation_fn": obj.activation_fn}
+    return dynamic_values, static_fields
+
+
+def _rnnstate_tree_unflatten(static_fields, values):
+    kwargs = {"activation": values[0]}
+    kwargs.update(static_fields)
+    return RNNState(**kwargs)
+
+
+# Specific flatten/unflatten for LearningParameter (has static fields)
+def _learningparam_tree_flatten(obj):
+    # Only learning_rate is dynamic, rflo_timeconstant is static
+    dynamic_values = [obj.learning_rate]
+    static_fields = {"rflo_timeconstant": obj.rflo_timeconstant}
+    return dynamic_values, static_fields
+
+
+def _learningparam_tree_unflatten(static_fields, values):
+    kwargs = {"learning_rate": values[0]}
+    kwargs.update(static_fields)
+    return LearningParameter(**kwargs)
+
+
+class Logs(PClass):
+    gradient: Optional[jax.Array] = field()
+
+
+class SpecialLogs(PClass):
+    influence_tensor: Optional[jax.Array] = field()
+    immediate_influence_tensor: Optional[jax.Array] = field()
+    largest_jac_eigenvalue: Optional[jax.Array] = field()
+    jacobian: Optional[jax.Array] = field()
 
 
 class CustomSequential(eqx.Module):
@@ -40,106 +138,75 @@ class CustomSequential(eqx.Module):
         return self.model(x)
 
 
-class RNNState(eqx.Module):
-    activation: jax.Array
-    n_h: int = eqx.field(static=True)
-    n_in: int = eqx.field(static=True)
-    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = eqx.field(static=True)
+class RNNState(PClass):
+    activation: jax.Array = field()
+    n_h: int = field()  # Static field
+    n_in: int = field()  # Static field
+    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = field()  # Static field
 
 
-class RNN(eqx.Module):
-    w_rec: jax.Array
-    b_rec: Optional[jax.Array]
+class RNN(PClass):
+    w_rec: jax.Array = field()
+    b_rec: Optional[jax.Array] = field()
 
 
-class UOROState(eqx.Module):
-    A: jax.Array
-    B: jax.Array
+class UOROState(PClass):
+    A: jax.Array = field()
+    B: jax.Array = field()
 
 
-class General(eqx.Module):
-    current_virtual_minibatch: int
-    logs: Optional[Logs] = eqx.field(default=None)
-    special_logs: Optional[SpecialLogs] = eqx.field(default=None)
+class General(PClass):
+    current_virtual_minibatch: int = field()
+    logs: Optional[Logs] = field(serializer=deep_serialize)
+    special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
 
 
-class InferenceState(eqx.Module):
-    rnn: Optional[RNNState] = eqx.field(default=None)
+class InferenceState(PClass):
+    rnn: Optional[RNNState] = field(serializer=deep_serialize)
 
 
-class LearningState(eqx.Module):
-    influence_tensor: Optional[JACOBIAN] = eqx.field(default=None)
-    uoro: Optional[UOROState] = eqx.field(default=None)
-    opt_state: Optional[optax.OptState] = eqx.field(default=None)
+class LearningState(PClass):
+    influence_tensor: Optional[JACOBIAN] = field()
+    uoro: Optional[UOROState] = field(serializer=deep_serialize)
+    opt_state: Optional[optax.OptState] = field()
 
 
-class InferenceParameter(eqx.Module):
-    rnn: Optional[RNN] = eqx.field(default=None)
+class InferenceParameter(PClass):
+    rnn: Optional[RNN] = field(serializer=deep_serialize)
 
 
-class LearningParameter(eqx.Module):
-    learning_rate: Optional[jax.Array] = eqx.field(default=None)
-    rflo_timeconstant: Optional[float] = eqx.field(static=True, default=None)
+class LearningParameter(PClass):
+    learning_rate: Optional[jax.Array] = field()
+    rflo_timeconstant: Optional[float] = field()  # Static field
 
 
-class Parameter(eqx.Module):
-    transition_parameter: Optional[dict[int, InferenceParameter]] = eqx.field(default=None)
-    readout_fn: Optional[CustomSequential] = eqx.field(default=None)
-    learning_parameter: Optional[LearningParameter] = eqx.field(default=None)
-
-
-class GodState(eqx.Module):
-    learning_states: dict[int, LearningState]
-    inference_states: dict[int, dict[int, InferenceState]]
-    validation_learning_states: dict[int, LearningState]
-    parameters: dict[int, Parameter]
-    general: dict[int, General]
-    prng: dict[int, batched[PRNG]]
-    prng_learning: dict[int, PRNG]
-    start_epoch: int
+class Parameter(PClass):
+    transition_parameter: Optional[PMap[int, InferenceParameter]] = field(serializer=deep_serialize)
+    readout_fn: Optional[CustomSequential] = field()
+    learning_parameter: Optional[LearningParameter] = field(serializer=deep_serialize)
 
 
 class GodState(PClass):
-    learning_states: dict[int, LearningState] = field()
-    inference_states: dict[int, dict[int, InferenceState]] = field()
-    validation_learning_states: dict[int, LearningState] = field()
-    parameters: dict[int, Parameter] = field()
-    general: dict[int, General] = field()
-    prng: dict[int, batched[PRNG]] = field()
-    prng_learning: dict[int, PRNG] = field()
+    learning_states: PMap[int, LearningState] = field(serializer=deep_serialize)
+    inference_states: PMap[int, PMap[int, InferenceState]] = field(serializer=deep_serialize)
+    validation_learning_states: PMap[int, LearningState] = field(serializer=deep_serialize)
+    parameters: PMap[int, Parameter] = field(serializer=deep_serialize)
+    general: PMap[int, General] = field(serializer=deep_serialize)
+    prng: PMap[int, batched[PRNG]] = field(serializer=deep_serialize)
+    prng_learning: PMap[int, PRNG] = field(serializer=deep_serialize)
     start_epoch: int = field()
 
 
-# Register as JAX pytree
-def _godstate_tree_flatten(obj: GodState):
-    """Flatten GodState for JAX pytree operations"""
-    leaves = [
-        obj.learning_states,
-        obj.inference_states,
-        obj.validation_learning_states,
-        obj.parameters,
-        obj.general,
-        obj.prng,
-        obj.prng_learning,
-        obj.start_epoch,
-    ]
-    keys = [
-        "learning_states",
-        "inference_states",
-        "validation_learning_states",
-        "parameters",
-        "general",
-        "prng",
-        "prng_learning",
-        "start_epoch",
-    ]
-    return leaves, keys
-
-
-def _godstate_tree_unflatten(keys, leaves):
-    """Unflatten to reconstruct GodState"""
-    return GodState(**dict(zip(keys, leaves)))
-
-
-# Register the pytree
-jax.tree_util.register_pytree_node(GodState, _godstate_tree_flatten, _godstate_tree_unflatten)
+# Register all PClass objects as PyTrees
+jax.tree_util.register_pytree_node(Logs, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(SpecialLogs, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(RNNState, _rnnstate_tree_flatten, _rnnstate_tree_unflatten)
+jax.tree_util.register_pytree_node(RNN, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(UOROState, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(General, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(InferenceState, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(LearningState, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(InferenceParameter, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(LearningParameter, _learningparam_tree_flatten, _learningparam_tree_unflatten)
+jax.tree_util.register_pytree_node(Parameter, _pclass_tree_flatten, _pclass_tree_unflatten)
+jax.tree_util.register_pytree_node(GodState, _pclass_tree_flatten, _pclass_tree_unflatten)

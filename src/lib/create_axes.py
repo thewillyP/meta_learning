@@ -1,8 +1,7 @@
-from typing import Any, Callable
+from typing import Any
 import jax
 import equinox as eqx
 
-from lib.config import GodConfig
 from lib.interface import InferenceInterface
 
 

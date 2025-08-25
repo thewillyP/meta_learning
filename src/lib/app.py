@@ -191,8 +191,10 @@ def runApp() -> None:
         virtual_minibatches,
     )
 
-    print(env)
+    eqx.tree_pprint(env.serialize())
     print(virtual_minibatches)
+
+    return
 
     # for (tr_x, tr_y), (vl_x, vl_y) in toolz.take(3, dataloader):
     #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")

@@ -42,7 +42,7 @@ def create_inference[ENV, DATA](
                     a = rnn_state.activation
                     a_rec = rnn.w_rec @ jnp.concat((a, data)) + (rnn.b_rec if rnn.b_rec is not None else 0)
                     a_new = (1 - alpha) * a + alpha * get_activation_fn(rnn_state.activation_fn)(a_rec)
-                    new_env = inference_interfaces[i].put_rnn_state(env, copy.replace(rnn_state, activation=a_new))
+                    new_env = inference_interfaces[i].put_rnn_state(env, rnn_state.set(activation=a_new))
                     return new_env, a_new
 
                 transition_functions.append(rnn_transition)

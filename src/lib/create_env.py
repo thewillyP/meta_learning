@@ -1,8 +1,9 @@
 import jax
 import jax.numpy as jnp
-import copy
 import equinox as eqx
 from itertools import islice
+from pyrsistent import pmap
+from pyrsistent.typing import PMap
 
 from lib.config import *
 from lib.env import (
@@ -29,21 +30,24 @@ from lib.util import (
 )
 
 
-def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> dict[int, InferenceState]:
-    transition_state: dict[int, InferenceState] = {}
+def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> PMap[int, InferenceState]:
+    transition_state: PMap[int, InferenceState] = pmap({})
     n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
             case NNLayer(n_h, activation_fn, use_bias):
                 prng1, prng = jax.random.split(prng, 2)
                 activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                transition_state[i] = InferenceState(
-                    rnn=RNNState(
-                        activation=activation,
-                        n_h=n_h,
-                        n_in=n_in,
-                        activation_fn=activation_fn,
-                    )
+                transition_state = transition_state.set(
+                    i,
+                    InferenceState(
+                        rnn=RNNState(
+                            activation=activation,
+                            n_h=n_h,
+                            n_in=n_in,
+                            activation_fn=activation_fn,
+                        )
+                    ),
                 )
                 n_in = n_h  # Update n_in for the next layer
             case _:
@@ -52,7 +56,7 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
 
 
 def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> Parameter:
-    transition_parameter: dict[int, InferenceParameter] = {}
+    transition_parameter: PMap[int, InferenceParameter] = pmap({})
     n_in_size = 0
     n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
@@ -63,11 +67,14 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
                 W_rec = jnp.linalg.qr(jax.random.normal(prng2, (n_h, n_h)))[0]
                 w_rec = jnp.hstack([W_rec, W_in])
                 b_rec: jax.Array | None = jnp.zeros((n_h,)) if use_bias else None
-                transition_parameter[i] = InferenceParameter(
-                    rnn=RNN(
-                        w_rec=w_rec,
-                        b_rec=b_rec,
-                    )
+                transition_parameter = transition_parameter.set(
+                    i,
+                    InferenceParameter(
+                        rnn=RNN(
+                            w_rec=w_rec,
+                            b_rec=b_rec,
+                        )
+                    ),
                 )
                 n_in_size += n_h
                 n_in = n_h  # Update n_in for the next layer
@@ -88,7 +95,7 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
         case _:
             raise ValueError("Unsupported readout function")
 
-    return Parameter(transition_parameter=transition_parameter, readout_fn=readout_fn)
+    return Parameter(transition_parameter=transition_parameter, readout_fn=readout_fn, learning_parameter=None)
 
 
 def create_learning_parameter(
@@ -96,20 +103,20 @@ def create_learning_parameter(
 ) -> LearningParameter:
     _, backward = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
 
-    parameter = LearningParameter()
+    parameter = LearningParameter(learning_rate=None, rflo_timeconstant=None)
     match learn_config.optimizer:
         case SGDConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
         case SGDNormalizedConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
         case SGDClipConfig(learning_rate, threshold, sharpness):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
         case AdamConfig(learning_rate):
-            parameter = copy.replace(parameter, learning_rate=backward(jnp.array([learning_rate])))
+            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
 
     match learn_config.learner:
         case RFLOConfig(time_constant):
-            parameter = copy.replace(parameter, rflo_timeconstant=time_constant)
+            parameter = parameter.set(rflo_timeconstant=time_constant)
 
     return parameter
 
@@ -121,14 +128,14 @@ def create_learning_state(
     learn_interface: LearnInterface[GodState],
     prng: PRNG,
 ) -> LearningState:
-    state = LearningState()
+    state = LearningState(influence_tensor=None, uoro=None, opt_state=None)
     flat_state = learn_interface.get_state(env)
     flat_param = to_vector(parameter)
     match learn_config.learner:
         case RTRLConfig() | RFLOConfig():
             prng1, prng = jax.random.split(prng, 2)
             influence_tensor = jax.random.normal(prng1, (flat_state.size, flat_param.vector.size))
-            state = copy.replace(state, influence_tensor=JACOBIAN(influence_tensor))
+            state = state.set(influence_tensor=JACOBIAN(influence_tensor))
         case UOROConfig():
             prng1, prng2, prng = jax.random.split(prng, 3)
 
@@ -152,7 +159,7 @@ def create_learning_state(
             a = jax.random.normal(prng2, (flat_state.size,))
             b = to_vector(_parameter).vector
             uoro = UOROState(A=a, B=b)
-            state = copy.replace(state, uoro=uoro)
+            state = state.set(uoro=uoro)
         case BPTTConfig():
             ...
         case IdentityConfig():
@@ -161,7 +168,7 @@ def create_learning_state(
     _opt = learn_interface.get_optimizer(env)
     if _opt is not None:
         opt_state = _opt.init(flat_param.vector)
-        state = copy.replace(state, opt_state=opt_state)
+        state = state.set(opt_state=opt_state)
 
     return state
 
@@ -175,30 +182,32 @@ def create_env(
 ) -> GodState:
     prng1, prng2, prng3, prng = jax.random.split(prng, 4)
     env = GodState(
-        learning_states={},
-        inference_states={},
-        validation_learning_states={},
-        parameters={},
-        general={},
-        prng={
-            i: batched(jax.random.split(key, v.num_examples_in_minibatch))
-            for i, (v, key) in enumerate(zip(config.data.values(), jax.random.split(prng1, len(config.data))))
-        },
-        prng_learning={i: key for i, key in enumerate(jax.random.split(prng2, len(config.learners)))},
+        learning_states=pmap({}),
+        inference_states=pmap({}),
+        validation_learning_states=pmap({}),
+        parameters=pmap({}),
+        general=pmap({}),
+        prng=pmap(
+            {
+                i: batched(jax.random.split(key, v.num_examples_in_minibatch))
+                for i, (v, key) in enumerate(zip(config.data.values(), jax.random.split(prng1, len(config.data))))
+            }
+        ),
+        prng_learning=pmap({i: key for i, key in enumerate(jax.random.split(prng2, len(config.learners)))}),
         start_epoch=0,
     )
-    general: dict[int, General] = {}
+    general: PMap[int, General] = pmap({})
 
     # Create inference states
+    load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
     for _, data_config in sorted(config.data.items()):
         prng1, prng = jax.random.split(prng, 2)
-        load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
         vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
-        transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        env = env.set(inference_states={**env.inference_states, len(env.inference_states): transition_state_vl})
+        transition_state_vl: PMap[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
+        env = env.transform(["inference_states", len(env.inference_states)], lambda _: transition_state_vl)
 
     parameter = create_inference_parameter(config, n_in_shape, prng3)
-    env = env.set(parameters={**env.parameters, len(env.parameters): parameter})
+    env = env.transform(["parameters", len(env.parameters)], lambda _: parameter)
 
     for i, (_, learn_config) in enumerate(sorted(config.learners.items())):
         prng1, prng = jax.random.split(prng, 2)
@@ -206,8 +215,8 @@ def create_env(
         # Create learning state and new parameter
         prev_parameter = parameter
         learning_parameter = create_learning_parameter(learn_config)
-        parameter = Parameter(learning_parameter=learning_parameter)
-        env = env.set(parameters={**env.parameters, len(env.parameters): parameter})
+        parameter = Parameter(transition_parameter=None, readout_fn=None, learning_parameter=learning_parameter)
+        env = env.transform(["parameters", len(env.parameters)], lambda _: parameter)
         learning_state_vl = create_learning_state(learn_config, env, prev_parameter, learn_interfaces[i], prng1)
 
         if learn_config.track_logs:
@@ -223,25 +232,27 @@ def create_env(
                 immediate_influence_tensor=(
                     jnp.zeros_like(it) if (it := learning_state_vl.influence_tensor) is not None else None
                 ),
-                largest_jac_eigenvalue=0.0,
+                largest_jac_eigenvalue=jnp.array(0.0),
                 jacobian=jnp.zeros((to_vector(env).vector.size, to_vector(prev_parameter).vector.size)),
             )
         else:
             special_logs = None
 
-        general[len(general)] = General(
-            current_virtual_minibatch=0,
-            logs=logs,
-            special_logs=special_logs,
+        general = general.set(
+            len(general),
+            General(
+                current_virtual_minibatch=0,
+                logs=logs,
+                special_logs=special_logs,
+            ),
         )
 
-        # Add final state
-        env = env.set(learning_states={**env.learning_states, len(env.learning_states): learning_state_vl})
+        env = env.transform(["learning_states", len(env.learning_states)], lambda _: learning_state_vl)
 
     env = env.set(general=general)
 
-    # creat learning states for validation
-    validation_learning_states: dict[int, LearningState] = {}
+    # create learning states for validation
+    validation_learning_states: PMap[int, LearningState] = pmap({})
     for i, _ in enumerate(islice(config.learners.items(), 1, None), 1):
         prng1, prng = jax.random.split(prng, 2)
         learning_state_vl = create_learning_state(
@@ -251,7 +262,7 @@ def create_env(
             validation_learn_interfaces[i],
             prng1,
         )
-        validation_learning_states[i] = learning_state_vl
+        validation_learning_states = validation_learning_states.set(i, learning_state_vl)
     env = env.set(validation_learning_states=validation_learning_states)
 
     return env
@@ -264,13 +275,13 @@ def reinitialize_env(
     prng: PRNG,
 ) -> GodState:
     # Create inference states
-    inference_states = {}
+    inference_states: PMap[int, PMap[int, InferenceState]] = pmap({})
     load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
     for i, (_, data_config) in enumerate(sorted(config.data.items())):
         prng1, prng = jax.random.split(prng, 2)
         vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
-        transition_state_vl: dict[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        inference_states[i] = transition_state_vl
-    # env = env.set(inference_states=inference_states)
+        transition_state_vl: PMap[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
+        inference_states = inference_states.set(i, transition_state_vl)
+    env = env.set(inference_states=inference_states)
 
     return env

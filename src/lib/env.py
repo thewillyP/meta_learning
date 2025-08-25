@@ -17,7 +17,7 @@ def deep_serialize(_, obj):
     elif isinstance(obj, PMapClass):
         thawed = thaw(obj)
         return {k: deep_serialize(_, v) for k, v in thawed.items()}
-    elif isinstance(obj, dict):  # Handle regular dicts too
+    elif isinstance(obj, dict):
         return {k: deep_serialize(_, v) for k, v in obj.items()}
     else:
         return obj
@@ -37,73 +37,29 @@ def _pmap_tree_unflatten(keys, values):
 jax.tree_util.register_pytree_node(PMapClass, _pmap_tree_flatten, _pmap_tree_unflatten)
 
 
-# Generic PClass flatten/unflatten for classes without static fields
-def _pclass_tree_flatten(obj):
-    field_names = tuple(sorted(obj._pclass_fields.keys()))
-    values = [getattr(obj, name) for name in field_names]
-    return values, (type(obj), field_names)
+# PyTree registration helpers
+def register_pytree(cls, static_fields):
+    """Register a class as a PyTree"""
+
+    def tree_flatten(obj):
+        all_fields = set(cls._pclass_fields.keys())
+        dynamic_fields = all_fields - static_fields
+        static_field_values = {name: getattr(obj, name) for name in static_fields if hasattr(obj, name)}
+        dynamic_values = [getattr(obj, name) for name in sorted(dynamic_fields) if hasattr(obj, name)]
+        return dynamic_values, (sorted(dynamic_fields), static_field_values)
+
+    def tree_unflatten(aux_data, values):
+        dynamic_fields, static_field_values = aux_data
+        kwargs = dict(zip(dynamic_fields, values))
+        kwargs.update(static_field_values)
+        return cls(**kwargs)
+
+    jax.tree_util.register_pytree_node(cls, tree_flatten, tree_unflatten)
 
 
-def _pclass_tree_unflatten(aux_data, values):
-    cls, field_names = aux_data
-    kwargs = dict(zip(field_names, values))
-    return cls(**kwargs)
-
-
-# Specific flatten/unflatten for RNNState (has static fields)
-def _rnnstate_tree_flatten(obj):
-    # Only activation is dynamic, rest are static
-    dynamic_values = [obj.activation]
-    static_fields = {"n_h": obj.n_h, "n_in": obj.n_in, "activation_fn": obj.activation_fn}
-    return dynamic_values, static_fields
-
-
-def _rnnstate_tree_unflatten(static_fields, values):
-    kwargs = {"activation": values[0]}
-    kwargs.update(static_fields)
-    return RNNState(**kwargs)
-
-
-# Specific flatten/unflatten for LearningParameter (has static fields)
-def _learningparam_tree_flatten(obj):
-    # Only learning_rate is dynamic, rflo_timeconstant is static
-    dynamic_values = [obj.learning_rate]
-    static_fields = {"rflo_timeconstant": obj.rflo_timeconstant}
-    return dynamic_values, static_fields
-
-
-def _learningparam_tree_unflatten(static_fields, values):
-    kwargs = {"learning_rate": values[0]}
-    kwargs.update(static_fields)
-    return LearningParameter(**kwargs)
-
-
-# Specific flatten/unflatten for RNNState (has static fields)
-def _rnnstate_tree_flatten(obj):
-    # Only activation is dynamic, rest are static
-    dynamic_values = [obj.activation]
-    static_fields = {"n_h": obj.n_h, "n_in": obj.n_in, "activation_fn": obj.activation_fn}
-    return dynamic_values, static_fields
-
-
-def _rnnstate_tree_unflatten(static_fields, values):
-    kwargs = {"activation": values[0]}
-    kwargs.update(static_fields)
-    return RNNState(**kwargs)
-
-
-# Specific flatten/unflatten for LearningParameter (has static fields)
-def _learningparam_tree_flatten(obj):
-    # Only learning_rate is dynamic, rflo_timeconstant is static
-    dynamic_values = [obj.learning_rate]
-    static_fields = {"rflo_timeconstant": obj.rflo_timeconstant}
-    return dynamic_values, static_fields
-
-
-def _learningparam_tree_unflatten(static_fields, values):
-    kwargs = {"learning_rate": values[0]}
-    kwargs.update(static_fields)
-    return LearningParameter(**kwargs)
+# ============================================================================
+# CORE DATA STRUCTURES
+# ============================================================================
 
 
 class Logs(PClass):
@@ -140,9 +96,9 @@ class CustomSequential(eqx.Module):
 
 class RNNState(PClass):
     activation: jax.Array = field()
-    n_h: int = field()  # Static field
-    n_in: int = field()  # Static field
-    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = field()  # Static field
+    n_h: int = field()
+    n_in: int = field()
+    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = field()
 
 
 class RNN(PClass):
@@ -155,14 +111,9 @@ class UOROState(PClass):
     B: jax.Array = field()
 
 
-class General(PClass):
-    current_virtual_minibatch: int = field()
-    logs: Optional[Logs] = field(serializer=deep_serialize)
-    special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
-
-
-class InferenceState(PClass):
-    rnn: Optional[RNNState] = field(serializer=deep_serialize)
+class LearningParameter(PClass):
+    learning_rate: Optional[jax.Array] = field()
+    rflo_timeconstant: Optional[float] = field()
 
 
 class LearningState(PClass):
@@ -175,9 +126,14 @@ class InferenceParameter(PClass):
     rnn: Optional[RNN] = field(serializer=deep_serialize)
 
 
-class LearningParameter(PClass):
-    learning_rate: Optional[jax.Array] = field()
-    rflo_timeconstant: Optional[float] = field()  # Static field
+class InferenceState(PClass):
+    rnn: Optional[RNNState] = field(serializer=deep_serialize)
+
+
+class General(PClass):
+    current_virtual_minibatch: int = field()
+    logs: Optional[Logs] = field(serializer=deep_serialize)
+    special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
 
 
 class Parameter(PClass):
@@ -197,16 +153,24 @@ class GodState(PClass):
     start_epoch: int = field()
 
 
-# Register all PClass objects as PyTrees
-jax.tree_util.register_pytree_node(Logs, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(SpecialLogs, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(RNNState, _rnnstate_tree_flatten, _rnnstate_tree_unflatten)
-jax.tree_util.register_pytree_node(RNN, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(UOROState, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(General, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(InferenceState, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(LearningState, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(InferenceParameter, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(LearningParameter, _learningparam_tree_flatten, _learningparam_tree_unflatten)
-jax.tree_util.register_pytree_node(Parameter, _pclass_tree_flatten, _pclass_tree_unflatten)
-jax.tree_util.register_pytree_node(GodState, _pclass_tree_flatten, _pclass_tree_unflatten)
+# ============================================================================
+# PYTREE REGISTRATIONS
+# ============================================================================
+
+# Register leaf types first
+register_pytree(Logs, set())
+register_pytree(SpecialLogs, set())
+register_pytree(RNNState, {"n_h", "n_in", "activation_fn"})
+register_pytree(RNN, set())
+register_pytree(UOROState, set())
+register_pytree(LearningParameter, {"rflo_timeconstant"})
+
+# Register container types that depend on leaf types
+register_pytree(InferenceParameter, set())
+register_pytree(InferenceState, set())
+register_pytree(LearningState, set())
+register_pytree(General, set())
+register_pytree(Parameter, set())
+
+# Register top-level container last
+register_pytree(GodState, set())

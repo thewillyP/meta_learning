@@ -204,7 +204,7 @@ def create_env(
         prng1, prng = jax.random.split(prng, 2)
         vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
         transition_state_vl: PMap[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        env = env.transform(["inference_states", len(env.inference_states)], lambda _: transition_state_vl)
+        env: GodState = env.transform(["inference_states", len(env.inference_states)], lambda _: transition_state_vl)
 
     parameter = create_inference_parameter(config, n_in_shape, prng3)
     env = env.transform(["parameters", len(env.parameters)], lambda _: parameter)

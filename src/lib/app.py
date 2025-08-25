@@ -243,7 +243,7 @@ def runApp() -> None:
     x_torch = torch.from_numpy(np.array(x)).float()
 
     # Create data for scan (1000 copies of the same data)
-    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 1000, axis=0), batched(traverse((x, y))))
+    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 3000, axis=0), batched(traverse((x, y))))
 
     def test(data, init_model):
         print("recompiled")
@@ -263,7 +263,7 @@ def runApp() -> None:
         return torch.stack(outputs)
 
     # Create batch data for PyTorch
-    x_torch_batch = x_torch.unsqueeze(0).repeat(1000, 1, 1, 1)
+    x_torch_batch = x_torch.unsqueeze(0).repeat(3000, 1, 1, 1)
 
     # # Warmup runs
     # print("Warming up...")
@@ -306,8 +306,8 @@ def runApp() -> None:
     pytorch_std = np.std(pytorch_times) * 1000
 
     # Per-step timing
-    jax_per_step = jax_mean / 1000
-    pytorch_per_step = pytorch_mean / 1000
+    jax_per_step = jax_mean / 3000
+    pytorch_per_step = pytorch_mean / 3000
 
     print(f"\nResults (10 runs of 1000 steps each):")
     print(f"JAX Scan Total:      {jax_mean:.3f} ± {jax_std:.3f} ms")

@@ -89,7 +89,7 @@ def get_loss_fn(s: str) -> Callable[[jax.Array, jax.Array], LOSS]:
         case "cross_entropy_with_integer_labels":
             return lambda a, b: LOSS(optax.losses.softmax_cross_entropy_with_integer_labels(a, b))
         case "mse":
-            return lambda a, b: LOSS(optax.losses.squared_error(a, b).mean())
+            return lambda a, b: LOSS(optax.losses.squared_error(a, b))
         case _:
             raise ValueError("Invalid loss function")
 

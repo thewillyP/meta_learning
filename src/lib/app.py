@@ -69,7 +69,7 @@ def runApp() -> None:
         num_base_epochs=1,
         checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
-        lossFn="cross_entropy_with_integer_labels",
+        loss_fn="cross_entropy_with_integer_labels",
         transition_function={
             0: NNLayer(
                 n=32,
@@ -177,13 +177,10 @@ def runApp() -> None:
         get_target=lambda data: data[1],
     )
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
-    env0 = copy.deepcopy(env)
     axes = create_axes(env, inference_interface)
     inferences = create_inferences(config, inference_interface, data_interface, axes)
     inferences = add_reset(
-        # lambda _: env0,
         lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-        # lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
         inferences,
         inference_interface,
         general_interface,
@@ -194,13 +191,9 @@ def runApp() -> None:
     eqx.tree_pprint(env.serialize())
     print(virtual_minibatches)
 
-    return
-
     # for (tr_x, tr_y), (vl_x, vl_y) in toolz.take(3, dataloader):
     #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
     #     print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
-
-    # return
 
     # make test data
     x = jnp.ones((100, 50, n_in_shape[0]))

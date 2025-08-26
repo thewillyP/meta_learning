@@ -139,7 +139,7 @@ class GodConfig:
     num_base_epochs: int
     checkpoint_every_n_minibatches: int
     seed: SeedConfig
-    lossFn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
+    loss_fn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
     transition_function: dict[int, Union[NNLayer]]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
     readout_function: Union[FeedForwardConfig]
     learners: dict[int, LearnConfig]

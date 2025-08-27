@@ -14,6 +14,7 @@ import torch
 import numpy as np
 import time
 import toolz
+import math
 
 from lib.config import *
 from lib.create_axes import create_axes
@@ -93,6 +94,7 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
+                num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(  # normal OHO
                 learner=RTRLConfig(),
@@ -103,6 +105,7 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
+                num_virtual_minibatches_per_turn=50,
             ),
         },
         data={
@@ -119,7 +122,6 @@ def runApp() -> None:
                 num_times_to_avg_in_timeseries=1,
             ),
         },
-        num_virtual_minibatches_per_turn=50,
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
         test_batch_size=100,
@@ -158,7 +160,7 @@ def runApp() -> None:
     if percentages is None:
         raise ValueError("Learner percentages must sum to 100.")
 
-    dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_length = create_dataloader(
+    dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_length, total_tr_vb = create_dataloader(
         config, percentages, dataset_gen_prng, test_prng
     )
 
@@ -167,6 +169,11 @@ def runApp() -> None:
             raise ValueError(
                 "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
             )
+
+    if total_tr_vb % math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()]) != 0:
+        raise ValueError(
+            f"The total number of virtual minibatches per turn ({total_tr_vb}) must be divisible by the product of num_virtual_minibatches_per_turn for each learner ({math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()])}). Please adjust the num_virtual_minibatches_per_turn settings in the config."
+        )
 
     learn_interfaces = create_learn_interfaces(config)
     validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)
@@ -191,9 +198,13 @@ def runApp() -> None:
     eqx.tree_pprint(env.serialize())
     print(virtual_minibatches)
 
-    # for (tr_x, tr_y), (vl_x, vl_y) in toolz.take(3, dataloader):
-    #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
-    #     print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
+    for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
+        print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
+        print(f"Train batch mask shape: {tr_mask.shape}")
+        print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
+        print(f"Validation batch mask shape: {vl_mask.shape}")
+
+    return
 
     # make test data
     x = jnp.ones((100, 50, n_in_shape[0]))

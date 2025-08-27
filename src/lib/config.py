@@ -117,6 +117,7 @@ class LearnConfig:
     lanczos_iterations: int
     track_logs: bool
     track_special_logs: bool
+    num_virtual_minibatches_per_turn: int  # for data loading purposes. iterate over minibatches. orthogonal scale to # example in minibatch for memory. need for hierarchy
 
 
 @dataclass(frozen=True)
@@ -144,7 +145,6 @@ class GodConfig:
     readout_function: Union[FeedForwardConfig]
     learners: dict[int, LearnConfig]
     data: dict[int, DataConfig]
-    num_virtual_minibatches_per_turn: int  # for data loading purposes. iterate over minibatches. orthogonal scale to # example in minibatch for memory
     ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
     readout_uses_input_data: bool
     test_batch_size: int  # for test dataloader, how many examples to use in a batch

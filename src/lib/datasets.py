@@ -4,6 +4,7 @@ from typing import Callable, Iterator
 from torch.utils.data import Dataset, DataLoader, IterableDataset
 import torchvision
 from toolz import mapcat
+import math
 
 from lib.config import *
 from lib.lib_types import PRNG, FractionalList
@@ -28,6 +29,7 @@ class PyTreeDataset(Dataset):
 def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG, test_prng: PRNG):
     dataloader_prng, dataset_gen_prng = jax.random.split(prng, 2)
 
+    # trying to get it into consistent shape: [num virtual minibatches, batch, time series, features...] for all datasets
     match config.dataset:
         case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
             data_size = dict(zip(config.data.keys(), subset_n(n, percentages)))
@@ -39,6 +41,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
 
             datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
+            total_tr_vb: int = 0
             for idx, (i, data_config) in enumerate(sorted(config.data.items())):
                 data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
                 X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
@@ -57,6 +60,9 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                     )
 
                 datasets[idx] = get_dataloader
+
+                if idx == 0:
+                    total_tr_vb = virtual_minibatches[0] * math.ceil(X_vl.shape[0] / 1) * 1
                 # 1. check when to reset after consume concrete example
                 # 2. check when is last padded minibatch
 
@@ -86,6 +92,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
 
             datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
+            total_tr_vb: int = 0
             for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
                 X_vl = xs[val_idx]
                 Y_vl = ys[val_idx]
@@ -105,12 +112,24 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
 
                 datasets[idx] = get_dataloader
 
+                if idx == 0:
+                    total_tr_vb = (
+                        virtual_minibatches[0]
+                        * math.ceil(X_vl.shape[0] / data_config.num_examples_in_minibatch)
+                        * data_config.num_examples_in_minibatch
+                    )
+
     subkeys = jax.random.split(dataloader_prng, len(datasets))
     train_loader = datasets[0](subkeys[0])
     vl_loaders = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(1, len(datasets))]
-    zipped_iterator: zip[tuple[tuple[jax.Array, jax.Array], ...]] = zip(train_loader, *vl_loaders)
-    dataloader = create_multi_epoch_dataloader(zipped_iterator, config.num_virtual_minibatches_per_turn)
-    return dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_length
+
+    # create hierarchical dataloader for meta learning
+    virtual_minibatches_per_turn = [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
+    for num_vb, vl_loader in zip(virtual_minibatches_per_turn[:-1], vl_loaders):
+        train_loader = create_multi_epoch_dataloader(zip(train_loader, vl_loader), num_vb)
+
+    dataloader = create_multi_epoch_dataloader(train_loader, virtual_minibatches_per_turn[-1])
+    return dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_length, total_tr_vb
 
 
 class IteratorWrapper[T](IterableDataset[T]):
@@ -128,45 +147,57 @@ def create_multi_epoch_dataloader[T](iter: Iterator[T], num_minibatches_in_epoch
     return DataLoader(dataset, batch_size=num_minibatches_in_epoch, collate_fn=jax_collate_fn)
 
 
-class VirtualMinibatchDataset(Dataset[tuple[jax.Array, jax.Array]]):
-    def __init__(self, X_data: jax.Array, Y_data: jax.Array, example_indices):
+class VirtualMinibatchDataset(Dataset[tuple[jax.Array, jax.Array, jax.Array]]):
+    def __init__(self, X_data: jax.Array, Y_data: jax.Array, example_indices, batch_mask: jax.Array):
         self.X_selected = X_data[example_indices]  # shape: (batch_size, num_virtual_minibatches, ...)
         self.Y_selected = Y_data[example_indices]  # shape: (batch_size, num_virtual_minibatches, ...)
+        self.batch_mask = batch_mask  # shape: (batch_size,) - True for real examples, False for padding
         self.num_virtual_batches = self.X_selected.shape[1]
 
     def __len__(self):
         return self.num_virtual_batches
 
     def __getitem__(self, idx):
-        return self.X_selected[:, idx], self.Y_selected[:, idx]
+        return self.X_selected[:, idx], self.Y_selected[:, idx], self.batch_mask
 
 
 def create_example_indices_generator(num_examples: int, batch_size: int, rng_key: PRNG):
-    """Generator that yields random batches of example indices (exhaustible)"""
+    """Generator that yields random batches of example indices with padding and masks"""
     indices = jnp.arange(num_examples)
     rng_key, subkey = jax.random.split(rng_key)
     shuffled_indices = jax.random.permutation(subkey, indices)
 
     for start_idx in range(0, num_examples, batch_size):
         end_idx = min(start_idx + batch_size, num_examples)
-        yield shuffled_indices[start_idx:end_idx]
+        batch_indices = shuffled_indices[start_idx:end_idx]
+        actual_batch_size = len(batch_indices)
+        padding_size = batch_size - actual_batch_size
+
+        padded_indices = jnp.concatenate([batch_indices, jnp.repeat(batch_indices[-1], padding_size)])
+
+        batch_mask = jnp.concatenate([jnp.ones(actual_batch_size, dtype=bool), jnp.zeros(padding_size, dtype=bool)])
+
+        yield padded_indices, batch_mask
 
 
 def jax_collate_fn(batch):
-    stacked = jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
-    return jax.tree.map(lambda x: jnp.squeeze(x, axis=0) if x.shape[0] == 1 else x, stacked)
+    return jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
+
+
+def jax_squeeze_batch(batch):
+    return jax.tree.map(lambda x: jnp.squeeze(x, axis=0) if x.shape[0] == 1 else x, batch)
 
 
 def create_sequential_virtual_dataloader(
-    X_data: jax.Array, Y_data: jax.Array, example_indices
-) -> DataLoader[tuple[jax.Array, jax.Array]]:
+    X_data: jax.Array, Y_data: jax.Array, example_indices, batch_mask: jax.Array
+) -> DataLoader[tuple[jax.Array, jax.Array, jax.Array]]:
     """Returns a PyTorch DataLoader that sequentially loads virtual minibatches for specific examples"""
-    dataset = VirtualMinibatchDataset(X_data, Y_data, example_indices)
+    dataset = VirtualMinibatchDataset(X_data, Y_data, example_indices, batch_mask)
     return DataLoader(
         dataset,
         batch_size=1,
         shuffle=False,
-        collate_fn=jax_collate_fn,
+        collate_fn=lambda b: jax_squeeze_batch(jax_collate_fn(b)),
     )
 
 
@@ -176,9 +207,9 @@ def standard_dataloader(
     num_examples: int,
     batch_size: int,
     rng_key: PRNG,
-) -> Iterator[tuple[jax.Array, jax.Array]]:
-    for indices in create_example_indices_generator(num_examples, batch_size, rng_key):
-        for batch in create_sequential_virtual_dataloader(X_data, Y_data, indices):
+) -> Iterator[tuple[jax.Array, jax.Array, jax.Array]]:
+    for indices, batch_mask in create_example_indices_generator(num_examples, batch_size, rng_key):
+        for batch in create_sequential_virtual_dataloader(X_data, Y_data, indices, batch_mask):
             yield batch
 
 

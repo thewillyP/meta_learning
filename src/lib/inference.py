@@ -17,22 +17,20 @@ def create_inferences[ENV, DATA](
     inference_interfaces: dict[int, dict[int, InferenceInterface[ENV]]],
     data_interface: ClassificationInterface[DATA],
     axeses: dict[int, ENV],
-):
-    transitions: dict[int, Callable[[ENV, traverse[batched[DATA]]], tuple[ENV, traverse[ENV]]]] = {}
-    readouts: dict[int, Callable[[traverse[ENV], traverse[batched[DATA]]], traverse[batched[jax.Array]]]] = {}
+) -> dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]]:
+    inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]] = {}
     for i, ((_, interfaces), (_, axes)) in enumerate(sorted(zip(inference_interfaces.items(), axeses.items()))):
-        transition, readout = create_inference_split(config, interfaces, data_interface, axes)
-        transitions[i] = transition
-        readouts[i] = readout
-    return transitions, readouts
+        inference = create_inference(config, interfaces, data_interface, axes)
+        inferences[i] = inference
+    return inferences
 
 
-def create_inference_split[ENV, DATA](
+def create_inference[ENV, DATA](
     config: GodConfig,
     inference_interfaces: dict[int, InferenceInterface[ENV]],
     data_interface: ClassificationInterface[DATA],
     axes: ENV,
-):
+) -> Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]:
     transition_functions: list[Callable[[ENV, jax.Array], tuple[ENV, jax.Array]]] = []
     readout_functions: list[Callable[[ENV], jax.Array]] = []
     for i, (_, fn) in enumerate(sorted(config.transition_function.items())):
@@ -56,105 +54,33 @@ def create_inference_split[ENV, DATA](
                 transition_functions.append(rnn_transition)
                 readout_functions.append(rnn_readout)
 
-    def transition_inference_step(env: ENV, data: DATA) -> ENV:
-        x = data_interface.get_input(data)
-        for transition_fn in transition_functions:
-            env, x = transition_fn(env, x)
-        return env
-
-    def readout_inference_step(env: ENV, data: DATA) -> jax.Array:
+    def inference_step(env: ENV, data: DATA) -> tuple[ENV, jax.Array]:
         x = data_interface.get_input(data)
         x_history = [x] if config.readout_uses_input_data else [jnp.zeros_like(x)]
-        for readout_fn in readout_functions:
+
+        for transition_fn, readout_fn in zip(transition_functions, readout_functions):
+            env, x = transition_fn(env, x)
             x_history.append(readout_fn(env))
 
         readout_param = inference_interfaces[0].get_readout_param(env)
         y = readout_param(jnp.concatenate(x_history, axis=-1))
-        return y
+        return env, y
 
-    def transition_inference(env: ENV, data: traverse[batched[DATA]]) -> tuple[ENV, traverse[ENV]]:
+    def inference(env: ENV, data: batched[traverse[DATA]]) -> tuple[ENV, batched[traverse[jax.Array]]]:
         arr, static = eqx.partition(env, eqx.is_array)
 
-        def step(carry: PyTree, x: DATA):
-            _env: ENV = eqx.combine(carry, static)
-            _env = transition_inference_step(_env, x)
+        def step(carry, x):
+            _env = eqx.combine(carry, static)
+            _env, out = inference_step(_env, x)
             carry, _ = eqx.partition(_env, eqx.is_array)
-            return carry, carry
+            return carry, out
 
-        _env, _envs = jax.lax.scan(
-            lambda e, d: eqx.filter_vmap(step, in_axes=(axes, 0), out_axes=(axes, axes))(e, d),
-            arr,
-            data.d.b,
-        )
+        f = eqx.filter_vmap(eqx.Partial(jax.lax.scan, step), in_axes=(axes, 0), out_axes=(axes, 0))
+        _env, outputs = f(arr, data.b.d)
         env = eqx.combine(_env, static)
-        envs = eqx.combine(_envs, static)
-        return env, traverse(envs)
+        return env, batched(traverse(outputs))
 
-    def readout_inference(envs: traverse[ENV], datas: traverse[batched[DATA]]) -> traverse[batched[jax.Array]]:
-        arrs, static = eqx.partition(envs.d, eqx.is_array)
-
-        def fmap(_env: PyTree, data: DATA) -> jax.Array:
-            env: ENV = eqx.combine(_env, static)
-            y = readout_inference_step(env, data)
-            return y
-
-        f = eqx.filter_vmap(eqx.filter_vmap(fmap, in_axes=(axes, 0), out_axes=0))
-        ys = f(arrs, datas.d.b)
-        return traverse(batched(ys))
-
-    return transition_inference, readout_inference
-
-
-# def create_inference[ENV, DATA](
-#     config: GodConfig,
-#     inference_interfaces: dict[int, InferenceInterface[ENV]],
-#     data_interface: ClassificationInterface[DATA],
-#     axes: ENV,
-# ) -> Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]:
-#     transition_functions: list[Callable[[ENV, jax.Array], tuple[ENV, jax.Array]]] = []
-#     for i, (_, fn) in enumerate(sorted(config.transition_function.items())):
-#         match fn:
-#             case NNLayer():
-#                 # If I really wanted to, I would separate this with a agnostic interface as input
-#                 def rnn_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
-#                     rnn = inference_interfaces[i].get_rnn_param(env)
-#                     rnn_state = inference_interfaces[i].get_rnn_state(env)
-#                     alpha = inference_interfaces[i].get_rflo_timeconstant(env)
-#                     a = rnn_state.activation
-#                     a_rec = rnn.w_rec @ jnp.concat((a, data)) + (rnn.b_rec if rnn.b_rec is not None else 0)
-#                     a_new = (1 - alpha) * a + alpha * get_activation_fn(rnn_state.activation_fn)(a_rec)
-#                     new_env = inference_interfaces[i].put_rnn_state(env, rnn_state.set(activation=a_new))
-#                     return new_env, a_new
-
-#                 transition_functions.append(rnn_transition)
-
-#     def inference_step(env: ENV, data: DATA) -> tuple[ENV, jax.Array]:
-#         x = data_interface.get_input(data)
-#         x_history = [x] if config.readout_uses_input_data else [jnp.zeros_like(x)]
-
-#         for transition_fn in transition_functions:
-#             env, x = transition_fn(env, x)
-#             x_history.append(x)
-
-#         readout_param = inference_interfaces[0].get_readout_param(env)
-#         y = readout_param(jnp.concatenate(x_history, axis=-1))
-#         return env, y
-
-#     def inference(env: ENV, data: batched[traverse[DATA]]) -> tuple[ENV, batched[traverse[jax.Array]]]:
-#         arr, static = eqx.partition(env, eqx.is_array)
-
-#         def step(carry, x):
-#             _env = eqx.combine(carry, static)
-#             _env, out = inference_step(_env, x.b.d)
-#             carry, _ = eqx.partition(_env, eqx.is_array)
-#             return carry, out
-
-#         f = eqx.filter_vmap(eqx.Partial(jax.lax.scan, step), in_axes=(axes, 0), out_axes=(axes, 0))
-#         _env, outputs = f(arr, data)
-#         env = eqx.combine(_env, static)
-#         return env, traverse(outputs)
-
-#     return inference
+    return inference
 
 
 def reset_inference_env[ENV](env0: ENV, env: ENV, inference_interfaces: dict[int, InferenceInterface[ENV]]) -> ENV:
@@ -174,18 +100,18 @@ def reset_validation_learn_env[ENV](env0: ENV, env: ENV, learn_interface: LearnI
 
 def add_reset[ENV, DATA](
     get_env: Callable[[PRNG], ENV],
-    transitions: dict[int, Callable[[ENV, traverse[batched[DATA]]], tuple[ENV, traverse[ENV]]]],
+    inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]],
     inference_interfaces: dict[int, dict[int, InferenceInterface[ENV]]],
     general_interfaces: dict[int, GeneralInterface[ENV]],
     validation_interfaces: dict[int, LearnInterface[ENV]],
     virtual_minibatches: dict[int, int],
-) -> dict[int, Callable[[ENV, traverse[batched[DATA]]], tuple[ENV, traverse[ENV]]]]:
-    _transitions: dict[int, Callable[[ENV, traverse[batched[DATA]]], tuple[ENV, traverse[ENV]]]] = {}
-    for k, (j, transition) in enumerate(sorted(transitions.items())):
+) -> dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]]:
+    _inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]] = {}
+    for k, (j, inference) in enumerate(sorted(inferences.items())):
 
-        def reset_transition(
-            env: ENV, data: traverse[batched[DATA]], i=j, k=k, transition=transition
-        ) -> tuple[ENV, traverse[ENV]]:
+        def reset_inference(
+            env: ENV, data: batched[traverse[DATA]], i=j, k=k, inference=inference
+        ) -> tuple[ENV, batched[traverse[jax.Array]]]:
             current_virtual_minibatch = general_interfaces[i].get_current_virtual_minibatch(env)
 
             def do_reset(env: ENV, i=i) -> ENV:
@@ -206,7 +132,7 @@ def add_reset[ENV, DATA](
                 env0 = get_env(prng)
                 env = reset_validation_learn_env(env0, env, validation_interfaces[i])
 
-            return transition(env, data)
+            return inference(env, data)
 
-        _transitions[j] = reset_transition
-    return _transitions
+        _inferences[j] = reset_inference
+    return _inferences

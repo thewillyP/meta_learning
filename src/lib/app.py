@@ -185,10 +185,10 @@ def runApp() -> None:
     )
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     axes = create_axes(env, inference_interface)
-    transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
-    transitions = add_reset(
+    inferences = create_inferences(config, inference_interface, data_interface, axes)
+    inferences = add_reset(
         lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-        transitions,
+        inferences,
         inference_interface,
         general_interface,
         validation_learn_interfaces,
@@ -207,8 +207,8 @@ def runApp() -> None:
     # return
 
     # make test data
-    x = jnp.ones((50, 100, n_in_shape[0]))
-    y = jnp.ones((50, 100, 10))
+    x = jnp.ones((100, 50, n_in_shape[0]))
+    y = jnp.ones((100, 50, 10))
 
     env = copy.deepcopy(env)
 
@@ -216,8 +216,7 @@ def runApp() -> None:
 
     def make_step(carry, data):
         model = eqx.combine(carry, static)
-        update_model, update_models = transitions[0](model, data)
-        out = readouts[0](update_models, data)
+        update_model, out = inferences[0](model, data)
         carry, _ = eqx.partition(update_model, eqx.is_array)
         return carry, out
 
@@ -248,7 +247,7 @@ def runApp() -> None:
     x_torch = torch.from_numpy(np.array(x)).float()
 
     # Create data for scan (1000 copies of the same data)
-    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 3000, axis=0), traverse(batched((x, y))))
+    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 3000, axis=0), batched(traverse((x, y))))
 
     def test(data, init_model):
         print("recompiled")

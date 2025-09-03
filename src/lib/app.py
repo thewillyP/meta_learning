@@ -185,10 +185,10 @@ def runApp() -> None:
     )
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     axes = create_axes(env, inference_interface)
-    inferences = create_inferences(config, inference_interface, data_interface, axes)
-    inferences = add_reset(
+    transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
+    transitions = add_reset(
         lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-        inferences,
+        transitions,
         inference_interface,
         general_interface,
         validation_learn_interfaces,
@@ -198,17 +198,17 @@ def runApp() -> None:
     eqx.tree_pprint(env.serialize())
     print(virtual_minibatches)
 
-    for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
-        print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
-        print(f"Train batch mask shape: {tr_mask.shape}")
-        print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
-        print(f"Validation batch mask shape: {vl_mask.shape}")
+    # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
+    #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
+    #     print(f"Train batch mask shape: {tr_mask.shape}")
+    #     print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
+    #     print(f"Validation batch mask shape: {vl_mask.shape}")
 
-    return
+    # return
 
     # make test data
-    x = jnp.ones((100, 50, n_in_shape[0]))
-    y = jnp.ones((100, 50, 10))
+    x = jnp.ones((50, 100, n_in_shape[0]))
+    y = jnp.ones((50, 100, 10))
 
     env = copy.deepcopy(env)
 
@@ -216,7 +216,8 @@ def runApp() -> None:
 
     def make_step(carry, data):
         model = eqx.combine(carry, static)
-        update_model, out = inferences[0](model, data)
+        update_model, update_models = transitions[0](model, data)
+        out = readouts[0](update_models, data)
         carry, _ = eqx.partition(update_model, eqx.is_array)
         return carry, out
 
@@ -247,7 +248,7 @@ def runApp() -> None:
     x_torch = torch.from_numpy(np.array(x)).float()
 
     # Create data for scan (1000 copies of the same data)
-    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 3000, axis=0), batched(traverse((x, y))))
+    scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 3000, axis=0), traverse(batched((x, y))))
 
     def test(data, init_model):
         print("recompiled")
@@ -284,6 +285,7 @@ def runApp() -> None:
     #     jax.block_until_ready(all_outputs)
 
     # JAX timing with scan
+    print("Timing JAX scan inference...")
     jax_times = []
     for _ in range(10):
         start_time = time.time()

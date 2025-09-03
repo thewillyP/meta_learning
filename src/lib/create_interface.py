@@ -150,9 +150,13 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
         case _:
             time_constant = 1.0
 
+    def get_state(env: GodState) -> jax.Array:
+        return to_vector(env.inference_states[0]).vector
+
     for j, _ in enumerate(sorted(config.data.items())):
         _interpreter = copy.replace(
             default_interpreter,
+            get_state=lambda env: get_state(env),
             get_readout_param=lambda env: env.parameters[0].readout_fn,
             get_prng=lambda env, i=j: get_inference_prng(env, i),
             _get_prng=lambda env, i=j: env.prng[i],

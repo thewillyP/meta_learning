@@ -23,6 +23,7 @@ class GeneralInterface[ENV]:
 
 @dataclass(frozen=True)
 class InferenceInterface[ENV]:
+    get_state: Callable[[ENV], jax.Array]
     get_readout_param: Callable[[ENV], CustomSequential]
     get_rnn_state: Callable[[ENV], RNNState]
     put_rnn_state: Callable[[ENV, RNNState], ENV]
@@ -56,6 +57,7 @@ class LearnInterface[ENV]:
 
 def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
     return InferenceInterface[ENV](
+        get_state=lambda env: None,
         get_readout_param=lambda env: None,
         get_rnn_state=lambda env: None,
         put_rnn_state=lambda env, _: env,

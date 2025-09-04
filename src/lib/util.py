@@ -122,7 +122,6 @@ def accuracy_with_sequence_filter(preds: jnp.ndarray, labels: jnp.ndarray, n: in
 
 class Vector[T](eqx.Module):
     vector: jax.Array
-    nonparams: T
     to_param: Callable[[jax.Array], T] = eqx.field(static=True)
 
 
@@ -130,13 +129,7 @@ def to_vector[T](tree: T) -> Vector[T]:
     """Convert a pytree to a Vector, which contains a flattened array and non-parameter parts."""
     params, nonparams = eqx.partition(tree, eqx.is_inexact_array)
     vector, to_param = jax.flatten_util.ravel_pytree(params)
-    return Vector(vector=vector, nonparams=nonparams, to_param=to_param)
-
-
-def vector_to_pytree[T](vec: Vector[T]) -> T:
-    """Convert a Vector back to its original pytree structure."""
-    params = vec.to_param(vec.vector)
-    return eqx.combine(params, vec.nonparams)
+    return Vector(vector=vector, to_param=lambda a: eqx.combine(to_param(a), nonparams))
 
 
 def hyperparameter_reparametrization(

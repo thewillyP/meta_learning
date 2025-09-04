@@ -41,6 +41,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
 
             datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
+            last_unpadded_lengths: dict[int, int] = {}
             total_tr_vb: int = 0
             for idx, (i, data_config) in enumerate(sorted(config.data.items())):
                 data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
@@ -49,6 +50,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
                 virtual_minibatches[idx] = X_vl.shape[1]
+                last_unpadded_lengths[idx] = last_unpadded_length
 
                 def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
@@ -92,6 +94,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
 
             datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
+            last_unpadded_lengths: dict[int, int] = {}
             total_tr_vb: int = 0
             for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
                 X_vl = xs[val_idx]
@@ -100,6 +103,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
                 virtual_minibatches[idx] = X_vl.shape[1]
+                last_unpadded_lengths[idx] = last_unpadded_length
 
                 def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
                     return standard_dataloader(
@@ -129,7 +133,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
         train_loader = create_multi_epoch_dataloader(zip(train_loader, vl_loader), num_vb)
 
     dataloader = create_multi_epoch_dataloader(train_loader, virtual_minibatches_per_turn[-1])
-    return dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_length, total_tr_vb
+    return dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb
 
 
 class IteratorWrapper[T](IterableDataset[T]):

@@ -98,20 +98,18 @@ def reset_validation_learn_env[ENV](env0: ENV, env: ENV, learn_interface: LearnI
     return env
 
 
-def add_reset[ENV, DATA](
+def make_resets[ENV, DATA](
     get_env: Callable[[PRNG], ENV],
     inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]],
     inference_interfaces: dict[int, dict[int, InferenceInterface[ENV]]],
     general_interfaces: dict[int, GeneralInterface[ENV]],
     validation_interfaces: dict[int, LearnInterface[ENV]],
     virtual_minibatches: dict[int, int],
-) -> dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]]:
-    _inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]] = {}
-    for k, (j, inference) in enumerate(sorted(inferences.items())):
+) -> dict[int, Callable[[ENV], ENV]]:
+    _inferences: dict[int, Callable[[ENV], ENV]] = {}
+    for k, (j, _) in enumerate(sorted(inferences.items())):
 
-        def reset_inference(
-            env: ENV, data: batched[traverse[DATA]], i=j, k=k, inference=inference
-        ) -> tuple[ENV, batched[traverse[jax.Array]]]:
+        def reset_inference(env: ENV, i=j, k=k) -> ENV:
             current_virtual_minibatch = general_interfaces[i].get_current_virtual_minibatch(env)
 
             def do_reset(env: ENV, i=i) -> ENV:
@@ -132,7 +130,7 @@ def add_reset[ENV, DATA](
                 env0 = get_env(prng)
                 env = reset_validation_learn_env(env0, env, validation_interfaces[i])
 
-            return inference(env, data)
+            return env
 
         _inferences[j] = reset_inference
     return _inferences

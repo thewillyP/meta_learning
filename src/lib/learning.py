@@ -66,68 +66,39 @@ def average_gradients[ENV, DATA](
     last_unpadded_length: int,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, GRADIENT]]:
     def f(env: ENV, data: traverse[DATA]) -> tuple[ENV, GRADIENT]:
+        # counters for tracking when loss should be padded
+        env = general_interface.put_current_avg_in_timeseries(env, 0)
         current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
-        N = filter_cond(
+
+        # compute weights for averaging gradients due to potential padding
+        N: int = jax.tree_util.tree_leaves(data)[0].shape[0]
+        chunk_size = N // num_times_to_avg_in_timeseries
+        last_chunk_valid = last_unpadded_length - (num_times_to_avg_in_timeseries - 1) * chunk_size
+        _weights = jnp.array([chunk_size] * (num_times_to_avg_in_timeseries - 1) + [last_chunk_valid])
+        weights = filter_cond(
             current_virtual_minibatch > 0 and current_virtual_minibatch % virtual_minibatches == 0,
-            lambda _: last_unpadded_length,
-            lambda _: jax.tree_util.tree_leaves(data)[0].shape[0],
+            lambda _: _weights,
+            lambda _: jnp.ones(num_times_to_avg_in_timeseries),
             None,
         )
 
+        # main code
         arr, static = eqx.partition(env, eqx.is_array)
         _data = jax.tree.map(lambda x: jnp.array_split(x, num_times_to_avg_in_timeseries), data.d)
 
         def step(e: ENV, d: DATA) -> tuple[ENV, GRADIENT]:
             _env = eqx.combine(e, static)
+            current_avg_in_timeseries = general_interface.get_current_avg_in_timeseries(_env)
             _env, gr = gr_fn(_env, d)
+            _env = general_interface.put_current_avg_in_timeseries(_env, current_avg_in_timeseries + 1)
             e, _ = eqx.partition(_env, eqx.is_array)
             return e, gr
 
         _env, grads = jax.lax.scan(step, arr, _data)
         env = eqx.combine(_env, static)
-        return env, GRADIENT(jnp.sum(grads, axis=0) / N)
+        return env, GRADIENT(jnp.average(grads, axis=0, weights=weights))
 
     return f
-
-
-# def endowAveragedGradients[Interpreter: GetRecurrentParam[Env], Env, Data](
-#     gradientFn: Controller[Traversable[Data], Interpreter, Env, Gradient[REC_PARAM]],
-#     trunc: int,
-# ) -> Controller[Traversable[Data], Interpreter, Env, Gradient[REC_PARAM]]:
-#     @do()
-#     def avgGradient(dataset: Traversable[Data]) -> G[Agent[Interpreter, Env, Gradient[REC_PARAM]]]:
-#         interpreter = yield from ask(PX[Interpreter]())
-#         param_shape: Gradient[REC_PARAM]
-#         param_shape = yield from interpreter.getRecurrentParam.fmap(lambda x: Gradient(jnp.zeros_like(x)))
-
-#         N = get_leading_dim_size(dataset)
-#         n_complete = (N // trunc) * trunc
-#         n_leftover = N - n_complete
-
-#         ds_scannable_, ds_leftover = pytree_split(dataset, trunc)
-#         ds_scannable: Traversable[Traversable[Data]] = Traversable(ds_scannable_)
-
-#         gr_scanned = yield from accumulateM(gradientFn, add, param_shape)(ds_scannable)
-#         env_after_scannable = yield from get(PX[Env]())
-
-#         def if_leftover_data(leftover: Traversable[Data]) -> tuple[Gradient[REC_PARAM], Env]:
-#             gr, new_env = gradientFn(leftover).func(interpreter, env_after_scannable)
-#             avg = Gradient[REC_PARAM]((trunc / N) * gr_scanned.value + (n_leftover / N) * gr.value)
-#             return avg, new_env
-
-#         def no_leftover(_: Traversable[Data]) -> tuple[Gradient[REC_PARAM], Env]:
-#             return Gradient[REC_PARAM]((trunc / N) * gr_scanned.value), env_after_scannable
-
-#         gradient_final, env_final = jax.lax.cond(
-#             n_leftover > 0,
-#             if_leftover_data,
-#             no_leftover,
-#             ds_leftover,
-#         )
-#         _ = yield from put(env_final)
-#         return pure(gradient_final, PX[tuple[Interpreter, Env]]())
-
-#     return avgGradient
 
 
 def bptt[ENV, DATA](
@@ -140,7 +111,7 @@ def bptt[ENV, DATA](
             return loss, _env
 
         param = learn_interface.get_param(env)
-        grad, env = jax.grad(loss_fn, has_aux=True)(param, data)
+        grad, env = eqx.filter_grad(loss_fn, has_aux=True)(param, data)
         return env, GRADIENT(grad)
 
     return gradient_fn

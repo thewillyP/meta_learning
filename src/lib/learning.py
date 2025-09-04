@@ -1,0 +1,170 @@
+"""
+1. initial seed of inference and readout
+2. first make learner takes the same learn interface for both recurrent and readout
+3. second takes the other stuff
+4. scan over config.learners
+5. after every make learner, compose with optimizer step. then pass into next loop
+6.
+
+learning function still takes two different functions, one for recurrent and one for readout
+but for inference I can reuse the same function just mask out one input. will contain repetition but whatever
+This separation is necessary for efficient rtrl for oho where I dont want to do a backward pass twice
+"""
+
+from typing import Callable
+
+import jax
+import jax.numpy as jnp
+import optax
+import equinox as eqx
+
+from lib.interface import GeneralInterface, LearnInterface
+from lib.lib_types import GRADIENT, LOSS, traverse
+from lib.util import filter_cond
+
+
+def do_optimizer[ENV](env: ENV, gr: GRADIENT, learn_interface: LearnInterface[ENV]) -> ENV:
+    param = learn_interface.get_param(env)
+    optimizer = learn_interface.get_optimizer(env)
+    opt_state = learn_interface.get_opt_state(env)
+    updates, new_opt_state = optimizer.update(gr, opt_state, param)
+    new_param = optax.apply_updates(param, updates)
+    env = learn_interface.put_opt_state(env, new_opt_state)
+    env = learn_interface.put_param(env, new_param)
+    return env
+
+
+def optimization[ENV, TR_DATA, VL_DATA](
+    gr_fn: Callable[[ENV, TR_DATA], tuple[ENV, GRADIENT]],
+    validation: Callable[[ENV, VL_DATA], LOSS],
+    learn_interface: LearnInterface[ENV],
+) -> Callable[[ENV, traverse[tuple[TR_DATA, VL_DATA]]], tuple[ENV, LOSS]]:
+    def f(env: ENV, data: traverse[tuple[TR_DATA, VL_DATA]]) -> tuple[ENV, LOSS]:
+        arr, static = eqx.partition(env, eqx.is_array)
+
+        def step(e: ENV, d: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, LOSS]:
+            _env = eqx.combine(e, static)
+            tr_data, vl_data = d
+            _env, gr = gr_fn(_env, tr_data)
+            _env = do_optimizer(_env, gr, learn_interface)
+            loss = validation(_env, vl_data)
+            e, _ = eqx.partition(_env, eqx.is_array)
+            return e, loss
+
+        _env, losses = jax.lax.scan(step, arr, data.d)
+        env = eqx.combine(_env, static)
+        return env, LOSS(jnp.mean(losses))
+
+    return f
+
+
+def average_gradients[ENV, DATA](
+    gr_fn: Callable[[ENV, traverse[DATA]], tuple[ENV, GRADIENT]],
+    num_times_to_avg_in_timeseries: int,
+    general_interface: GeneralInterface[ENV],
+    virtual_minibatches: int,
+    last_unpadded_length: int,
+) -> Callable[[ENV, traverse[DATA]], tuple[ENV, GRADIENT]]:
+    def f(env: ENV, data: traverse[DATA]) -> tuple[ENV, GRADIENT]:
+        current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
+        N = filter_cond(
+            current_virtual_minibatch > 0 and current_virtual_minibatch % virtual_minibatches == 0,
+            lambda _: last_unpadded_length,
+            lambda _: jax.tree_util.tree_leaves(data)[0].shape[0],
+            None,
+        )
+
+        arr, static = eqx.partition(env, eqx.is_array)
+        _data = jax.tree.map(lambda x: jnp.array_split(x, num_times_to_avg_in_timeseries), data.d)
+
+        def step(e: ENV, d: DATA) -> tuple[ENV, GRADIENT]:
+            _env = eqx.combine(e, static)
+            _env, gr = gr_fn(_env, d)
+            e, _ = eqx.partition(_env, eqx.is_array)
+            return e, gr
+
+        _env, grads = jax.lax.scan(step, arr, _data)
+        env = eqx.combine(_env, static)
+        return env, GRADIENT(jnp.sum(grads, axis=0) / N)
+
+    return f
+
+
+# def endowAveragedGradients[Interpreter: GetRecurrentParam[Env], Env, Data](
+#     gradientFn: Controller[Traversable[Data], Interpreter, Env, Gradient[REC_PARAM]],
+#     trunc: int,
+# ) -> Controller[Traversable[Data], Interpreter, Env, Gradient[REC_PARAM]]:
+#     @do()
+#     def avgGradient(dataset: Traversable[Data]) -> G[Agent[Interpreter, Env, Gradient[REC_PARAM]]]:
+#         interpreter = yield from ask(PX[Interpreter]())
+#         param_shape: Gradient[REC_PARAM]
+#         param_shape = yield from interpreter.getRecurrentParam.fmap(lambda x: Gradient(jnp.zeros_like(x)))
+
+#         N = get_leading_dim_size(dataset)
+#         n_complete = (N // trunc) * trunc
+#         n_leftover = N - n_complete
+
+#         ds_scannable_, ds_leftover = pytree_split(dataset, trunc)
+#         ds_scannable: Traversable[Traversable[Data]] = Traversable(ds_scannable_)
+
+#         gr_scanned = yield from accumulateM(gradientFn, add, param_shape)(ds_scannable)
+#         env_after_scannable = yield from get(PX[Env]())
+
+#         def if_leftover_data(leftover: Traversable[Data]) -> tuple[Gradient[REC_PARAM], Env]:
+#             gr, new_env = gradientFn(leftover).func(interpreter, env_after_scannable)
+#             avg = Gradient[REC_PARAM]((trunc / N) * gr_scanned.value + (n_leftover / N) * gr.value)
+#             return avg, new_env
+
+#         def no_leftover(_: Traversable[Data]) -> tuple[Gradient[REC_PARAM], Env]:
+#             return Gradient[REC_PARAM]((trunc / N) * gr_scanned.value), env_after_scannable
+
+#         gradient_final, env_final = jax.lax.cond(
+#             n_leftover > 0,
+#             if_leftover_data,
+#             no_leftover,
+#             ds_leftover,
+#         )
+#         _ = yield from put(env_final)
+#         return pure(gradient_final, PX[tuple[Interpreter, Env]]())
+
+#     return avgGradient
+
+
+def bptt[ENV, DATA](
+    transition: Callable[[ENV, DATA], tuple[ENV, LOSS]], learn_interface: LearnInterface[ENV]
+) -> Callable[[ENV, DATA], tuple[ENV, GRADIENT]]:
+    def gradient_fn(env: ENV, data: DATA) -> tuple[ENV, GRADIENT]:
+        def loss_fn(param: jax.Array, data: DATA) -> tuple[LOSS, ENV]:
+            _env = learn_interface.put_param(env, param)
+            _env, loss = transition(_env, data)
+            return loss, _env
+
+        param = learn_interface.get_param(env)
+        grad, env = jax.grad(loss_fn, has_aux=True)(param, data)
+        return env, GRADIENT(grad)
+
+    return gradient_fn
+
+
+# class OfflineLearning:
+#     def createLearner[ENV, DATA](
+#         self,
+#         activationStep: Controller[Data, Interpreter, Env, REC_STATE],
+#         readoutStep: Controller[Data, Interpreter, Env, Pred],
+#         lossFunction: LossFn[Pred, Data],
+#         _: Controller[Data, Interpreter, Env, Gradient[REC_STATE]],
+#     ) -> Library[Traversable[Data], Interpreter, Env, Traversable[Pred]]:
+#         rnnStep = lambda data: activationStep(data).then(readoutStep(data))
+#         rnn2Loss = lambda data: rnnStep(data).fmap(lambda p: lossFunction(p, data))
+#         rnnWithLoss = accumulateM(rnn2Loss, add, LOSS(jnp.array(0.0)))
+
+#         @do()
+#         def rnnWithGradient(data: Traversable[Data]) -> G[Agent[Interpreter, Env, Gradient[REC_PARAM]]]:
+#             interpreter = yield from ask(PX[Interpreter]())
+#             return doGradient(rnnWithLoss(data), interpreter.getRecurrentParam, interpreter.putRecurrentParam)
+
+#         return Library(
+#             model=traverseM(rnnStep),
+#             modelLossFn=rnnWithLoss,
+#             modelGradient=rnnWithGradient,
+#         )

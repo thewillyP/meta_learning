@@ -64,7 +64,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 datasets[idx] = get_dataloader
 
                 if idx == 0:
-                    total_tr_vb = virtual_minibatches[0] * math.ceil(X_vl.shape[0] / 1) * 1
+                    total_tr_vb = virtual_minibatches[0] * math.ceil(X_vl.shape[0] / 1)
                 # 1. check when to reset after consume concrete example
                 # 2. check when is last padded minibatch
 
@@ -117,10 +117,8 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 datasets[idx] = get_dataloader
 
                 if idx == 0:
-                    total_tr_vb = (
-                        virtual_minibatches[0]
-                        * math.ceil(X_vl.shape[0] / data_config.num_examples_in_minibatch)
-                        * data_config.num_examples_in_minibatch
+                    total_tr_vb = virtual_minibatches[0] * math.ceil(
+                        X_vl.shape[0] / data_config.num_examples_in_minibatch
                     )
 
     subkeys = jax.random.split(dataloader_prng, len(datasets))

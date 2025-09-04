@@ -70,7 +70,7 @@ def runApp() -> None:
         clearml_run=True,
         data_root_dir="/tmp",
         dataset=MnistConfig(28),
-        num_base_epochs=1,
+        num_base_epochs=2,
         checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
@@ -90,8 +90,8 @@ def runApp() -> None:
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=SGDConfig(
-                    learning_rate=0.01,
+                optimizer=AdamConfig(
+                    learning_rate=0.001,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
@@ -108,7 +108,7 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=50,
+                num_virtual_minibatches_per_turn=48,
             ),
         },
         data={
@@ -211,13 +211,14 @@ def runApp() -> None:
         last_unpadded_lengths,
     )
 
-    eqx.tree_pprint(env.serialize())
-    print(virtual_minibatches)
+    # eqx.tree_pprint(env.serialize())
+    # print(virtual_minibatches)
 
-    # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
+    # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(total_iterations, dataloader):
     #     data = (batched(traverse((tr_x[0][0], tr_y[0][0]))), tr_mask[0][0])
     #     loss = model_loss_fns[0](env, data)[1]
     #     jax.block_until_ready(loss)
+    #     print(tr_x.shape)
     #     print(f"Initial loss: {loss}")
 
     # return
@@ -244,20 +245,24 @@ def runApp() -> None:
     ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), dataloader = toolz.peek(dataloader)
     scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
 
-    jax_scan_fn = eqx.filter_jit(
-        lambda data, init_model: jax.lax.scan(make_step, init_model, data), donate="all-except-first"
+    jax_scan_fn = (
+        eqx.filter_jit(lambda data, init_model: jax.lax.scan(make_step, init_model, data), donate="all-except-first")
+        .lower(scan_data, arr)
+        .compile()
     )
-    # .lower(scan_data, arr)
-    #     .compile()
 
-    for _ in range(5):
-        for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in dataloader:
-            data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
-            # print(data)
-            arr, val_losses = jax_scan_fn(data, arr)
-            val_losses = jnp.mean(val_losses)
-            jax.block_until_ready(val_losses)
-            print(f"Validation loss: {val_losses}")
+    iterations_per_epoch: int = total_tr_vb // math.prod(
+        [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
+    )
+    total_iterations = iterations_per_epoch * config.num_base_epochs
+
+    for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(total_iterations, dataloader):
+        data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
+        # print(data)
+        arr, val_losses = jax_scan_fn(data, arr)
+        val_losses = jnp.mean(val_losses)
+        jax.block_until_ready(val_losses)
+        print(f"Validation loss: {val_losses}")
 
     # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
     #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")

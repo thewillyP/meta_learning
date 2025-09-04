@@ -132,6 +132,7 @@ class InferenceState(PClass):
 
 class General(PClass):
     current_virtual_minibatch: int = field()
+    current_avg_in_timeseries: int = field()
     logs: Optional[Logs] = field(serializer=deep_serialize)
     special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
 

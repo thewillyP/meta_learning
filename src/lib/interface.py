@@ -19,6 +19,8 @@ class ClassificationInterface[DATA]:
 class GeneralInterface[ENV]:
     get_current_virtual_minibatch: Callable[[ENV], int]
     put_current_virtual_minibatch: Callable[[ENV, int], ENV]
+    get_current_avg_in_timeseries: Callable[[ENV], int]
+    put_current_avg_in_timeseries: Callable[[ENV, int], ENV]
 
 
 @dataclass(frozen=True)
@@ -95,4 +97,6 @@ def get_default_general_interface[ENV]() -> GeneralInterface[ENV]:
     return GeneralInterface[ENV](
         get_current_virtual_minibatch=lambda env: None,
         put_current_virtual_minibatch=lambda env, value: env,
+        get_current_avg_in_timeseries=lambda env: None,
+        put_current_avg_in_timeseries=lambda env, value: env,
     )

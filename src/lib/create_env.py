@@ -241,6 +241,7 @@ def create_env(
             len(general),
             General(
                 current_virtual_minibatch=0,
+                current_avg_in_timeseries=0,
                 logs=logs,
                 special_logs=special_logs,
             ),

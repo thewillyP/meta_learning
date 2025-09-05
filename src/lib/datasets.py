@@ -29,17 +29,24 @@ class PyTreeDataset(Dataset):
 def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG, test_prng: PRNG):
     dataloader_prng, dataset_gen_prng = jax.random.split(prng, 2)
 
+    def make_dataloader_fn(X, Y, batch_size):
+        def get_dataloader(rng: PRNG):
+            return standard_dataloader(X, Y, X.shape[0], batch_size, rng)
+
+        return get_dataloader
+
     # trying to get it into consistent shape: [num virtual minibatches, batch, time series, features...] for all datasets
     match config.dataset:
         case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
             data_size = dict(zip(config.data.keys(), subset_n(n, percentages)))
             dataset_te = generate_add_task_dataset(nTest, t1, t2, tau_task, test_prng)
-            dataloader_te = DataLoader(
-                PyTreeDataset(dataset_te), batch_size=config.test_batch_size, collate_fn=jax_collate_fn
-            )
+            # Convert test dataset to same format as training datasets
+            X_te, _ = reshape_timeseries(dataset_te[0], dataset_te[0].shape[1])
+            Y_te, _ = reshape_timeseries(dataset_te[1], dataset_te[1].shape[1])
+
             n_in_shape = dataset_te[0].shape[1:]
 
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
+            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
             last_unpadded_lengths: dict[int, int] = {}
             total_tr_vb: int = 0
@@ -52,21 +59,17 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 virtual_minibatches[idx] = X_vl.shape[1]
                 last_unpadded_lengths[idx] = last_unpadded_length
 
-                def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
-                    return standard_dataloader(
-                        X_vl,
-                        Y_vl,
-                        X_vl.shape[0],
-                        1,
-                        rng,
-                    )
-
-                datasets[idx] = get_dataloader
+                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, 1)
 
                 if idx == 0:
                     total_tr_vb = virtual_minibatches[0] * math.ceil(X_vl.shape[0] / 1)
                 # 1. check when to reset after consume concrete example
                 # 2. check when is last padded minibatch
+
+            # Add test dataset info
+            virtual_minibatches[len(datasets)] = 1
+            last_unpadded_lengths[len(datasets)] = 0
+            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.test_batch_size)
 
         case MnistConfig(n_in) | FashionMnistConfig(n_in):
             n_in_shape = (n_in,)
@@ -83,16 +86,16 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             ys = jax.vmap(target_transform, in_axes=(0, None))(dataset.targets.numpy(), xs.shape[1])
             xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None))(dataset_te.data.numpy(), n_in)
             ys_te = jax.vmap(target_transform, in_axes=(0, None))(dataset_te.targets.numpy(), xs_te.shape[1])
-            dataset_te = (xs_te, ys_te)
-            dataloader_te = DataLoader(
-                PyTreeDataset(dataset_te), batch_size=config.test_batch_size, collate_fn=jax_collate_fn
-            )
+
+            # Convert test dataset to same format as training datasets
+            X_te, _ = reshape_timeseries(xs_te, xs_te.shape[1])
+            Y_te, _ = reshape_timeseries(ys_te, ys_te.shape[1])
 
             perm = jax.random.permutation(dataset_gen_prng, len(xs))
             split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
             val_indices = jnp.split(perm, split_indices)
 
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array]]]] = {}
+            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
             last_unpadded_lengths: dict[int, int] = {}
             total_tr_vb: int = 0
@@ -105,33 +108,29 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 virtual_minibatches[idx] = X_vl.shape[1]
                 last_unpadded_lengths[idx] = last_unpadded_length
 
-                def get_dataloader(rng: PRNG, X_vl=X_vl, Y_vl=Y_vl, data_config=data_config):
-                    return standard_dataloader(
-                        X_vl,
-                        Y_vl,
-                        X_vl.shape[0],
-                        data_config.num_examples_in_minibatch,
-                        rng,
-                    )
-
-                datasets[idx] = get_dataloader
+                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, data_config.num_examples_in_minibatch)
 
                 if idx == 0:
                     total_tr_vb = virtual_minibatches[0] * math.ceil(
                         X_vl.shape[0] / data_config.num_examples_in_minibatch
                     )
 
-    subkeys = jax.random.split(dataloader_prng, len(datasets))
-    train_loader = mapcat(datasets[0], infinite_keys(subkeys[0]))
-    vl_loaders = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(1, len(datasets))]
+            # Add test dataset info
+            virtual_minibatches[len(datasets)] = 1
+            last_unpadded_lengths[len(datasets)] = 0
+            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.test_batch_size)
+
+    subkeys = jax.random.split(dataloader_prng, len(datasets) + 1)
+    loaders = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(len(datasets))]
 
     # create hierarchical dataloader for meta learning
     virtual_minibatches_per_turn = [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
-    for num_vb, vl_loader in zip(virtual_minibatches_per_turn[:-1], vl_loaders):
+    train_loader = loaders[0]
+    for num_vb, vl_loader in zip(virtual_minibatches_per_turn, loaders[1:]):
         train_loader = create_multi_epoch_dataloader(zip(train_loader, vl_loader), num_vb)
 
-    dataloader = create_multi_epoch_dataloader(train_loader, virtual_minibatches_per_turn[-1])
-    return dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb
+    test_loader = datasets[len(datasets) - 1](subkeys[-1])
+    return train_loader, test_loader, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb
 
 
 class IteratorWrapper[T](IterableDataset[T]):

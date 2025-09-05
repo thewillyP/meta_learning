@@ -90,8 +90,8 @@ def runApp() -> None:
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=AdamConfig(
-                    learning_rate=0.001,
+                optimizer=SGDConfig(
+                    learning_rate=0.01,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
@@ -108,13 +108,13 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=240,
+                num_virtual_minibatches_per_turn=119,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=80,
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=101,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
@@ -214,14 +214,21 @@ def runApp() -> None:
     # eqx.tree_pprint(env.serialize())
     # print(virtual_minibatches)
 
-    # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(total_iterations, dataloader):
-    #     data = (batched(traverse((tr_x[0][0], tr_y[0][0]))), tr_mask[0][0])
-    #     loss = model_loss_fns[0](env, data)[1]
-    #     jax.block_until_ready(loss)
-    #     print(tr_x.shape)
-    #     print(f"Initial loss: {loss}")
+    # for ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask) in toolz.take(3, dataloader):
+    #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
+    #     print(f"Train batch mask shape: {tr_mask.shape}")
+    #     print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
+    #     print(f"Validation batch mask shape: {vl_mask.shape}")
+    #     print(f"Test batch shape: {te_x.shape}, {te_y.shape}")
+    #     print(f"Test batch mask shape: {te_mask.shape}")
+    #     # data = (batched(traverse((tr_x[0][0], tr_y[0][0]))), tr_mask[0][0])
+    #     # loss = model_loss_fns[0](env, data)[1]
+    #     # jax.block_until_ready(loss)
+    #     # print(tr_x.shape)
+    #     # print(f"Initial loss: {loss}")
 
     # return
+
     _learner = bptt(model_statistics_fns[0], learn_interfaces[0])
 
     def learner(
@@ -255,7 +262,9 @@ def runApp() -> None:
     )
     total_iterations = iterations_per_epoch * config.num_base_epochs
 
-    for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(total_iterations, dataloader):
+    for ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask) in toolz.take(
+        total_iterations, dataloader
+    ):
         data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
         # print(data)
         arr, (val_losses, tr_stats, vl_stats) = jax_scan_fn(data, arr)

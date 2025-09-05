@@ -126,6 +126,7 @@ def make_resets[ENV, DATA](
             env = general_interfaces[i].put_current_virtual_minibatch(env, current_virtual_minibatch + 1)
 
             if k > 0:
+                # validation learn env must always reset since their learning is purely a readout
                 prng, env = validation_interfaces[min(validation_interfaces.keys())].get_prng(env)
                 env0 = get_env(prng)
                 env = reset_validation_learn_env(env0, env, validation_interfaces[i])

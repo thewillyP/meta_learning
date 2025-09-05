@@ -16,6 +16,7 @@ LABEL = NewType("LABEL", jax.Array)  # is a vector
 REC_STATE = NewType("REC_STATE", jax.Array)  # is a vector
 REC_PARAM = NewType("REC_PARAM", jax.Array)  # is a vector
 LOSS = NewType("LOSS", jax.Array)  # is a scalar
+STAT = NewType("STAT", jax.Array)  # is a scalar
 
 
 class traverse[DATA](eqx.Module):

@@ -31,7 +31,7 @@ from lib.inference import create_inferences, make_resets
 from lib.interface import ClassificationInterface
 from lib.learning import bptt, optimization
 from lib.lib_types import *
-from lib.loss_function import make_loss_fns
+from lib.loss_function import make_statistics_fns
 from lib.util import create_fractional_list
 
 
@@ -76,12 +76,12 @@ def runApp() -> None:
         loss_fn="cross_entropy_with_integer_labels",
         transition_function={
             0: NNLayer(
-                n=32,
+                n=128,
                 activation_fn="tanh",
                 use_bias=True,
             ),
             1: NNLayer(
-                n=32,
+                n=128,
                 activation_fn="tanh",
                 use_bias=True,
             ),
@@ -108,7 +108,7 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=48,
+                num_virtual_minibatches_per_turn=240,
             ),
         },
         data={
@@ -201,7 +201,7 @@ def runApp() -> None:
         validation_learn_interfaces,
         virtual_minibatches,
     )
-    model_loss_fns = make_loss_fns(
+    model_statistics_fns = make_statistics_fns(
         config,
         inferences,
         data_interface_for_loss,
@@ -222,25 +222,24 @@ def runApp() -> None:
     #     print(f"Initial loss: {loss}")
 
     # return
-
-    _learner = bptt(model_loss_fns[0], learn_interfaces[0])
+    _learner = bptt(model_statistics_fns[0], learn_interfaces[0])
 
     def learner(
         env: GodState, data: tuple[batched[traverse[tuple[jax.Array, jax.Array]]], jax.Array]
-    ) -> tuple[GodState, GRADIENT]:
+    ) -> tuple[GodState, GRADIENT, STAT]:
         env = resets[1](resets[0](env))
         return _learner(env, data)
 
-    opt = optimization(learner, lambda e, d: model_loss_fns[1](e, d)[1], learn_interfaces[0])
+    opt = optimization(learner, lambda e, d: model_statistics_fns[1](e, d)[1:], learn_interfaces[0])
 
     arr, static = eqx.partition(env, eqx.is_array)
 
     def make_step(carry, data):
         print(data)
         model = eqx.combine(carry, static)
-        update_model, out = opt(model, data)
+        update_model, out, tr_stats, vl_stats = opt(model, data)
         carry, _ = eqx.partition(update_model, eqx.is_array)
-        return carry, out
+        return carry, (out, tr_stats, vl_stats)
 
     ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), dataloader = toolz.peek(dataloader)
     scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
@@ -259,10 +258,19 @@ def runApp() -> None:
     for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(total_iterations, dataloader):
         data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
         # print(data)
-        arr, val_losses = jax_scan_fn(data, arr)
-        val_losses = jnp.mean(val_losses)
+        arr, (val_losses, tr_stats, vl_stats) = jax_scan_fn(data, arr)
+        val_losses = val_losses[-1]
+        tr_stats = tr_stats.d[-1, -1]
+        vl_stats = vl_stats.d[-1, -1]
         jax.block_until_ready(val_losses)
         print(f"Validation loss: {val_losses}")
+        print(f"Train stats: {tr_stats}")
+        print(f"Validation stats: {vl_stats}")
+
+        # _, preds = inferences[1](eqx.combine(arr, static), batched(traverse((vl_x[0][0], vl_y[0][0]))))
+        # accuracy = statistics_fns[1](preds.b.d, vl_y[0][0], vl_mask[0][0])
+        # jax.block_until_ready(accuracy)
+        # print(f"Validation accuracy: {accuracy}")
 
     # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
     #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")

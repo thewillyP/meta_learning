@@ -94,30 +94,45 @@ def get_loss_fn(s: str) -> Callable[[jax.Array, jax.Array], LOSS]:
             raise ValueError("Invalid loss function")
 
 
-def accuracy_hard(preds: jnp.ndarray, labels: jnp.ndarray) -> float:
+def accuracy_hard(preds: jax.Array, labels: jax.Array) -> jax.Array:
     pred_classes = jnp.argmax(preds, axis=-1)
-    return jnp.mean(pred_classes == labels).item()
+    return pred_classes == labels
 
 
-def accuracy_soft(preds: jnp.ndarray, labels: jnp.ndarray) -> float:
+def accuracy_soft(preds: jax.Array, labels: jax.Array) -> jax.Array:
     pred_classes = jnp.argmax(preds, axis=-1)
     true_classes = jnp.argmax(labels, axis=-1)
-    return jnp.mean(pred_classes == true_classes).item()
+    return pred_classes == true_classes
 
 
-def accuracy_with_sequence_filter(preds: jnp.ndarray, labels: jnp.ndarray, n: int) -> float:
-    class_indices = labels[0]
-    sequence_numbers = labels[1]
-    pred_classes = jnp.argmax(preds, axis=-1)
+def accuracy_with_sequence_filter(
+    preds: jnp.ndarray,  # [B, N, C]
+    labels: jnp.ndarray,  # [B, N, 2]
+    n: int,  # sequence number to filter
+) -> jnp.ndarray:  # [B,]
+    def _accuracy_seq_filter_single(
+        preds: jnp.ndarray,  # [N, C]
+        labels: jnp.ndarray,  # [N, 2]
+        n: int,  # sequence number to filter
+    ) -> float:
+        class_indices = labels[:, 0].astype(jnp.int32)
+        sequence_numbers = labels[:, 1].astype(jnp.int32)
+        pred_classes = jnp.argmax(preds, axis=-1)
+        correct = pred_classes == class_indices
+        # Mask: 1 where sequence == n, else 0
+        mask = (sequence_numbers == n).astype(jnp.float32)
+        correct_masked: jax.Array = correct.astype(jnp.float32) * mask
+        total = jnp.sum(mask)
+        correct_total = jnp.sum(correct_masked)
+        return jax.lax.cond(total > 0, lambda: correct_total / total, lambda: 0.0)
 
-    mask = sequence_numbers == n
-    filtered_preds = pred_classes[mask]
-    filtered_labels = class_indices[mask]
+    # Vectorized over batch dimension: preds [B, N, C], labels [B, N, 2]
+    batched_accuracy_with_sequence_filter = eqx.filter_vmap(
+        _accuracy_seq_filter_single,
+        in_axes=(0, 0, None),  # vmap over batch; n is shared
+    )
 
-    if filtered_labels.size == 0:
-        return float("nan")
-
-    return jnp.mean(filtered_preds == filtered_labels).item()
+    return batched_accuracy_with_sequence_filter(preds, labels, n)
 
 
 class Vector[T](eqx.Module):

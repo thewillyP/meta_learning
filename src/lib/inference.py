@@ -98,6 +98,20 @@ def reset_validation_learn_env[ENV](env0: ENV, env: ENV, learn_interface: LearnI
     return env
 
 
+def hard_reset_inference[ENV](
+    get_env: Callable[[PRNG], ENV],
+    inference_interface: dict[int, InferenceInterface[ENV]],
+    validation_interface: LearnInterface[ENV],
+) -> Callable[[ENV], ENV]:
+    def reset(env: ENV) -> ENV:
+        prng, env = validation_interface.get_prng(env)
+        env0 = get_env(prng)
+        env = reset_inference_env(env0, env, inference_interface)
+        return env
+
+    return reset
+
+
 def make_resets[ENV, DATA](
     get_env: Callable[[PRNG], ENV],
     inferences: dict[int, Callable[[ENV, batched[traverse[DATA]]], tuple[ENV, batched[traverse[jax.Array]]]]],

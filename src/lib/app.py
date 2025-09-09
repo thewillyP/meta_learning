@@ -12,7 +12,6 @@ import jax
 import jax.numpy as jnp
 import torch
 import numpy as np
-import time
 import toolz
 import math
 
@@ -26,10 +25,9 @@ from lib.create_interface import (
     create_validation_learn_interfaces,
 )
 from lib.datasets import create_dataloader
-from lib.env import GodState
 from lib.inference import create_inferences, hard_reset_inference, make_resets
 from lib.interface import ClassificationInterface
-from lib.learning import bptt, create_meta_learner, optimization
+from lib.learning import create_meta_learner
 from lib.lib_types import *
 from lib.loss_function import make_statistics_fns
 from lib.util import create_fractional_list

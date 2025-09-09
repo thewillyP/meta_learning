@@ -1,9 +1,7 @@
 from typing import Callable
-import copy
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import PyTree
 
 from lib.config import GodConfig, NNLayer
 from lib.env import RNNState

@@ -1,7 +1,6 @@
 from typing import NewType
 from dataclasses import dataclass
 import jax
-from jaxtyping import PyTree
 import equinox as eqx
 
 PRNG = NewType("PRNG", jax.Array)

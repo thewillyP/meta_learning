@@ -1,16 +1,3 @@
-"""
-1. initial seed of inference and readout
-2. first make learner takes the same learn interface for both recurrent and readout
-3. second takes the other stuff
-4. scan over config.learners
-5. after every make learner, compose with optimizer step. then pass into next loop
-6.
-
-learning function still takes two different functions, one for recurrent and one for readout
-but for inference I can reuse the same function just mask out one input. will contain repetition but whatever
-This separation is necessary for efficient rtrl for oho where I dont want to do a backward pass twice
-"""
-
 from typing import Callable
 
 import jax
@@ -50,7 +37,6 @@ def optimization[ENV, TR_DATA, VL_DATA](
             _env, tr_stat, gr = gr_fn(_env, tr_data)
             _env = do_optimizer(_env, gr, learn_interface)
             x = validation(_env, vl_data)
-            print(x)
             vl_stats, loss = x
             e, _ = eqx.partition(_env, eqx.is_array)
             return e, (loss, tr_stat + vl_stats)
@@ -91,13 +77,10 @@ def average_gradients[ENV, DATA, TR_DATA](
 
         # main code
         arr, static = eqx.partition(env, eqx.is_array)
-        print(traverse_data)
         _data = jax.tree.map(lambda x: jnp.stack(jnp.split(x, num_times_to_avg_in_timeseries)), traverse_data)
-        print(_data)
 
         def step(e: ENV, _d: traverse[TR_DATA]) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
             d = put_traverse(_d, data)
-            print("afafasdfdsafaf", d)
             _env = eqx.combine(e, static)
             current_avg_in_timeseries = general_interface.get_current_avg_in_timeseries(_env)
             _env, stat, gr = gr_fn(_env, d)

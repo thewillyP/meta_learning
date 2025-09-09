@@ -191,6 +191,7 @@ def runApp() -> None:
         get_target=lambda data: data.b.d[1],
     )
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
+    env0 = copy.deepcopy(env)
     axes = create_axes(env, inference_interface)
     inferences = create_inferences(config, inference_interface, data_interface, axes)
     resets = make_resets(
@@ -202,9 +203,8 @@ def runApp() -> None:
         virtual_minibatches,
     )
     test_reset = hard_reset_inference(
-        lambda prng: reinitialize_env(env, config, n_in_shape, prng),
+        lambda: env0,
         inference_interface[min(inference_interface.keys())],
-        validation_learn_interfaces[min(validation_learn_interfaces.keys())],
     )
     model_statistics_fns = make_statistics_fns(
         config,

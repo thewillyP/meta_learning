@@ -224,7 +224,7 @@ def create_meta_learner[ENV, DATA](
 
     def _learner0(env: ENV, data: traverse[tuple[DATA, DATA]]) -> tuple[ENV, tuple[STAT, ...], LOSS]:
         env, stats, losses = __learner0(env, data)
-        loss = jnp.average(losses.d)
+        loss = jnp.mean(losses.d)
         return env, stats.d, LOSS(loss)
 
     learner0 = _learner0
@@ -256,7 +256,7 @@ def create_meta_learner[ENV, DATA](
             env: ENV, data: traverse[tuple[DATA, DATA]], learner0__=learner0__
         ) -> tuple[ENV, tuple[STAT, ...], LOSS]:
             env, stats, losses = learner0__(env, data)
-            loss = jnp.average(losses.d)
+            loss = jnp.mean(losses.d)
             return env, stats.d, LOSS(loss)
 
         learner0 = learner0_

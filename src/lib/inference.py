@@ -99,13 +99,11 @@ def reset_validation_learn_env[ENV](env0: ENV, env: ENV, learn_interface: LearnI
 
 
 def hard_reset_inference[ENV](
-    get_env: Callable[[PRNG], ENV],
+    get_env: Callable[[], ENV],
     inference_interface: dict[int, InferenceInterface[ENV]],
-    validation_interface: LearnInterface[ENV],
 ) -> Callable[[ENV], ENV]:
     def reset(env: ENV) -> ENV:
-        prng, env = validation_interface.get_prng(env)
-        env0 = get_env(prng)
+        env0 = get_env()
         env = reset_inference_env(env0, env, inference_interface)
         return env
 

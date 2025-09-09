@@ -120,7 +120,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             last_unpadded_lengths[len(datasets)] = 0
             datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.test_batch_size)
 
-    subkeys = jax.random.split(dataloader_prng, len(datasets) + 1)
+    subkeys = jax.random.split(dataloader_prng, len(datasets))
     loaders = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(len(datasets))]
 
     # create hierarchical dataloader for meta learning

@@ -69,24 +69,30 @@ def runApp() -> None:
     config = GodConfig(
         clearml_run=True,
         data_root_dir="/tmp",
-        dataset=MnistConfig(28),
+        dataset=MnistConfig(784),
         num_base_epochs=2,
         checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
         transition_function={
             0: NNLayer(
-                n=128,
+                n=0,
                 activation_fn="tanh",
                 use_bias=True,
             ),
-            1: NNLayer(
-                n=128,
-                activation_fn="tanh",
-                use_bias=True,
-            ),
+            # 1: NNLayer(
+            #     n=128,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            # ),
         },
-        readout_function=FeedForwardConfig(ffw_layers={0: NNLayer(n=10, activation_fn="identity", use_bias=True)}),
+        readout_function=FeedForwardConfig(
+            ffw_layers={
+                0: NNLayer(n=128, activation_fn="relu", use_bias=True),
+                1: NNLayer(n=128, activation_fn="relu", use_bias=True),
+                2: NNLayer(n=10, activation_fn="identity", use_bias=True),
+            }
+        ),
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
@@ -115,18 +121,18 @@ def runApp() -> None:
             0: DataConfig(
                 train_percent=95,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=5,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=False,
+        readout_uses_input_data=True,
         test_batch_size=100,
     )
 

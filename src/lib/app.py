@@ -27,9 +27,9 @@ from lib.create_interface import (
 )
 from lib.datasets import create_dataloader
 from lib.env import GodState
-from lib.inference import create_inferences, make_resets
+from lib.inference import create_inferences, hard_reset_inference, make_resets
 from lib.interface import ClassificationInterface
-from lib.learning import bptt, optimization
+from lib.learning import bptt, create_meta_learner, optimization
 from lib.lib_types import *
 from lib.loss_function import make_statistics_fns
 from lib.util import create_fractional_list
@@ -100,7 +100,7 @@ def runApp() -> None:
                 num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(  # normal OHO
-                learner=RTRLConfig(),
+                learner=IdentityConfig(),
                 optimizer=SGDConfig(
                     learning_rate=0.01,
                 ),
@@ -201,6 +201,11 @@ def runApp() -> None:
         validation_learn_interfaces,
         virtual_minibatches,
     )
+    test_reset = hard_reset_inference(
+        lambda prng: reinitialize_env(env, config, n_in_shape, prng),
+        inference_interface[min(inference_interface.keys())],
+        validation_learn_interfaces[min(validation_learn_interfaces.keys())],
+    )
     model_statistics_fns = make_statistics_fns(
         config,
         inferences,
@@ -209,6 +214,18 @@ def runApp() -> None:
         general_interfaces,
         virtual_minibatches,
         last_unpadded_lengths,
+    )
+
+    meta_learner = create_meta_learner(
+        config,
+        [v for _, v in sorted(model_statistics_fns.items())],
+        [v for _, v in sorted(resets.items())],
+        test_reset,
+        [v for _, v in sorted(learn_interfaces.items())],
+        [v for _, v in sorted(validation_learn_interfaces.items())],
+        [v for _, v in sorted(general_interfaces.items())],
+        [v for _, v in sorted(virtual_minibatches.items())],
+        [v for _, v in sorted(last_unpadded_lengths.items())],
     )
 
     # eqx.tree_pprint(env.serialize())
@@ -229,30 +246,31 @@ def runApp() -> None:
 
     # return
 
-    _learner = bptt(model_statistics_fns[0], learn_interfaces[0])
+    # _learner = bptt(model_statistics_fns[0], learn_interfaces[0])
 
-    def learner(
-        env: GodState, data: tuple[batched[traverse[tuple[jax.Array, jax.Array]]], jax.Array]
-    ) -> tuple[GodState, GRADIENT, STAT]:
-        env = resets[1](resets[0](env))
-        return _learner(env, data)
+    # def learner(
+    #     env: GodState, data: tuple[batched[traverse[tuple[jax.Array, jax.Array]]], jax.Array]
+    # ) -> tuple[GodState, GRADIENT, STAT]:
+    #     env = resets[1](resets[0](env))
+    #     return _learner(env, data)
 
-    opt = optimization(learner, lambda e, d: model_statistics_fns[1](e, d)[1:], learn_interfaces[0])
+    # opt = optimization(learner, lambda e, d: model_statistics_fns[1](e, d)[1:], learn_interfaces[0])
 
     arr, static = eqx.partition(env, eqx.is_array)
 
     def make_step(carry, data):
         print(data)
         model = eqx.combine(carry, static)
-        update_model, stats, out = opt(model, data)
+        update_model, stats, out = meta_learner(model, data)
         carry, _ = eqx.partition(update_model, eqx.is_array)
         return carry, (out, stats)
 
     (((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask)), dataloader = toolz.peek(dataloader)
-    scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
+    _scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
+    scan_data = traverse((_scan_data, (batched(traverse((te_x, te_y))), te_mask)))
 
     jax_scan_fn = (
-        eqx.filter_jit(lambda data, init_model: jax.lax.scan(make_step, init_model, data), donate="all-except-first")
+        eqx.filter_jit(lambda data, init_model: make_step(init_model, data), donate="all-except-first")
         .lower(scan_data, arr)
         .compile()
     )
@@ -265,17 +283,21 @@ def runApp() -> None:
     for ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask) in toolz.take(
         total_iterations, dataloader
     ):
-        data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
+        _scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
+        data = traverse((_scan_data, (batched(traverse((te_x, te_y))), te_mask)))
+        # data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
         # print(data)
-        arr, (val_losses, stats) = jax_scan_fn(data, arr)
-        tr_stats, vl_stats = stats.d
-        val_losses = val_losses.d[-1, -1]
+        arr, (te_losses, stats) = jax_scan_fn(data, arr)
+        tr_stats, vl_stats, te_stats = stats.d
+        te_losses = te_losses.d[-1]
+        te_stats = te_stats[-1]
         tr_stats = tr_stats[-1, -1]
         vl_stats = vl_stats[-1, -1]
-        jax.block_until_ready(val_losses)
-        print(f"Validation loss: {val_losses}")
+        jax.block_until_ready(te_losses)
+        print(f"Test loss: {te_losses}")
         print(f"Train stats: {tr_stats}")
         print(f"Validation stats: {vl_stats}")
+        print(f"Test stats: {te_stats}")
 
         # _, preds = inferences[1](eqx.combine(arr, static), batched(traverse((vl_x[0][0], vl_y[0][0]))))
         # accuracy = statistics_fns[1](preds.b.d, vl_y[0][0], vl_mask[0][0])

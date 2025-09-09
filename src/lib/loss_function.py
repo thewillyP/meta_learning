@@ -18,7 +18,7 @@ def make_statistics_fns[ENV, DATA, OUT](
     general_interfaces: dict[int, GeneralInterface[ENV]],
     virtual_minibatches: dict[int, int],
     last_unpadded_lengths: dict[int, int],
-) -> dict[int, Callable[[ENV, tuple[DATA, jax.Array]], tuple[ENV, LOSS, STAT]]]:
+) -> dict[int, Callable[[ENV, tuple[DATA, jax.Array]], tuple[ENV, tuple[STAT, ...], LOSS]]]:
     model_loss_fns = {}
     for i, (general_interface, virtual_minibatch, last_unpadded_length, data_config) in enumerate(
         zip(
@@ -44,14 +44,14 @@ def make_statistics_fns[ENV, DATA, OUT](
             data_config.num_times_to_avg_in_timeseries,
         )
 
-        def model_loss_fn(env: ENV, ds: tuple[DATA, jax.Array], j=i) -> tuple[ENV, LOSS, STAT]:
+        def model_loss_fn(env: ENV, ds: tuple[DATA, jax.Array], j=i) -> tuple[ENV, tuple[STAT, ...], LOSS]:
             data, mask = ds
             env, _preds = inferences[j](env, data)
             preds = get_out(_preds)
             targets = data_interface.get_target(data)
             loss = loss_fn(env, preds, targets, mask)
             stat = statistics_fn(env, preds, targets, mask)
-            return env, loss, stat
+            return env, (stat,), loss
 
         model_loss_fns[i] = model_loss_fn
 

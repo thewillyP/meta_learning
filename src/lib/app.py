@@ -90,8 +90,8 @@ def runApp() -> None:
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=SGDConfig(
-                    learning_rate=0.01,
+                optimizer=AdamConfig(
+                    learning_rate=0.001,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
@@ -108,18 +108,18 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=119,
+                num_virtual_minibatches_per_turn=95,
             ),
         },
         data={
             0: DataConfig(
-                train_percent=80,
-                num_examples_in_minibatch=101,
+                train_percent=95,
+                num_examples_in_minibatch=100,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=20,
+                train_percent=5,
                 num_examples_in_minibatch=100,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
@@ -244,11 +244,11 @@ def runApp() -> None:
     def make_step(carry, data):
         print(data)
         model = eqx.combine(carry, static)
-        update_model, out, tr_stats, vl_stats = opt(model, data)
+        update_model, stats, out = opt(model, data)
         carry, _ = eqx.partition(update_model, eqx.is_array)
-        return carry, (out, tr_stats, vl_stats)
+        return carry, (out, stats)
 
-    ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), dataloader = toolz.peek(dataloader)
+    (((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask)), dataloader = toolz.peek(dataloader)
     scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
 
     jax_scan_fn = (
@@ -267,10 +267,11 @@ def runApp() -> None:
     ):
         data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
         # print(data)
-        arr, (val_losses, tr_stats, vl_stats) = jax_scan_fn(data, arr)
-        val_losses = val_losses[-1]
-        tr_stats = tr_stats.d[-1, -1]
-        vl_stats = vl_stats.d[-1, -1]
+        arr, (val_losses, stats) = jax_scan_fn(data, arr)
+        tr_stats, vl_stats = stats.d
+        val_losses = val_losses.d[-1, -1]
+        tr_stats = tr_stats[-1, -1]
+        vl_stats = vl_stats[-1, -1]
         jax.block_until_ready(val_losses)
         print(f"Validation loss: {val_losses}")
         print(f"Train stats: {tr_stats}")

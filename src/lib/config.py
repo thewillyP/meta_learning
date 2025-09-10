@@ -84,6 +84,7 @@ class UOROConfig:
 @dataclass(frozen=True)
 class SGDConfig:
     learning_rate: float
+    momentum: float
 
 
 @dataclass(frozen=True)

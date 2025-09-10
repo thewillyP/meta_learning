@@ -117,8 +117,9 @@ def runApp() -> None:
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=AdamConfig(
+                optimizer=SGDConfig(
                     learning_rate=0.001,
+                    momentum=0.9,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
@@ -130,6 +131,7 @@ def runApp() -> None:
                 learner=IdentityConfig(),
                 optimizer=SGDConfig(
                     learning_rate=0.01,
+                    momentum=0.0,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,

@@ -12,14 +12,14 @@ def get_optimizer(learn_config: LearnConfig) -> Callable[[Parameter], optax.Grad
     forward, _ = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
 
     match learn_config.optimizer:
-        case SGDConfig(learning_rate):
-            return lambda pr: optax.sgd(forward(pr.learning_parameter.learning_rate))
-        case SGDNormalizedConfig(learning_rate):
+        case SGDConfig(learning_rate, momentum):
+            return lambda pr: optax.sgd(forward(pr.learning_parameter.learning_rate), momentum=momentum)
+        case SGDNormalizedConfig(learning_rate, momentum):
             return lambda pr: optax.chain(
                 optax.normalize_by_update_norm(scale_factor=1.0),
-                optax.sgd(forward(pr.learning_parameter.learning_rate)),
+                optax.sgd(forward(pr.learning_parameter.learning_rate), momentum=momentum),
             )
-        case SGDClipConfig(learning_rate, threshold, sharpness):
+        case SGDClipConfig(learning_rate, momentum, threshold, sharpness):
 
             def update_fn(updates, state, _):
                 grads_flat, _ = jax.flatten_util.ravel_pytree(updates)
@@ -31,7 +31,7 @@ def get_optimizer(learn_config: LearnConfig) -> Callable[[Parameter], optax.Grad
 
             return lambda pr: optax.chain(
                 optax.GradientTransformation(lambda _: (), update_fn),
-                optax.sgd(forward(pr.learning_parameter.learning_rate)),
+                optax.sgd(forward(pr.learning_parameter.learning_rate), momentum=momentum),
             )
         case AdamConfig(learning_rate):
             return lambda pr: optax.adam(forward(pr.learning_parameter.learning_rate))

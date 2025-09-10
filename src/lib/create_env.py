@@ -149,11 +149,11 @@ def create_learning_parameter(
 
     parameter = LearningParameter(learning_rate=None, rflo_timeconstant=None)
     match learn_config.optimizer:
-        case SGDConfig(learning_rate):
+        case SGDConfig(learning_rate, momentum):
             parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
-        case SGDNormalizedConfig(learning_rate):
+        case SGDNormalizedConfig(learning_rate, momentum):
             parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
-        case SGDClipConfig(learning_rate, threshold, sharpness):
+        case SGDClipConfig(learning_rate, momentum, threshold, sharpness):
             parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
         case AdamConfig(learning_rate):
             parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))

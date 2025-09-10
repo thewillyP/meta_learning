@@ -170,6 +170,7 @@ def create_learning_state(
     env: GodState,
     parameter: Parameter,
     learn_interface: LearnInterface[GodState],
+    series_length: int,
     prng: PRNG,
 ) -> LearningState:
     state = LearningState(influence_tensor=None, uoro=None, opt_state=None)
@@ -178,7 +179,8 @@ def create_learning_state(
     match learn_config.learner:
         case RTRLConfig() | RFLOConfig():
             prng1, prng = jax.random.split(prng, 2)
-            influence_tensor = jax.random.normal(prng1, (flat_state.size, flat_param.vector.size))
+            # multiply flat size size by sequence length since hidden state is the whole sequence
+            influence_tensor = jax.random.normal(prng1, (flat_state.size * series_length, flat_param.vector.size))
             state = state.set(influence_tensor=JACOBIAN(influence_tensor))
         case UOROConfig():
             prng1, prng2, prng = jax.random.split(prng, 3)
@@ -200,7 +202,7 @@ def create_learning_state(
 
             _parameter = jax.tree.map(edit_fn, parameter, keys_tree, is_leaf=lambda x: isinstance(x, CustomSequential))
 
-            a = jax.random.normal(prng2, (flat_state.size,))
+            a = jax.random.normal(prng2, (flat_state.size * series_length,))
             b = to_vector(_parameter).vector
             uoro = UOROState(A=a, B=b)
             state = state.set(uoro=uoro)
@@ -252,6 +254,12 @@ def create_env(
 
     parameter = create_inference_parameter(config, n_in_shape, prng3)
     env = env.transform(["parameters", len(env.parameters)], lambda _: parameter)
+
+    tr_data = config.data[min(config.data.keys())]
+    series_lengths = [tr_data.num_steps_in_timeseries] + [
+        l.num_virtual_minibatches_per_turn for l in config.learners.values()
+    ][:-1]
+
     for i, (_, learn_config) in enumerate(sorted(config.learners.items())):
         prng1, prng = jax.random.split(prng, 2)
 
@@ -260,7 +268,9 @@ def create_env(
         learning_parameter = create_learning_parameter(learn_config)
         parameter = Parameter(transition_parameter=None, readout_fn=None, learning_parameter=learning_parameter)
         env = env.transform(["parameters", len(env.parameters)], lambda _: parameter)
-        learning_state_vl = create_learning_state(learn_config, env, prev_parameter, learn_interfaces[i], prng1)
+        learning_state_vl = create_learning_state(
+            learn_config, env, prev_parameter, learn_interfaces[i], series_lengths[i], prng1
+        )
 
         if learn_config.track_logs:
             logs = Logs(gradient=jnp.zeros_like(to_vector(prev_parameter).vector))
@@ -297,13 +307,16 @@ def create_env(
 
     # create learning states for validation
     validation_learning_states: PMap[int, LearningState] = pmap({})
-    for i, _ in enumerate(islice(config.learners.items(), 1, None), 1):
+    for i, ((_, data), _) in enumerate(
+        zip(sorted(config.data.items())[1:], islice(config.learners.items(), 1, None)), 1
+    ):
         prng1, prng = jax.random.split(prng, 2)
         learning_state_vl = create_learning_state(
             config.learners[min(config.learners.keys())],
             env,
             learn_interfaces[i].get_state_pytree(env),
             validation_learn_interfaces[i],
+            data.num_steps_in_timeseries,
             prng1,
         )
         validation_learning_states = validation_learning_states.set(i, learning_state_vl)

@@ -222,10 +222,9 @@ def runApp() -> None:
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     eqx.tree_pprint(env.serialize())
     axes = create_axes(env, inference_interface)
-    inferences = create_inferences(config, inference_interface, data_interface, axes)
+    transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
     resets = make_resets(
         lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-        inferences,
         inference_interface,
         general_interfaces,
         validation_learn_interfaces,
@@ -238,9 +237,9 @@ def runApp() -> None:
     )
     model_statistics_fns = make_statistics_fns(
         config,
-        inferences,
+        readouts,
         data_interface_for_loss,
-        lambda out: out.b.d,
+        lambda out: out.d.b,
         general_interfaces,
         virtual_minibatches,
         last_unpadded_lengths,
@@ -248,6 +247,7 @@ def runApp() -> None:
 
     meta_learner = create_meta_learner(
         config,
+        [v for _, v in sorted(transitions.items())],
         [v for _, v in sorted(model_statistics_fns.items())],
         [v for _, v in sorted(resets.items())],
         test_reset,
@@ -296,8 +296,9 @@ def runApp() -> None:
         return carry, (out, stats)
 
     (((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask)), dataloader = toolz.peek(dataloader)
-    _scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
-    scan_data = traverse((_scan_data, (batched(traverse((te_x, te_y))), te_mask)))
+
+    _scan_data = traverse(((traverse(batched((tr_x, tr_y))), tr_mask), (traverse(batched((vl_x, vl_y))), vl_mask)))
+    scan_data = traverse((_scan_data, (traverse(batched((te_x, te_y))), te_mask)))
 
     jax_scan_fn = (
         eqx.filter_jit(lambda data, init_model: make_step(init_model, data), donate="all-except-first")
@@ -313,8 +314,8 @@ def runApp() -> None:
     for ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask) in toolz.take(
         total_iterations, dataloader
     ):
-        _scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
-        data = traverse((_scan_data, (batched(traverse((te_x, te_y))), te_mask)))
+        _scan_data = traverse(((traverse(batched((tr_x, tr_y))), tr_mask), (traverse(batched((vl_x, vl_y))), vl_mask)))
+        data = traverse((_scan_data, (traverse(batched((te_x, te_y))), te_mask)))
         # data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
         # print(data)
         arr, (te_losses, stats) = jax_scan_fn(data, arr)

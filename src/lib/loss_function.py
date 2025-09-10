@@ -5,19 +5,19 @@ import equinox as eqx
 
 from lib.config import DelayAddOnlineConfig, FashionMnistConfig, GodConfig, MnistConfig
 from lib.interface import ClassificationInterface, GeneralInterface
-from lib.lib_types import LOSS, STAT
+from lib.lib_types import LOSS, STAT, traverse
 from lib.util import accuracy_hard, filter_cond, get_loss_fn
 
 
 def make_statistics_fns[ENV, DATA, OUT](
     config: GodConfig,
-    inferences: dict[int, Callable[[ENV, DATA], tuple[ENV, OUT]]],
+    readouts: dict[int, Callable[[traverse[ENV], DATA], OUT]],
     data_interface: ClassificationInterface[DATA],
     get_out: Callable[[OUT], jax.Array],
     general_interfaces: dict[int, GeneralInterface[ENV]],
     virtual_minibatches: dict[int, int],
     last_unpadded_lengths: dict[int, int],
-) -> dict[int, Callable[[ENV, tuple[DATA, jax.Array]], tuple[ENV, tuple[STAT, ...], LOSS]]]:
+) -> dict[int, Callable[[traverse[ENV], tuple[DATA, jax.Array]], tuple[tuple[STAT, ...], LOSS]]]:
     model_loss_fns = {}
     for i, (general_interface, virtual_minibatch, last_unpadded_length, data_config) in enumerate(
         zip(
@@ -43,14 +43,15 @@ def make_statistics_fns[ENV, DATA, OUT](
             data_config.num_times_to_avg_in_timeseries,
         )
 
-        def model_loss_fn(env: ENV, ds: tuple[DATA, jax.Array], j=i) -> tuple[ENV, tuple[STAT, ...], LOSS]:
+        def model_loss_fn(envs: traverse[ENV], ds: tuple[DATA, jax.Array], j=i) -> tuple[tuple[STAT, ...], LOSS]:
             data, mask = ds
-            env, _preds = inferences[j](env, data)
+            _preds = readouts[j](envs, data)
             preds = get_out(_preds)
             targets = data_interface.get_target(data)
+            env = jax.tree.map(lambda x: x[-1], envs)
             loss = loss_fn(env, preds, targets, mask)
             stat = statistics_fn(env, preds, targets, mask)
-            return env, (stat,), loss
+            return (stat,), loss
 
         model_loss_fns[i] = model_loss_fn
 
@@ -88,6 +89,9 @@ def make_loss_fn[ENV](
             _loss_fn = eqx.filter_vmap(loss_sequence_length)
 
     def loss_fn(env: ENV, pred: jax.Array, target: jax.Array, batch_mask: jax.Array) -> LOSS:
+        pred = jnp.swapaxes(pred, 0, 1)  # (B, T, ...)
+        target = jnp.swapaxes(target, 0, 1)  # (B, T, ...)
+
         current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
         current_avg_in_timeseries = general_interface.get_current_avg_in_timeseries(env)
         loss = _loss_fn(pred, target)
@@ -128,6 +132,9 @@ def make_statistics_fn[ENV](
             # premptively multiply by series length so averaging cancels out the factor
 
     def statistics_fn(env: ENV, pred: jax.Array, target: jax.Array, batch_mask: jax.Array) -> STAT:
+        pred = jnp.swapaxes(pred, 0, 1)  # (B, T, ...)
+        target = jnp.swapaxes(target, 0, 1)  # (B, T, ...)
+
         current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
         current_avg_in_timeseries = general_interface.get_current_avg_in_timeseries(env)
         statistics = _statistics_fn(pred, target)

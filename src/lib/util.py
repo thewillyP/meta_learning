@@ -10,6 +10,15 @@ import jax.lax as lax
 from lib.lib_types import LOSS, PRNG, FractionalList
 
 
+def jvp(f, primal, tangent):
+    return jax.jvp(f, (primal,), (tangent,), has_aux=True)
+
+
+def jacobian_matrix_product(f, primal, matrix):
+    wrapper = lambda p, t: jvp(f, p, t)
+    return eqx.filter_vmap(wrapper, in_axes=(None, 1), out_axes=(None, 1, None))(primal, matrix)
+
+
 def create_fractional_list(percentages: list[float]) -> FractionalList | None:
     """Create a FractionalList from a list of percentages.
 

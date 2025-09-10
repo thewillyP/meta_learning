@@ -30,7 +30,7 @@ from lib.interface import ClassificationInterface
 from lib.learning import create_meta_learner
 from lib.lib_types import *
 from lib.loss_function import make_statistics_fns
-from lib.util import create_fractional_list
+from lib.util import create_fractional_list, hyperparameter_reparametrization
 
 
 def runApp() -> None:
@@ -67,7 +67,7 @@ def runApp() -> None:
     config = GodConfig(
         clearml_run=True,
         data_root_dir="/tmp",
-        dataset=MnistConfig(14),
+        dataset=MnistConfig(28),
         num_base_epochs=2,
         checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
@@ -82,25 +82,25 @@ def runApp() -> None:
             #     n=128,
             #     use_bias=True,
             # ),
-            # 0: NNLayer(
-            #     n=128,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-            # 1: NNLayer(
-            #     n=128,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-            0: LSTMLayer(
-                n=64,
-                use_bias=True,
-            ),
-            1: NNLayer(
-                n=64,
+            0: NNLayer(
+                n=128,
                 activation_fn="tanh",
                 use_bias=True,
             ),
+            1: NNLayer(
+                n=128,
+                activation_fn="tanh",
+                use_bias=True,
+            ),
+            # 0: LSTMLayer(
+            #     n=64,
+            #     use_bias=True,
+            # ),
+            # 1: NNLayer(
+            #     n=64,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            # ),
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
@@ -117,9 +117,8 @@ def runApp() -> None:
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=SGDConfig(
+                optimizer=AdamConfig(
                     learning_rate=0.001,
-                    momentum=0.9,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
@@ -144,13 +143,13 @@ def runApp() -> None:
             0: DataConfig(
                 train_percent=95,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=56,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=5,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=56,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
@@ -330,10 +329,17 @@ def runApp() -> None:
         print(f"Validation stats: {vl_stats}")
         print(f"Test stats: {te_stats}")
 
-        # _, preds = inferences[1](eqx.combine(arr, static), batched(traverse((vl_x[0][0], vl_y[0][0]))))
-        # accuracy = statistics_fns[1](preds.b.d, vl_y[0][0], vl_mask[0][0])
-        # jax.block_until_ready(accuracy)
-        # print(f"Validation accuracy: {accuracy}")
+        new_env = eqx.combine(arr, static)
+        forward, _ = hyperparameter_reparametrization(config.learners[0].hyperparameter_parametrization)
+        print(f"New Learning Rate: {forward(new_env.parameters[1].learning_parameter.learning_rate)}")
+
+    # env_new = eqx.combine(arr, static)
+    # print("")
+
+    # _, preds = inferences[1](eqx.combine(arr, static), batched(traverse((vl_x[0][0], vl_y[0][0]))))
+    # accuracy = statistics_fns[1](preds.b.d, vl_y[0][0], vl_mask[0][0])
+    # jax.block_until_ready(accuracy)
+    # print(f"Validation accuracy: {accuracy}")
 
     # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
     #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")

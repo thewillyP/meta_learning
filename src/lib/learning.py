@@ -9,7 +9,7 @@ import toolz
 from lib.config import BPTTConfig, GodConfig, IdentityConfig, RFLOConfig, RTRLConfig, UOROConfig
 from lib.interface import GeneralInterface, LearnInterface
 from lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, batched, traverse
-from lib.util import filter_cond, to_vector
+from lib.util import filter_cond, jacobian_matrix_product, to_vector
 
 
 def do_optimizer[ENV](env: ENV, gr: GRADIENT, learn_interface: LearnInterface[ENV]) -> ENV:
@@ -96,6 +96,199 @@ def average_gradients[ENV, DATA, TR_DATA](
     return f
 
 
+def rtrl[ENV, DATA](
+    transition: Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...], LOSS]],
+    learn_interface: LearnInterface[ENV],
+) -> Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+    def gradient_fn(env: ENV, data: DATA) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+        s__p = learn_interface.get_state(env), learn_interface.get_param(env)
+        s__p_vector = to_vector(s__p)
+
+        def state_fn(state__param: jax.Array) -> tuple[tuple[jax.Array, LOSS], tuple[ENV, tuple[STAT, ...]]]:
+            state, param = s__p_vector.to_param(state__param)
+            _env = learn_interface.put_state(env, state)
+            _env = learn_interface.put_param(_env, param)
+            _env, stat, loss = transition(_env, data)
+            state = learn_interface.get_state(_env)
+            return (state, loss), (_env, stat)
+
+        influence_tensor = learn_interface.get_influence_tensor(env)
+        state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
+        (
+            _,
+            (new_influence_tensor, grad),
+            (stat, env),
+        ) = jacobian_matrix_product(state_fn, s__p_vector.vector, state_jacobian)
+        env = learn_interface.put_influence_tensor(env, JACOBIAN(new_influence_tensor))
+        return env, stat, GRADIENT(grad)
+
+    return gradient_fn
+
+
+# class PastFacingLearn(ABC):
+#     @abstractmethod
+#     def creditAssignment[Interpreter, Env](
+#         self,
+#         recurrentError: Agent[Interpreter, Env, Gradient[REC_STATE]],
+#         activationStep: Agent[Interpreter, Env, REC_STATE],
+#     ) -> Agent[Interpreter, Env, Gradient[REC_PARAM]]: ...
+
+#     class _CreateModel_Can[Env](PutRecurrentState[Env], PutRecurrentParam[Env], Protocol): ...
+
+#     @staticmethod
+#     def createRnnForward[Interpreter: _CreateModel_Can[Env], Env](activationStep: Agent[Interpreter, Env, REC_STATE]):
+#         @do()
+#         def _creatingModel():
+#             interpreter = yield from ask(PX[Interpreter]())
+#             env = yield from get(PX[Env]())
+
+#             def agentFn(actv: REC_STATE, param: REC_PARAM) -> tuple[REC_STATE, Env]:
+#                 return (
+#                     interpreter.putRecurrentState(actv)
+#                     .then(interpreter.putRecurrentParam(param))
+#                     .then(activationStep)
+#                     .func(interpreter, env)
+#                 )
+
+#             return pure(agentFn, PX[tuple[Interpreter, Env]]())
+
+#         return _creatingModel()
+
+#     class _PastFacingLearner_Can[Env](
+#         GetRecurrentState[Env],
+#         PutRecurrentState[Env],
+#         GetRecurrentParam[Env],
+#         PutRecurrentParam[Env],
+#         Protocol,
+#     ): ...
+
+#     def createLearner[Data, Interpreter: _PastFacingLearner_Can[Env], Env, Pred](
+#         self,
+#         activationStep: Controller[Data, Interpreter, Env, REC_STATE],
+#         readoutStep: Controller[Data, Interpreter, Env, Pred],
+#         lossFunction: LossFn[Pred, Data],
+#         lossGradientWrtActiv: Controller[Data, Interpreter, Env, Gradient[REC_STATE]],
+#     ) -> Library[IdentityF[Data], Interpreter, Env, IdentityF[Pred]]:
+#         def immediateLoss(data: Data):
+#             return readoutStep(data).fmap(lambda p: lossFunction(p, data))
+
+#         @do()
+#         def rnnGradient(data: Data) -> G[Agent[Interpreter, Env, Gradient[REC_PARAM]]]:
+#             interpreter = yield from ask(PX[Interpreter]())
+
+#             grad_rec = yield from self.creditAssignment(lossGradientWrtActiv(data), activationStep(data))
+#             grad_readout = yield from doGradient(
+#                 immediateLoss(data),
+#                 interpreter.getRecurrentParam,
+#                 interpreter.putRecurrentParam,
+#             )
+
+#             return pure(grad_rec + grad_readout, PX[tuple[Interpreter, Env]]())
+
+#         return Library[IdentityF[Data], Interpreter, Env, IdentityF[Pred]](
+#             model=lambda data: activationStep(data.value).then(readoutStep(data.value)),
+#             modelLossFn=lambda data: activationStep(data.value).then(immediateLoss(data.value)),
+#             modelGradient=lambda data: rnnGradient(data.value),
+#         )
+
+
+# class InfluenceTensorLearner(PastFacingLearn, ABC):
+#     class _InfluenceTensorLearner_Can[Env](
+#         GetInfluenceTensor[Env],
+#         PutInfluenceTensor[Env],
+#         PastFacingLearn._PastFacingLearner_Can[Env],
+#         PutLogs[Env],
+#         GetGlobalLogConfig[Env],
+#         Protocol,
+#     ): ...
+
+#     @abstractmethod
+#     def getInfluenceTensor[Interpreter, Env](
+#         self, activationStep: Agent[Interpreter, Env, REC_STATE]
+#     ) -> Agent[Interpreter, Env, Jacobian[REC_PARAM]]: ...
+
+#     def creditAssignment[Interpreter: _InfluenceTensorLearner_Can[Env], Env](
+#         self,
+#         recurrentError: Agent[Interpreter, Env, Gradient[REC_STATE]],
+#         activationStep: Agent[Interpreter, Env, REC_STATE],
+#     ) -> Agent[Interpreter, Env, Gradient[REC_PARAM]]:
+#         @do()
+#         def _creditAssignment() -> G[Agent[Interpreter, Env, Gradient[REC_PARAM]]]:
+#             interpreter = yield from ask(PX[Interpreter]())
+#             infT = yield from self.getInfluenceTensor(activationStep)
+#             stop_influence = yield from interpreter.getGlobalLogConfig.fmap(lambda x: x.stop_influence)
+#             log_influence = yield from interpreter.getGlobalLogConfig.fmap(lambda x: x.log_influence)
+#             if not stop_influence:
+#                 _ = yield from interpreter.putInfluenceTensor(JACOBIAN(infT.value))
+
+#             influenceTensor = yield from interpreter.getInfluenceTensor
+#             signal = yield from recurrentError
+#             recurrentGradient = Gradient[REC_PARAM](signal.value @ influenceTensor)
+
+#             if log_influence:
+#                 _ = yield from interpreter.putLogs(Logs(influenceTensor=influenceTensor))
+#             return pure(recurrentGradient, PX[tuple[Interpreter, Env]]())
+
+#         return _creditAssignment()
+
+
+# class RTRL(InfluenceTensorLearner):
+#     class _UpdateInfluence_Can[Env](
+#         GetInfluenceTensor[Env],
+#         GetRecurrentState[Env],
+#         PutRecurrentState[Env],
+#         GetRecurrentParam[Env],
+#         PutRecurrentParam[Env],
+#         PutLogs[Env],
+#         GetLogConfig[Env],
+#         GetGlobalLogConfig[Env],
+#         GetPRNG[Env],
+#         Protocol,
+#     ): ...
+
+#     def __init__(self, use_fwd: bool):
+#         self.immediateJacFn = eqx.filter_jacfwd if use_fwd else eqx.filter_jacrev
+
+#     @do()
+#     def getInfluenceTensor[Interpreter: _UpdateInfluence_Can[Env], Env](
+#         self, activationStep: Agent[Interpreter, Env, REC_STATE]
+#     ) -> G[Agent[Interpreter, Env, Jacobian[REC_PARAM]]]:
+#         interpreter = yield from ask(PX[Interpreter]())
+#         rnnForward = yield from self.createRnnForward(activationStep)
+#         influenceTensor = yield from interpreter.getInfluenceTensor
+#         actv0 = yield from interpreter.getRecurrentState
+#         param0 = yield from interpreter.getRecurrentParam
+
+#         wrtActvFn = lambda a: rnnForward(a, param0)[0]
+#         immediateJacobian__InfluenceTensor_product: Array = jacobian_matrix_product(wrtActvFn, actv0, influenceTensor)
+#         immediateInfluence: Array
+#         env: Env
+#         immediateInfluence, env = self.immediateJacFn(lambda p: rnnForward(actv0, p), has_aux=True)(param0)
+#         newInfluenceTensor = Jacobian[REC_PARAM](immediateJacobian__InfluenceTensor_product + immediateInfluence)
+
+#         log_condition = yield from interpreter.getLogConfig.fmap(lambda x: x.log_special)
+#         lanczos_iterations = yield from interpreter.getLogConfig.fmap(lambda x: x.lanczos_iterations)
+#         log_expensive = yield from interpreter.getLogConfig.fmap(lambda x: x.log_expensive)
+#         log_influence = yield from interpreter.getGlobalLogConfig.fmap(lambda x: x.log_influence)
+#         subkey = yield from interpreter.updatePRNG()
+
+#         if log_condition:
+#             v0: Array = jnp.array(jax.random.normal(subkey, actv0.shape))
+#             tridag = matfree.decomp.tridiag_sym(lanczos_iterations, custom_vjp=False)
+#             get_eig = matfree.eig.eigh_partial(tridag)
+#             fn = lambda v: jvp(lambda a: wrtActvFn(a), actv0, v)
+#             eigvals, _ = get_eig(fn, v0)
+#             _ = yield from interpreter.putLogs(Logs(jac_eigenvalue=jnp.max(eigvals)))
+
+#         if log_expensive:
+#             _ = yield from interpreter.putLogs(Logs(hessian=eqx.filter_jacrev(wrtActvFn)(actv0)))
+
+#         _ = yield from put(env)
+#         if log_influence:
+#             _ = yield from interpreter.putLogs(Logs(immediateInfluenceTensor=immediateInfluence))
+#         return pure(newInfluenceTensor, PX[tuple[Interpreter, Env]]())
+
+
 def bptt[ENV, DATA](
     transition: Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...], LOSS]],
     learn_interface: LearnInterface[ENV],
@@ -126,24 +319,24 @@ def identity[ENV, DATA](
     return gradient_fn
 
 
-def take_jacobian[ENV, DATA, OUT: jax.Array](
-    transition: Callable[[ENV, DATA], OUT],
+def take_jacobian[ENV, DATA, OUT: jax.Array, AUX](
+    transition: Callable[[ENV, DATA], tuple[OUT, AUX]],
     learn_interface: LearnInterface[ENV],
-) -> Callable[[ENV, DATA], JACOBIAN]:
-    def jacobian_fn(env: ENV, data: DATA) -> JACOBIAN:
+) -> Callable[[ENV, DATA], tuple[JACOBIAN, AUX]]:
+    def jacobian_fn(env: ENV, data: DATA) -> tuple[JACOBIAN, AUX]:
         s__p = learn_interface.get_state(env), learn_interface.get_param(env)
         s__p_vector = to_vector(s__p)
 
         def fn(state__param: jax.Array, data: DATA) -> OUT:
             state, param = s__p_vector.to_param(state__param)
             _env = learn_interface.put_state(env, state)
-            _env = learn_interface.put_param(env, param)
-            out = transition(_env, data)
-            return out
+            _env = learn_interface.put_param(_env, param)
+            out, aux = transition(_env, data)
+            return out, aux
 
         state__param = s__p_vector.vector
-        jacobian = eqx.filter_grad(fn)(state__param, data)
-        return JACOBIAN(jacobian)
+        jacobian, aux = eqx.filter_grad(fn, has_aux=True)(state__param, data)
+        return JACOBIAN(jacobian), aux
 
     return jacobian_fn
 
@@ -161,8 +354,8 @@ def create_meta_learner[ENV, DATA](
     last_unpadded_lengths: list[int],
 ):
     """from here on out the types stop making sense because I have to rely on dynamic typing to get the algorithm to work. just make sure the data is in the correct shape and everything should work out thats the only assumption I need to make"""
-    _readout_gr = take_jacobian(lambda env, data: statistics_fns[0](env, data)[2], learn_interfaces[0])
-    readout_gr = lambda env, data: GRADIENT(_readout_gr(env, data))
+    _readout_gr = take_jacobian(lambda env, data: (statistics_fns[0](env, data)[2], None), learn_interfaces[0])
+    readout_gr = lambda env, data: GRADIENT(_readout_gr(env, data)[0])
 
     gr_fns = []
     for learn_interface, general_interface, data_config, virtual_minibatch, last_unpadded_length, transition in zip(

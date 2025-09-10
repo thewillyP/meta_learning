@@ -13,6 +13,7 @@ from lib.env import (
     GodState,
     InferenceParameter,
     InferenceState,
+    LSTMState,
     LearningParameter,
     LearningState,
     Logs,
@@ -46,10 +47,39 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                             n_h=n_h,
                             n_in=n_in,
                             activation_fn=activation_fn,
-                        )
+                        ),
+                        lstm=None,
                     ),
                 )
                 n_in = n_h  # Update n_in for the next layer
+            case GRULayer(n_h, use_bias):
+                prng1, prng = jax.random.split(prng, 2)
+                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                transition_state = transition_state.set(
+                    i,
+                    InferenceState(
+                        rnn=RNNState(
+                            activation=activation,
+                            n_h=n_h,
+                            n_in=n_in,
+                            activation_fn="",
+                        ),
+                        lstm=None,
+                    ),
+                )
+                n_in = n_h
+            case LSTMLayer(n_h, use_bias):
+                prng1, prng2, prng = jax.random.split(prng, 3)
+                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
+                transition_state = transition_state.set(
+                    i,
+                    InferenceState(
+                        lstm=LSTMState(h=activation, c=cell, n_h=n_h, n_in=n_in),
+                        rnn=None,
+                    ),
+                )
+                n_in = n_h
             case _:
                 raise ValueError("Unsupported transition function")
     return transition_state
@@ -73,11 +103,25 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
                         rnn=RNN(
                             w_rec=w_rec,
                             b_rec=b_rec,
-                        )
+                        ),
+                        gru=None,
+                        lstm=None,
                     ),
                 )
                 n_in_size += n_h
                 n_in = n_h  # Update n_in for the next layer
+            case GRULayer(n_h, use_bias):
+                prng1, prng = jax.random.split(prng, 2)
+                gru = eqx.nn.GRUCell(n_in, n_h, use_bias=use_bias, key=prng1)
+                transition_parameter = transition_parameter.set(i, InferenceParameter(gru=gru, rnn=None, lstm=None))
+                n_in_size += n_h
+                n_in = n_h
+            case LSTMLayer(n_h, use_bias):
+                prng1, prng = jax.random.split(prng, 2)
+                lstm = eqx.nn.LSTMCell(n_in, n_h, use_bias=use_bias, key=prng1)
+                transition_parameter = transition_parameter.set(i, InferenceParameter(lstm=lstm, rnn=None, gru=None))
+                n_in_size += n_h
+                n_in = n_h
             case _:
                 raise ValueError("Unsupported transition function")
 

@@ -101,6 +101,13 @@ class RNNState(PClass):
     activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = field()
 
 
+class LSTMState(PClass):
+    h: jax.Array = field()
+    c: jax.Array = field()
+    n_h: int = field()
+    n_in: int = field()
+
+
 class RNN(PClass):
     w_rec: jax.Array = field()
     b_rec: Optional[jax.Array] = field()
@@ -124,10 +131,13 @@ class LearningState(PClass):
 
 class InferenceParameter(PClass):
     rnn: Optional[RNN] = field(serializer=deep_serialize)
+    gru: Optional[eqx.nn.GRUCell] = field()
+    lstm: Optional[eqx.nn.LSTMCell] = field()
 
 
 class InferenceState(PClass):
     rnn: Optional[RNNState] = field(serializer=deep_serialize)
+    lstm: Optional[LSTMState] = field(serializer=deep_serialize)
 
 
 class General(PClass):
@@ -162,6 +172,7 @@ class GodState(PClass):
 register_pytree(Logs, set())
 register_pytree(SpecialLogs, set())
 register_pytree(RNNState, {"n_h", "n_in", "activation_fn"})
+register_pytree(LSTMState, {"n_h", "n_in"})
 register_pytree(RNN, set())
 register_pytree(UOROState, set())
 register_pytree(LearningParameter, {"rflo_timeconstant"})

@@ -3,9 +3,10 @@ from typing import Callable
 import jax
 from jaxtyping import PyTree
 import optax
+import equinox as eqx
 
 from lib.config import LearnConfig
-from lib.env import RNN, CustomSequential, Logs, RNNState, SpecialLogs, UOROState
+from lib.env import RNN, CustomSequential, LSTMState, Logs, RNNState, SpecialLogs, UOROState
 from lib.lib_types import JACOBIAN, PRNG, batched
 
 
@@ -33,6 +34,10 @@ class InferenceInterface[ENV]:
     get_prng: Callable[[ENV], tuple[PRNG, ENV]]
     _get_prng: Callable[[ENV], batched[PRNG]]
     get_rflo_timeconstant: Callable[[ENV], float]
+    get_lstm_state: Callable[[ENV], LSTMState]
+    put_lstm_state: Callable[[ENV, LSTMState], ENV]
+    get_gru_param: Callable[[ENV], eqx.nn.GRUCell]
+    get_lstm_param: Callable[[ENV], eqx.nn.LSTMCell]
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,10 @@ def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
         get_prng=lambda env: (None, env),
         _get_prng=lambda env: None,
         get_rflo_timeconstant=lambda env: None,
+        get_lstm_state=lambda env: None,
+        put_lstm_state=lambda env, _: env,
+        get_gru_param=lambda env: None,
+        get_lstm_param=lambda env: None,
     )
 
 

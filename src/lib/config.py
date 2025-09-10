@@ -128,6 +128,18 @@ class NNLayer:
 
 
 @dataclass(frozen=True)
+class GRULayer:
+    n: int
+    use_bias: bool
+
+
+@dataclass(frozen=True)
+class LSTMLayer:
+    n: int
+    use_bias: bool
+
+
+@dataclass(frozen=True)
 class FeedForwardConfig:
     ffw_layers: dict[int, NNLayer]
 
@@ -141,7 +153,7 @@ class GodConfig:
     checkpoint_every_n_minibatches: int
     seed: SeedConfig
     loss_fn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
-    transition_function: dict[int, Union[NNLayer]]  # if len()>1 creates stacked recurrence. LSTM/GRU TBD
+    transition_function: dict[int, Union[NNLayer, GRULayer, LSTMLayer]]  # if len()>1 creates stacked recurrence.
     readout_function: Union[FeedForwardConfig]
     learners: dict[int, LearnConfig]
     data: dict[int, DataConfig]

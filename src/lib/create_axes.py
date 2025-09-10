@@ -6,7 +6,11 @@ from lib.interface import InferenceInterface
 
 
 def get_batched[ENV](env: ENV, interfaces: dict[int, InferenceInterface[ENV]]) -> tuple[Any, ...]:
-    return tuple(interface.get_rnn_state(env) for interface in interfaces.values()) + (interfaces[0]._get_prng(env),)
+    return (
+        tuple(interface.get_rnn_state(env) for interface in interfaces.values())
+        + tuple(interface.get_lstm_state(env) for interface in interfaces.values())
+        + (interfaces[0]._get_prng(env),)
+    )
 
 
 def create_axes[ENV](env: ENV, interfaces: dict[int, dict[int, InferenceInterface[ENV]]]) -> dict[int, ENV]:

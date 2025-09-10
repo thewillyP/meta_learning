@@ -170,6 +170,12 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
                     ["inference_states", i, l, "rnn"], lambda _: rnn_state
                 ),
                 get_rnn_param=lambda env, l=k: env.parameters[0].transition_parameter[l].rnn,
+                get_lstm_state=lambda env, i=j, l=k: env.inference_states[i][l].lstm,
+                put_lstm_state=lambda env, lstm_state, i=j, l=k: env.transform(
+                    ["inference_states", i, l, "lstm"], lambda _: lstm_state
+                ),
+                get_lstm_param=lambda env, l=k: env.parameters[0].transition_parameter[l].lstm,
+                get_gru_param=lambda env, l=k: env.parameters[0].transition_parameter[l].gru,
             )
             interpreters.setdefault(j, {})[k] = interpreter
 

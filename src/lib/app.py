@@ -143,7 +143,7 @@ def runApp() -> None:
             0: DataConfig(
                 train_percent=95,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=14,
+                num_steps_in_timeseries=15,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(

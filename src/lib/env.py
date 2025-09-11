@@ -142,7 +142,6 @@ class InferenceState(PClass):
 
 class General(PClass):
     current_virtual_minibatch: jax.Array = field()
-    current_avg_in_timeseries: jax.Array = field()
     logs: Optional[Logs] = field(serializer=deep_serialize)
     special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
 

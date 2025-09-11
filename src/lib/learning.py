@@ -48,7 +48,6 @@ def average_gradients[ENV, DATA, TR_DATA](
 ) -> Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def f(env: ENV, data: DATA) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         # counters for tracking when loss should be padded
-        env = general_interface.put_current_avg_in_timeseries(env, jnp.array(0))
         current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
 
         # compute weights for averaging gradients due to potential padding
@@ -71,9 +70,7 @@ def average_gradients[ENV, DATA, TR_DATA](
         def step(e: ENV, _d: traverse[TR_DATA]) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
             d = put_traverse(_d, data)
             _env = eqx.combine(e, static)
-            current_avg_in_timeseries = general_interface.get_current_avg_in_timeseries(_env)
             _env, stat, gr = gr_fn(_env, d)
-            _env = general_interface.put_current_avg_in_timeseries(_env, current_avg_in_timeseries + 1)
             e, _ = eqx.partition(_env, eqx.is_array)
             return e, (gr, stat)
 

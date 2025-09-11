@@ -193,10 +193,6 @@ def create_general_interfaces(config: GodConfig) -> dict[int, GeneralInterface[G
             put_current_virtual_minibatch=lambda env, value, i=j: env.transform(
                 ["general", i, "current_virtual_minibatch"], lambda _: value
             ),
-            get_current_avg_in_timeseries=lambda env, i=j: env.general[i].current_avg_in_timeseries,
-            put_current_avg_in_timeseries=lambda env, value, i=j: env.transform(
-                ["general", i, "current_avg_in_timeseries"], lambda _: value
-            ),
         )
         interpreters[j] = interpreter
 

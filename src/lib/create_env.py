@@ -238,7 +238,7 @@ def create_env(
             }
         ),
         prng_learning=pmap({i: key for i, key in enumerate(jax.random.split(prng2, len(config.learners)))}),
-        start_epoch=0,
+        start_epoch=jnp.array(0),
     )
     general: PMap[int, General] = pmap({})
 
@@ -284,8 +284,8 @@ def create_env(
         general = general.set(
             len(general),
             General(
-                current_virtual_minibatch=0,
-                current_avg_in_timeseries=0,
+                current_virtual_minibatch=jnp.array(0),
+                current_avg_in_timeseries=jnp.array(0),
                 logs=logs,
                 special_logs=special_logs,
             ),

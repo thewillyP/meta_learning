@@ -141,8 +141,8 @@ class InferenceState(PClass):
 
 
 class General(PClass):
-    current_virtual_minibatch: int = field()
-    current_avg_in_timeseries: int = field()
+    current_virtual_minibatch: jax.Array = field()
+    current_avg_in_timeseries: jax.Array = field()
     logs: Optional[Logs] = field(serializer=deep_serialize)
     special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
 
@@ -161,7 +161,7 @@ class GodState(PClass):
     general: PMap[int, General] = field(serializer=deep_serialize)
     prng: PMap[int, batched[PRNG]] = field(serializer=deep_serialize)
     prng_learning: PMap[int, PRNG] = field(serializer=deep_serialize)
-    start_epoch: int = field()
+    start_epoch: jax.Array = field()
 
 
 # ============================================================================

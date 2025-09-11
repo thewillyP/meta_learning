@@ -148,18 +148,26 @@ def create_multi_epoch_dataloader[T](iter: Iterator[T], num_minibatches_in_epoch
     return DataLoader(dataset, batch_size=num_minibatches_in_epoch, collate_fn=jax_collate_fn)
 
 
-class VirtualMinibatchDataset(Dataset[tuple[jax.Array, jax.Array, jax.Array]]):
+class VirtualMinibatchDataset(Dataset[tuple[jax.Array, jax.Array, jax.Array, jax.Array]]):
     def __init__(self, X_data: jax.Array, Y_data: jax.Array, example_indices, batch_mask: jax.Array):
-        self.X_selected = X_data[example_indices]  # shape: (batch_size, num_virtual_minibatches, ...)
-        self.Y_selected = Y_data[example_indices]  # shape: (batch_size, num_virtual_minibatches, ...)
-        self.batch_mask = batch_mask  # shape: (batch_size,) - True for real examples, False for padding
+        self.X_selected = X_data[example_indices]  # (batch_size, num_virtual_minibatches, ...)
+        self.Y_selected = Y_data[example_indices]  # (batch_size, num_virtual_minibatches, ...)
+        self.batch_mask = batch_mask  # (batch_size,)
         self.num_virtual_batches = self.X_selected.shape[1]
+
+        # Create sequence numbers: replicated across batch, incremental across sequence
+        batch_size = self.X_selected.shape[0]
+        self.n_consume = jnp.broadcast_to(jnp.arange(self.X_selected.shape[2]), (batch_size, self.X_selected.shape[2]))
 
     def __len__(self):
         return self.num_virtual_batches
 
     def __getitem__(self, idx):
-        return self.X_selected[:, idx], self.Y_selected[:, idx], self.batch_mask
+        X = self.X_selected[:, idx].swapaxes(0, 1)
+        Y = self.Y_selected[:, idx].swapaxes(0, 1)
+        sequence_nums = self.n_consume.swapaxes(0, 1)
+        mask = self.batch_mask
+        return X, Y, sequence_nums, mask
 
 
 def create_example_indices_generator(num_examples: int, batch_size: int, rng_key: PRNG):

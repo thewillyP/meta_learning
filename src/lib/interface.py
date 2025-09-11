@@ -14,6 +14,7 @@ from lib.lib_types import JACOBIAN, PRNG, batched
 class ClassificationInterface[DATA]:
     get_input: Callable[[DATA], jax.Array]
     get_target: Callable[[DATA], jax.Array]
+    get_sequence: Callable[[DATA], jax.Array]
 
 
 @dataclass(frozen=True)

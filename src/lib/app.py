@@ -211,21 +211,22 @@ def runApp() -> None:
     validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)
     inference_interface = create_transition_interfaces(config)
     general_interfaces = create_general_interfaces(config)
-    data_interface = ClassificationInterface[tuple[jax.Array, jax.Array]](
+    data_interface = ClassificationInterface[tuple[jax.Array, jax.Array, jax.Array]](
         get_input=lambda data: data[0],
         get_target=lambda data: data[1],
+        get_sequence=lambda data: data[2],
     )
-    data_interface_for_loss = ClassificationInterface[batched[traverse[tuple[jax.Array, jax.Array]]]](
-        get_input=lambda data: data.b.d[0],
-        get_target=lambda data: data.b.d[1],
+    data_interface_for_loss = ClassificationInterface[batched[tuple[jax.Array, jax.Array, jax.Array]]](
+        get_input=lambda data: data.b[0],
+        get_target=lambda data: data.b[1],
+        get_sequence=lambda data: data.b[2],
     )
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     eqx.tree_pprint(env.serialize())
     axes = create_axes(env, inference_interface)
-    inferences = create_inferences(config, inference_interface, data_interface, axes)
+    transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
     resets = make_resets(
         lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-        inferences,
         inference_interface,
         general_interfaces,
         validation_learn_interfaces,
@@ -238,9 +239,9 @@ def runApp() -> None:
     )
     model_statistics_fns = make_statistics_fns(
         config,
-        inferences,
+        readouts,
         data_interface_for_loss,
-        lambda out: out.b.d,
+        lambda out: out.b,
         general_interfaces,
         virtual_minibatches,
         last_unpadded_lengths,
@@ -248,6 +249,7 @@ def runApp() -> None:
 
     meta_learner = create_meta_learner(
         config,
+        [v for _, v in sorted(transitions.items())],
         [v for _, v in sorted(model_statistics_fns.items())],
         [v for _, v in sorted(resets.items())],
         test_reset,
@@ -291,13 +293,17 @@ def runApp() -> None:
     def make_step(carry, data):
         print(data)
         model = eqx.combine(carry, static)
-        update_model, stats, out = meta_learner(model, data)
+        update_model, stats, losses = meta_learner(model, data)
         carry, _ = eqx.partition(update_model, eqx.is_array)
-        return carry, (out, stats)
+        return carry, (losses, stats)
 
-    (((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask)), dataloader = toolz.peek(dataloader)
-    _scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
-    scan_data = traverse((_scan_data, (batched(traverse((te_x, te_y))), te_mask)))
+    (((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask)), dataloader = (
+        toolz.peek(dataloader)
+    )
+    _scan_data = traverse(
+        ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
+    )
+    scan_data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
 
     jax_scan_fn = (
         eqx.filter_jit(lambda data, init_model: make_step(init_model, data), donate="all-except-first")
@@ -310,24 +316,27 @@ def runApp() -> None:
     )
     total_iterations = iterations_per_epoch * config.num_base_epochs
 
-    for ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask) in toolz.take(
+    for ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask) in toolz.take(
         total_iterations, dataloader
     ):
-        _scan_data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
-        data = traverse((_scan_data, (batched(traverse((te_x, te_y))), te_mask)))
+        _scan_data = traverse(
+            ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
+        )
+        data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
         # data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
         # print(data)
         arr, (te_losses, stats) = jax_scan_fn(data, arr)
-        tr_stats, vl_stats, te_stats = stats.d
+        tr_stats, vl_stats, te_stats = stats
+
         te_losses = te_losses.d[-1]
-        te_stats = te_stats[-1]
-        tr_stats = tr_stats[-1, -1]
-        vl_stats = vl_stats[-1, -1]
+        te_stats = te_stats[-1, -1]
+        tr_stats = tr_stats[-1, -1, -1]
+        vl_stats = vl_stats[-1, -1, -1]
         jax.block_until_ready(te_losses)
         print(f"Test loss: {te_losses}")
+        print(f"Test stats: {te_stats}")
         print(f"Train stats: {tr_stats}")
         print(f"Validation stats: {vl_stats}")
-        print(f"Test stats: {te_stats}")
 
         new_env = eqx.combine(arr, static)
         forward, _ = hyperparameter_reparametrization(config.learners[0].hyperparameter_parametrization)

@@ -44,7 +44,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             X_te, _ = reshape_timeseries(dataset_te[0], dataset_te[0].shape[1])
             Y_te, _ = reshape_timeseries(dataset_te[1], dataset_te[1].shape[1])
 
-            n_in_shape = dataset_te[0].shape[1:]
+            n_in_shape = dataset_te[0].shape[2:]
 
             datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}

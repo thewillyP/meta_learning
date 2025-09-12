@@ -111,7 +111,7 @@ def make_statistics_fn[ENV](
 ) -> Callable[[ENV, jax.Array, jax.Array, jax.Array], STAT]:
     match config.dataset:
         case DelayAddOnlineConfig():
-            _statistics_fn = lambda _, __: jnp.array(0.0)
+            _statistics_fn = lambda _, __: jnp.array([0.0])
 
         case MnistConfig(n_in) | FashionMnistConfig(n_in):
             seq_len = 784 // n_in - 1

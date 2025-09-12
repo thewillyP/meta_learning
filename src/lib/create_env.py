@@ -177,8 +177,8 @@ def create_learning_state(
     flat_param = to_vector(parameter)
     match learn_config.learner:
         case RTRLConfig() | RFLOConfig():
-            prng1, prng = jax.random.split(prng, 2)
-            influence_tensor = jax.random.normal(prng1, (flat_state.size, flat_param.vector.size))
+            # prng1, prng = jax.random.split(prng, 2)
+            influence_tensor = jnp.zeros((flat_state.size, flat_param.vector.size))
             state = state.set(influence_tensor=JACOBIAN(influence_tensor))
         case UOROConfig():
             prng1, prng2, prng = jax.random.split(prng, 3)

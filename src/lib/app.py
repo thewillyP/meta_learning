@@ -71,7 +71,7 @@ def runApp() -> None:
         data_root_dir="/tmp",
         dataset=MnistConfig(28),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=1,
+        num_base_epochs=20,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
@@ -87,7 +87,7 @@ def runApp() -> None:
             #     use_bias=True,
             # ),
             0: NNLayer(
-                n=128,
+                n=0,
                 activation_fn="tanh",
                 use_bias=True,
             ),
@@ -114,15 +114,15 @@ def runApp() -> None:
         readout_function=FeedForwardConfig(
             ffw_layers={
                 0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                1: NNLayer(n=10, activation_fn="identity", use_bias=True),
+                1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                3: NNLayer(n=10, activation_fn="identity", use_bias=True),
             }
         ),
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=SGDNormalizedConfig(
+                optimizer=SGDConfig(
                     learning_rate=0.01,
                     momentum=0.0,
                 ),
@@ -133,7 +133,7 @@ def runApp() -> None:
                 num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(
-                learner=RTRLConfig(),
+                learner=IdentityConfig(),
                 optimizer=AdamConfig(
                     learning_rate=0.001,
                     # momentum=0.0,
@@ -300,7 +300,7 @@ def runApp() -> None:
         tr_stats, vl_stats, te_stats = stats
 
         tr_loss, tr_acc, _, tr_grs, __ = tr_stats
-        vl_loss, vl_acc, _, vl_grs, __ = vl_stats
+        vl_loss, vl_acc, _, ___, __ = vl_stats
         te_loss, te_acc, _, __, ___ = te_stats
         _, __, lrs, ___, meta_grs = tr_stats
 
@@ -309,7 +309,6 @@ def runApp() -> None:
         tr_grs = tr_grs[:, :, -1]
         vl_loss = jnp.sum(vl_loss, axis=2)
         vl_acc = jnp.sum(vl_acc, axis=2)
-        vl_grs = vl_grs[:, :, -1]
         te_loss = jnp.sum(te_loss, axis=1)
         te_acc = jnp.sum(te_acc, axis=1)
         lrs = lrs[:, :, -1]
@@ -351,12 +350,6 @@ def runApp() -> None:
                         iteration=iteration,
                     )
                     clearml.Logger.current_logger().report_scalar(
-                        title="validation/gradient_norm",
-                        series="validation_gradient_norm",
-                        value=jnp.linalg.norm(vl_grs[i, j]),
-                        iteration=iteration,
-                    )
-                    clearml.Logger.current_logger().report_scalar(
                         title="meta/gradient_norm",
                         series="meta_gradient_norm",
                         value=jnp.linalg.norm(meta_grs[i, j]),
@@ -389,496 +382,26 @@ def runApp() -> None:
 
     final_te_loss = 0
     final_te_acc = 0
+    num_te_batches = 0
     for te_x, te_y, te_seqs, te_mask in dataloader_te:
         ds = traverse(batched((te_x, te_y, te_seqs)))
         stats = te_inf(env, ds, te_mask)
-        te_loss, te_acc, _, __, ___ = stats
+        te_loss, te_acc, _, __, ___ = stats[0]
         te_loss = jnp.sum(te_loss)
         te_acc = jnp.sum(te_acc)
         final_te_loss += te_loss
         final_te_acc += te_acc
+        num_te_batches += 1
 
     clearml.Logger.current_logger().report_scalar(
         title="final_test/loss",
         series="final_test_loss",
-        value=final_te_loss / len(dataloader_te.dataset),
+        value=final_te_loss / num_te_batches,
         iteration=total_iterations,
     )
     clearml.Logger.current_logger().report_scalar(
         title="final_test/accuracy",
         series="final_test_accuracy",
-        value=final_te_acc / len(dataloader_te.dataset),
+        value=final_te_acc / num_te_batches,
         iteration=total_iterations,
     )
-
-
-# # def create_learner(
-# #     learner: str, rtrl_use_fwd: bool, uoro_std
-# # ) -> RTRL | RFLO | UORO | IdentityLearner | OfflineLearning:
-# #     match learner:
-# #         case "rtrl":
-# #             return RTRL(rtrl_use_fwd)
-# #         case "rflo":
-# #             return RFLO()
-# #         case "uoro":
-# #             return UORO(lambda key, shape: jax.random.uniform(key, shape, minval=-uoro_std, maxval=uoro_std))
-# #         case "identity":
-# #             return IdentityLearner()
-# #         case "bptt":
-# #             return OfflineLearning()
-# #         case _:
-# #             raise ValueError("Invalid learner")
-
-
-# # def create_rnn_learner(
-# #     learner: RTRL | RFLO | UORO | IdentityLearner | OfflineLearning,
-# #     lossFn: Callable[[jax.Array, jax.Array], LOSS],
-# #     arch: Literal["rnn", "ffn"],
-# # ) -> Library[Traversable[InputOutput], GodInterpreter, GodState, Traversable[PREDICTION]]:
-# #     match arch:
-# #         case "rnn":
-# #             stepFn = lambda d: doRnnStep(d).then(ask(PX[GodInterpreter]())).flat_map(lambda i: i.getRecurrentState)
-# #             readoutFn = doRnnReadout
-# #         case "ffn":
-# #             stepFn = (
-# #                 lambda d: doFeedForwardStep(d).then(ask(PX[GodInterpreter]())).flat_map(lambda i: i.getRecurrentState)
-# #             )
-# #             readoutFn = doFeedForwardReadout
-
-# #     lfn = lambda a, b: lossFn(a, b.y)
-# #     match learner:
-# #         case OfflineLearning():
-# #             bptt_library: Library[Traversable[InputOutput], GodInterpreter, GodState, Traversable[PREDICTION]]
-# #             bptt_library = learner.createLearner(
-# #                 stepFn,
-# #                 readoutFn,
-# #                 lfn,
-# #                 readoutRecurrentError(readoutFn, lfn),
-# #             )
-# #             return bptt_library
-# #         case _:
-# #             # library: Library[InputOutput, GodInterpreter, GodState, PREDICTION]
-# #             _library: Library[IdentityF[InputOutput], GodInterpreter, GodState, IdentityF[PREDICTION]]
-# #             _library = learner.createLearner(
-# #                 stepFn,
-# #                 readoutFn,
-# #                 lfn,
-# #                 readoutRecurrentError(doRnnReadout, lfn),
-# #             )
-# #             library = Library[InputOutput, GodInterpreter, GodState, PREDICTION](
-# #                 model=lambda d: _library.model(IdentityF(d)),
-# #                 modelLossFn=lambda d: _library.modelLossFn(IdentityF(d)),
-# #                 modelGradient=lambda d: _library.modelGradient(IdentityF(d)),
-# #             )
-# #             return foldrLibrary(library)
-
-
-# # def train_loop_IO[D](
-# #     tr_dataset: Traversable[Traversable[InputOutput]],
-# #     vl_dataset: Traversable[Traversable[InputOutput]],
-# #     to_combined_ds: Callable[[Traversable[Traversable[InputOutput]], Traversable[Traversable[InputOutput]]], D],
-# #     model: Callable[[D, GodState], tuple[Traversable[AllLogs], GodState]],
-# #     env: GodState,
-# #     refresh_env: Callable[[GodState], GodState],
-# #     config: GodConfig,
-# #     checkpoint_fn: Callable[[GodState], None],
-# #     log_fn: Callable[[AllLogs], None],
-# #     te_loss: Callable[[GodState], LOSS],
-# #     statistic: Callable[[GodState], float],
-# # ) -> None:
-# #     tr_dataset = PyTreeDataset(tr_dataset)
-# #     vl_dataset = PyTreeDataset(vl_dataset)
-
-# #     if config.batch_or_online == "batch":
-# #         vl_batch_size = config.batch_vl
-# #         vl_sampler = RandomSampler(vl_dataset)
-# #         tr_dl = lambda b: DataLoader(
-# #             b, batch_size=config.batch_tr, shuffle=True, collate_fn=jax_collate_fn, drop_last=True
-# #         )
-# #         # doesn't make sense to do this in batch case. batch=subsequence in online
-# #         env = copy.replace(env, start_example=0)
-# #     else:
-# #         vl_batch_size = config.batch_tr  # same size -> conjoin with tr batch with to_combined_ds
-# #         vl_sampler = RandomSampler(vl_dataset, replacement=True, num_samples=len(tr_dataset))
-# #         tr_dl = lambda b: DataLoader(b, batch_size=config.batch_tr, shuffle=False, collate_fn=jax_collate_fn)
-
-# #     vl_dataloader = DataLoader(
-# #         vl_dataset, batch_size=vl_batch_size, sampler=vl_sampler, collate_fn=jax_collate_fn, drop_last=True
-# #     )
-
-# #     def infinite_loader(loader):
-# #         while True:
-# #             for batch in loader:
-# #                 yield batch
-
-# #     vl_dataloader = infinite_loader(vl_dataloader)
-
-# #     start = time.time()
-# #     num_batches_seen_so_far = 0
-# #     all_logs: list[Traversable[AllLogs]] = []
-# #     for epoch in range(env.start_epoch, config.num_retrain_loops):
-# #         print(f"Epoch {epoch + 1}/{config.num_retrain_loops}")
-# #         batched_dataset = Subset(tr_dataset, indices=range(env.start_example, len(tr_dataset)))
-# #         tr_dataloader = tr_dl(batched_dataset)
-
-# #         for i, (tr_batch, vl_batch) in enumerate(zip(tr_dataloader, vl_dataloader)):
-# #             ds_batch = to_combined_ds(tr_batch, vl_batch)
-# #             batch_size = len(jax.tree.leaves(ds_batch)[0])
-# #             env = refresh_env(env)
-# #             logs, env = model(ds_batch, env)
-
-# #             env = eqx.tree_at(lambda t: t.start_example, env, env.start_example + batch_size)
-# #             all_logs.append(logs)
-# #             checkpoint_condition = num_batches_seen_so_far + i + 1
-# #             if checkpoint_condition % config.checkpoint_interval == 0:
-# #                 checkpoint_fn(
-# #                     copy.replace(
-# #                         env,
-# #                         inner_prng=jax.random.key_data(env.inner_prng),
-# #                         outer_prng=jax.random.key_data(env.outer_prng),
-# #                     )
-# #                 )
-
-# #             print(
-# #                 f"Batch {i + 1}/{len(tr_dataloader)}, Loss: {logs.value.train_loss[-1]}, LR: {logs.value.inner_learning_rate[-1]}"
-# #             )
-
-# #         # env = eqx.tree_at(lambda t: t.start_epoch, env, epoch + 1)
-# #         env = eqx.tree_at(lambda t: t.start_example, env, 0)
-# #         num_batches_seen_so_far += len(tr_dataloader)
-
-# #     end = time.time()
-# #     print(f"Training time: {end - start} seconds")
-
-# #     total_logs: Traversable[AllLogs] = jax.tree.map(lambda *xs: jnp.concatenate(xs), *all_logs)
-
-# #     log_fn(total_logs.value)
-# #     checkpoint_fn(
-# #         copy.replace(
-# #             env,
-# #             inner_prng=jax.random.key_data(env.inner_prng),
-# #             outer_prng=jax.random.key_data(env.outer_prng),
-# #         )
-# #     )
-
-# #     def safe_norm(x):
-# #         return jnp.linalg.norm(x) if x is not None else None
-
-# #     # log wandb partial metrics
-# #     for log_tree_ in tree_unstack_lazy(total_logs.value):
-# #         log_data: AllLogs = jax.tree.map(
-# #             lambda x: jnp.real(x) if x is not None and jnp.all(jnp.isfinite(x)) else None, log_tree_
-# #         )
-# #         wandb.log(
-# #             {
-# #                 "train_loss": log_data.train_loss,
-# #                 "validation_loss": log_data.validation_loss,
-# #                 "test_loss": log_data.test_loss,
-# #                 "hyperparameters": log_data.hyperparameters,
-# #                 "inner_learning_rate": log_data.inner_learning_rate,
-# #                 "parameter_norm": log_data.parameter_norm,
-# #                 "oho_gradient": log_data.oho_gradient,
-# #                 "train_gradient": log_data.train_gradient,
-# #                 "validation_gradient": log_data.validation_gradient,
-# #                 "oho_gradient_norm": safe_norm(log_data.oho_gradient),
-# #                 "train_gradient_norm": safe_norm(log_data.train_gradient),
-# #                 "validation_gradient_norm": safe_norm(log_data.validation_gradient),
-# #                 "immediate_influence_tensor_norm": log_data.immediate_influence_tensor_norm,
-# #                 "inner_influence_tensor_norm": log_data.inner_influence_tensor_norm,
-# #                 "outer_influence_tensor_norm": log_data.outer_influence_tensor_norm,
-# #                 "largest_jacobian_eigenvalue": log_data.largest_jacobian_eigenvalue,
-# #                 "largest_influence_eigenvalue": log_data.largest_hessian_eigenvalue,
-# #                 "jacobian_eigenvalues": log_data.jacobian,
-# #                 "rnn_activation_norm": log_data.rnn_activation_norm,
-# #                 "immediate_influence_tensor": jnp.ravel(log_data.immediate_influence_tensor)
-# #                 if log_data.immediate_influence_tensor is not None
-# #                 else None,
-# #                 "outer_influence_tensor": jnp.ravel(log_data.outer_influence_tensor)
-# #                 if log_data.outer_influence_tensor is not None
-# #                 else None,
-# #             }
-# #         )
-
-# #     ee = te_loss(env)
-# #     eee = statistic(env)
-# #     print(ee)
-# #     print(eee)
-# #     wandb.log({"test_loss": ee, "test_statistic": eee})
-
-
-# # def create_online_model(
-# #     test_dataset: Traversable[InputOutput],
-# #     tr_to_val_env: Callable[[GodState, PRNG], GodState],
-# #     tr_to_te_env: Callable[[GodState, PRNG], GodState],
-# #     lossFn: Callable[[jax.Array, jax.Array], LOSS],
-# #     initEnv: GodState,
-# #     innerInterpreter: GodInterpreter,
-# #     outerInterpreter: GodInterpreter,
-# #     config: GodConfig,
-# # ) -> tuple[
-# #     Callable[[Traversable[OhoData[Traversable[InputOutput]]], GodState], tuple[Traversable[AllLogs], GodState]],
-# #     Callable[[GodState], LOSS],
-# # ]:
-# #     innerLearner = create_learner(config.inner_learner, False, config.inner_uoro_std)
-# #     innerLibrary = create_rnn_learner(innerLearner, lossFn, config.architecture)
-# #     outerLearner = create_learner(config.outer_learner, True, config.outer_uoro_std)
-
-# #     innerController = endowAveragedGradients(innerLibrary.modelGradient, config.tr_avg_per)
-# #     innerController = logGradient(innerController)
-# #     innerLibrary = innerLibrary._replace(modelGradient=innerController)
-
-# #     inner_param, _ = innerInterpreter.getRecurrentParam.func(innerInterpreter, initEnv)
-# #     outer_state, _ = outerInterpreter.getRecurrentState.func(outerInterpreter, initEnv)
-# #     pad_val_grad_by = jnp.maximum(0, jnp.size(outer_state) - jnp.size(inner_param))
-
-# #     validation_model = lambda ds: innerLibrary.modelLossFn(ds).func
-
-# #     match outerLearner:
-# #         case OfflineLearning():
-# #             _outerLibrary: Library[
-# #                 Traversable[OhoData[Traversable[InputOutput]]],
-# #                 GodInterpreter,
-# #                 GodState,
-# #                 Traversable[Traversable[PREDICTION]],
-# #             ]
-# #             _outerLibrary = endowBilevelOptimization(
-# #                 innerLibrary,
-# #                 doOptimizerStep,
-# #                 innerInterpreter,
-# #                 outerLearner,
-# #                 lambda a, b: LOSS(jnp.mean(lossFn(a.value, b.validation.value.y))),
-# #                 tr_to_val_env,
-# #                 pad_val_grad_by,
-# #             )
-
-# #             outerController = logGradient(_outerLibrary.modelGradient)
-# #             _outerLibrary = _outerLibrary._replace(modelGradient=outerController)
-
-# #             @do()
-# #             def updateStep(oho_data: Traversable[OhoData[Traversable[InputOutput]]]):
-# #                 print("recompiled")
-# #                 env = yield from get(PX[GodState]())
-# #                 interpreter = yield from ask(PX[GodInterpreter]())
-# #                 hyperparameters = yield from interpreter.getRecurrentParam
-# #                 weights, _ = innerInterpreter.getRecurrentParam.func(innerInterpreter, env)
-
-# #                 te, _ = validation_model(test_dataset)(innerInterpreter, tr_to_te_env(env, env.outer_prng))
-# #                 vl, _ = _outerLibrary.modelLossFn(oho_data).func(outerInterpreter, env)
-# #                 tr, _ = (
-# #                     foldrLibrary(innerLibrary)
-# #                     .modelLossFn(Traversable(oho_data.value.payload))
-# #                     .func(innerInterpreter, env)
-# #                 )
-
-# #                 def safe_norm(x):
-# #                     return jnp.linalg.norm(x) if x is not None else None
-
-# #                 log = AllLogs(
-# #                     train_loss=tr / config.tr_examples_per_epoch,
-# #                     validation_loss=vl / config.vl_examples_per_epoch,
-# #                     test_loss=te / config.numTe,
-# #                     hyperparameters=hyperparameters,
-# #                     inner_learning_rate=innerInterpreter.getLearningRate(env),
-# #                     parameter_norm=safe_norm(weights),
-# #                     oho_gradient=env.outerLogs.gradient,
-# #                     train_gradient=env.innerLogs.gradient,
-# #                     validation_gradient=env.outerLogs.validationGradient,
-# #                     immediate_influence_tensor_norm=safe_norm(env.outerLogs.immediateInfluenceTensor),
-# #                     outer_influence_tensor_norm=safe_norm(env.outerLogs.influenceTensor),
-# #                     outer_influence_tensor=env.outerLogs.influenceTensor if config.log_accumulate_influence else None,
-# #                     inner_influence_tensor_norm=safe_norm(env.innerLogs.influenceTensor),
-# #                     largest_jacobian_eigenvalue=env.innerLogs.jac_eigenvalue,
-# #                     largest_hessian_eigenvalue=env.outerLogs.jac_eigenvalue,
-# #                     jacobian=env.innerLogs.hessian,
-# #                     hessian=env.outerLogs.hessian,
-# #                     rnn_activation_norm=safe_norm(env.rnnState.activation),
-# #                     immediate_influence_tensor=env.outerLogs.immediateInfluenceTensor
-# #                     if config.log_accumulate_influence
-# #                     else None,
-# #                 )
-# #                 logs: Traversable[AllLogs] = Traversable(jax.tree.map(lambda x: jnp.expand_dims(x, axis=0), log))
-
-# #                 _ = yield from _outerLibrary.modelGradient(oho_data).flat_map(doOptimizerStep)
-# #                 return pure(logs, PX[tuple[GodInterpreter, GodState]]())
-
-# #             model = eqx.filter_jit(lambda d, e: updateStep(d).func(outerInterpreter, e))
-# #             return model
-
-# #         case _:
-# #             outerLibrary: Library[
-# #                 IdentityF[OhoData[Traversable[InputOutput]]],
-# #                 GodInterpreter,
-# #                 GodState,
-# #                 IdentityF[Traversable[PREDICTION]],
-# #             ]
-# #             outerLibrary = endowBilevelOptimization(
-# #                 innerLibrary,
-# #                 doOptimizerStep,
-# #                 innerInterpreter,
-# #                 outerLearner,
-# #                 lambda a, b: LOSS(jnp.mean(lossFn(a.value, b.validation.value.y))),
-# #                 tr_to_val_env,
-# #                 pad_val_grad_by,
-# #             )
-
-# #             outerController = logGradient(outerLibrary.modelGradient)
-# #             outerLibrary = outerLibrary._replace(modelGradient=outerController)
-
-# #             @do()
-# #             def updateStep(oho_data: OhoData[Traversable[InputOutput]]):
-# #                 print("recompiled")
-# #                 env = yield from get(PX[GodState]())
-# #                 interpreter = yield from ask(PX[GodInterpreter]())
-# #                 hyperparameters = yield from interpreter.getRecurrentParam
-# #                 weights, _ = innerInterpreter.getRecurrentParam.func(innerInterpreter, env)
-
-# #                 te, _ = validation_model(test_dataset)(innerInterpreter, tr_to_te_env(env, env.outer_prng))
-# #                 vl, _ = validation_model(oho_data.validation)(innerInterpreter, tr_to_val_env(env, env.outer_prng))
-# #                 tr, _ = innerLibrary.modelLossFn(oho_data.payload).func(innerInterpreter, env)
-
-# #                 _ = yield from outerLibrary.modelGradient(IdentityF(oho_data)).flat_map(doOptimizerStep)
-
-# #                 # code smell but what can you do, no maybe monad or elvis operator...
-# #                 def safe_norm(x):
-# #                     return jnp.linalg.norm(x) if x is not None else None
-
-# #                 log = AllLogs(
-# #                     train_loss=tr / config.tr_examples_per_epoch,
-# #                     validation_loss=vl / config.vl_examples_per_epoch,
-# #                     test_loss=te / config.numTe,
-# #                     hyperparameters=hyperparameters,
-# #                     inner_learning_rate=innerInterpreter.getLearningRate(env),
-# #                     parameter_norm=safe_norm(weights),
-# #                     oho_gradient=env.outerLogs.gradient,
-# #                     train_gradient=env.innerLogs.gradient,
-# #                     validation_gradient=env.outerLogs.validationGradient,
-# #                     immediate_influence_tensor_norm=safe_norm(env.outerLogs.immediateInfluenceTensor),
-# #                     outer_influence_tensor_norm=safe_norm(env.outerLogs.influenceTensor),
-# #                     outer_influence_tensor=env.outerLogs.influenceTensor if config.log_accumulate_influence else None,
-# #                     inner_influence_tensor_norm=safe_norm(env.innerLogs.influenceTensor),
-# #                     largest_jacobian_eigenvalue=env.innerLogs.jac_eigenvalue,
-# #                     largest_hessian_eigenvalue=env.outerLogs.jac_eigenvalue,
-# #                     jacobian=env.innerLogs.hessian,
-# #                     hessian=env.outerLogs.hessian,
-# #                     rnn_activation_norm=safe_norm(env.rnnState.activation),
-# #                     immediate_influence_tensor=env.outerLogs.immediateInfluenceTensor
-# #                     if config.log_accumulate_influence
-# #                     else None,
-# #                 )
-# #                 return pure(log, PX[tuple[GodInterpreter, GodState]]())
-
-# #             model = eqx.filter_jit(lambda d, e: traverseM(updateStep)(d).func(outerInterpreter, e))
-# #             return (
-# #                 model,
-# #                 lambda env: validation_model(test_dataset)(innerInterpreter, tr_to_te_env(env, env.outer_prng))[0],
-# #                 innerLibrary,
-# #             )
-
-
-# # def create_batched_model(
-# #     test_dataset: Traversable[Traversable[InputOutput]],
-# #     tr_to_val_env: Callable[[GodState, PRNG], GodState],
-# #     tr_to_te_env: Callable[[GodState, PRNG], GodState],
-# #     lossFn: Callable[[jax.Array, jax.Array], LOSS],
-# #     initEnv: GodState,
-# #     innerInterpreter: GodInterpreter,
-# #     outerInterpreter: GodInterpreter,
-# #     config: GodConfig,
-# # ) -> tuple[
-# #     Callable[[OhoData[Traversable[Traversable[InputOutput]]], GodState], tuple[Traversable[AllLogs], GodState]],
-# #     Callable[[GodState], LOSS],
-# # ]:
-# #     innerLearner = create_learner(config.inner_learner, False, config.inner_uoro_std)
-# #     innerLibrary = create_rnn_learner(innerLearner, lossFn, config.architecture)
-# #     outerLearner = create_learner(config.outer_learner, True, config.outer_uoro_std)
-
-# #     innerController = endowAveragedGradients(innerLibrary.modelGradient, config.tr_avg_per)
-# #     innerLibrary = innerLibrary._replace(modelGradient=innerController)
-# #     innerLibrary = aggregateBatchedGradients(innerLibrary, batch_env_form)
-# #     innerController = logGradient(innerLibrary.modelGradient)
-# #     innerLibrary = innerLibrary._replace(modelGradient=innerController)
-
-# #     inner_param, _ = innerInterpreter.getRecurrentParam.func(innerInterpreter, initEnv)
-# #     outer_state, _ = outerInterpreter.getRecurrentState.func(outerInterpreter, initEnv)
-# #     pad_val_grad_by = jnp.maximum(0, jnp.size(outer_state) - jnp.size(inner_param))
-
-# #     validation_model = lambda ds: innerLibrary.modelLossFn(ds).func
-
-# #     match outerLearner:
-# #         case OfflineLearning():
-# #             raise NotImplementedError("BPTT on batched is not implemented yet")
-
-# #         case _:
-# #             outerLibrary: Library[
-# #                 IdentityF[OhoData[Traversable[Traversable[InputOutput]]]],
-# #                 GodInterpreter,
-# #                 GodState,
-# #                 IdentityF[Traversable[Traversable[PREDICTION]]],
-# #             ]
-
-# #             outerLibrary = endowBilevelOptimization(
-# #                 innerLibrary,
-# #                 doOptimizerStep,
-# #                 innerInterpreter,
-# #                 outerLearner,
-# #                 lambda a, b: LOSS(
-# #                     jnp.mean(eqx.filter_vmap(eqx.filter_vmap(lossFn))(a.value.value, b.validation.value.value.y))
-# #                 ),
-# #                 tr_to_val_env,
-# #                 pad_val_grad_by,
-# #             )
-
-# #             outerController = logGradient(outerLibrary.modelGradient)
-# #             outerLibrary = outerLibrary._replace(modelGradient=outerController)
-
-# #             @do()
-# #             def updateStep(oho_data: OhoData[Traversable[Traversable[InputOutput]]]):
-# #                 print("recompiled")
-# #                 env = yield from get(PX[GodState]())
-# #                 interpreter = yield from ask(PX[GodInterpreter]())
-# #                 hyperparameters = yield from interpreter.getRecurrentParam
-# #                 weights, _ = innerInterpreter.getRecurrentParam.func(innerInterpreter, env)
-
-# #                 # te, _ = validation_model(test_dataset)(innerInterpreter, tr_to_te_env(env, env.outer_prng))
-# #                 vl, _ = validation_model(oho_data.validation)(innerInterpreter, tr_to_val_env(env, env.outer_prng))
-# #                 tr, _ = innerLibrary.modelLossFn(oho_data.payload).func(innerInterpreter, env)
-# #                 te = 0
-
-# #                 _ = yield from outerLibrary.modelGradient(IdentityF(oho_data)).flat_map(doOptimizerStep)
-
-# #                 # code smell but what can you do, no maybe monad or elvis operator...
-# #                 def safe_norm(x):
-# #                     return jnp.linalg.norm(x) if x is not None else None
-
-# #                 log = AllLogs(
-# #                     train_loss=tr / config.tr_examples_per_epoch,
-# #                     validation_loss=vl / config.vl_examples_per_epoch,
-# #                     test_loss=te / config.numTe,
-# #                     hyperparameters=hyperparameters,
-# #                     inner_learning_rate=innerInterpreter.getLearningRate(env),
-# #                     parameter_norm=safe_norm(weights),
-# #                     oho_gradient=env.outerLogs.gradient,
-# #                     train_gradient=env.innerLogs.gradient,
-# #                     validation_gradient=env.outerLogs.validationGradient,
-# #                     immediate_influence_tensor_norm=safe_norm(env.outerLogs.immediateInfluenceTensor),
-# #                     outer_influence_tensor_norm=safe_norm(env.outerLogs.influenceTensor),
-# #                     outer_influence_tensor=env.outerLogs.influenceTensor if config.log_accumulate_influence else None,
-# #                     inner_influence_tensor_norm=safe_norm(env.innerLogs.influenceTensor),
-# #                     largest_jacobian_eigenvalue=env.innerLogs.jac_eigenvalue,
-# #                     largest_hessian_eigenvalue=env.outerLogs.jac_eigenvalue,
-# #                     jacobian=env.innerLogs.hessian,
-# #                     hessian=env.outerLogs.hessian,
-# #                     rnn_activation_norm=safe_norm(env.rnnState.activation),
-# #                     immediate_influence_tensor=env.outerLogs.immediateInfluenceTensor
-# #                     if config.log_accumulate_influence
-# #                     else None,
-# #                 )
-# #                 logs: Traversable[AllLogs] = Traversable(jax.tree.map(lambda x: jnp.expand_dims(x, axis=0), log))
-# #                 return pure(logs, PX[tuple[GodInterpreter, GodState]]())
-
-# #             model = eqx.filter_jit(lambda d, e: updateStep(d).func(outerInterpreter, e))
-# #             return (
-# #                 model,
-# #                 lambda env: validation_model(test_dataset)(innerInterpreter, tr_to_te_env(env, env.outer_prng))[0],
-# #                 innerLibrary,
-# #             )

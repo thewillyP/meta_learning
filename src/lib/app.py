@@ -67,11 +67,13 @@ def runApp() -> None:
     config = GodConfig(
         clearml_run=True,
         data_root_dir="/tmp",
-        dataset=MnistConfig(28),
-        num_base_epochs=2,
+        # dataset=MnistConfig(28),
+        dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
+        num_base_epochs=20,
         checkpoint_every_n_minibatches=1_000,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
-        loss_fn="cross_entropy_with_integer_labels",
+        # loss_fn="cross_entropy_with_integer_labels",
+        loss_fn="mse",
         transition_function={
             # 0: GRULayer(
             #     n=128,
@@ -83,15 +85,15 @@ def runApp() -> None:
             #     use_bias=True,
             # ),
             0: NNLayer(
-                n=128,
+                n=32,
                 activation_fn="tanh",
                 use_bias=True,
             ),
-            1: NNLayer(
-                n=128,
-                activation_fn="tanh",
-                use_bias=True,
-            ),
+            # 1: NNLayer(
+            #     n=128,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            # ),
             # 0: LSTMLayer(
             #     n=64,
             #     use_bias=True,
@@ -104,7 +106,7 @@ def runApp() -> None:
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
-                0: NNLayer(n=10, activation_fn="identity", use_bias=True),
+                0: NNLayer(n=2, activation_fn="identity", use_bias=True),
             }
         ),
         # readout_function=FeedForwardConfig(
@@ -136,26 +138,26 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=95,
+                num_virtual_minibatches_per_turn=1,
             ),
         },
         data={
             0: DataConfig(
-                train_percent=95,
-                num_examples_in_minibatch=100,
-                num_steps_in_timeseries=15,
+                train_percent=80,
+                num_examples_in_minibatch=1,
+                num_steps_in_timeseries=16,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=5,
-                num_examples_in_minibatch=100,
-                num_steps_in_timeseries=28,
+                train_percent=20,
+                num_examples_in_minibatch=1,
+                num_steps_in_timeseries=4,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
-        test_batch_size=100,
+        test_batch_size=1,
     )
 
     converter = Converter()
@@ -226,11 +228,13 @@ def runApp() -> None:
     axes = create_axes(env, inference_interface)
     transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
     resets = make_resets(
-        lambda prng: reinitialize_env(env, config, n_in_shape, prng),
+        # lambda prng: reinitialize_env(env, config, n_in_shape, prng),
+        lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
         inference_interface,
         general_interfaces,
         validation_learn_interfaces,
         virtual_minibatches,
+        learn_interfaces[0],
     )
     env0 = copy.deepcopy(env)
     test_reset = hard_reset_inference(

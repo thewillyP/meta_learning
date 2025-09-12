@@ -82,31 +82,48 @@ def average_gradients[ENV, DATA, TR_DATA](
     return f
 
 
-def rtrl[ENV, DATA](
-    transition: Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...], LOSS]],
+def rtrl[ENV, TR_DATA, VL_DATA, DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, tuple[STAT, ...]]],
+    readout: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], LOSS]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], GRADIENT]],
     learn_interface: LearnInterface[ENV],
-) -> Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
-    def gradient_fn(env: ENV, data: DATA) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-        s__p = learn_interface.get_state(env), learn_interface.get_param(env)
-        s__p_vector = to_vector(s__p)
+    get_tr: Callable[[DATA], TR_DATA],
+    get_vl: Callable[[DATA], VL_DATA],
+) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+        arr, static = eqx.partition(env, eqx.is_array)
 
-        def state_fn(state__param: jax.Array) -> tuple[tuple[jax.Array, LOSS], tuple[ENV, tuple[STAT, ...]]]:
-            state, param = s__p_vector.to_param(state__param)
-            _env = learn_interface.put_state(env, state)
-            _env = learn_interface.put_param(_env, param)
-            _env, stat, loss = transition(_env, data)
-            state = learn_interface.get_state(_env)
-            return (state, loss), (_env, stat)
+        def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
+            _env = eqx.combine(_arr, static)
+            s__p = learn_interface.get_state(_env), learn_interface.get_param(_env)
+            s__p_vector = to_vector(s__p)
 
-        influence_tensor = learn_interface.get_influence_tensor(env)
-        state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-        (
-            _,
-            (new_influence_tensor, grad),
-            (stat, env),
-        ) = jacobian_matrix_product(state_fn, s__p_vector.vector, state_jacobian)
-        env = learn_interface.put_influence_tensor(env, JACOBIAN(new_influence_tensor))
-        return env, stat, GRADIENT(grad)
+            def state_fn(state__param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+                state, param = s__p_vector.to_param(state__param)
+                __env = learn_interface.put_state(_env, state)
+                __env = learn_interface.put_param(__env, param)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                return state, (__env, stat)
+
+            influence_tensor = learn_interface.get_influence_tensor(_env)
+            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
+            _, new_influence_tensor, (_env, tr_stat) = jacobian_matrix_product(
+                state_fn, s__p_vector.vector, state_jacobian
+            )
+            new_influence_tensor = JACOBIAN(new_influence_tensor)
+            vl_stat, credit_gr = readout_gr(_env, get_vl(data))
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
+            grad = credit_assignment + output_gr
+
+            _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+            _arr, _ = eqx.partition(_env, eqx.is_array)
+            return _arr, (grad, tr_stat + vl_stat)
+
+        _env, (grads, stats) = jax.lax.scan(step, arr, ds.d)
+        env = eqx.combine(_env, static)
+        return env, stats, GRADIENT(jnp.sum(grads, axis=0))
 
     return gradient_fn
 
@@ -119,7 +136,7 @@ def bptt[ENV, TR_DATA, VL_DATA, DATA](
     get_tr: Callable[[DATA], TR_DATA],
     get_vl: Callable[[DATA], VL_DATA],
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
-    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, traverse[tuple[STAT, ...]], GRADIENT]:
+    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         def loss_fn(param: jax.Array, _ds: traverse[DATA]) -> tuple[LOSS, tuple[ENV, tuple[STAT, ...]]]:
             _env = learn_interface.put_param(env, param)
             arr, static = eqx.partition(_env, eqx.is_array)
@@ -173,21 +190,39 @@ def identity[ENV, TR_DATA, VL_DATA, DATA](
 
 
 def take_jacobian[ENV, DATA, OUT: jax.Array, AUX](
-    transition: Callable[[ENV, DATA], tuple[OUT, AUX]],
+    transition: Callable[[ENV, DATA], tuple[AUX, OUT]],
     learn_interface: LearnInterface[ENV],
-) -> Callable[[ENV, DATA], tuple[JACOBIAN, AUX]]:
-    def jacobian_fn(env: ENV, data: DATA) -> tuple[JACOBIAN, AUX]:
+) -> Callable[[ENV, DATA], tuple[AUX, JACOBIAN]]:
+    def jacobian_fn(env: ENV, data: DATA) -> tuple[AUX, JACOBIAN]:
         s = learn_interface.get_state(env)
 
-        def fn(state: jax.Array, data: DATA) -> OUT:
+        def fn(state: jax.Array, data: DATA) -> tuple[OUT, AUX]:
             _env = learn_interface.put_state(env, state)
-            out, aux = transition(_env, data)
+            aux, out = transition(_env, data)
             return out, aux
 
         jacobian, aux = eqx.filter_grad(fn, has_aux=True)(s, data)
-        return JACOBIAN(jacobian), aux
+        return aux, JACOBIAN(jacobian)
 
     return jacobian_fn
+
+
+def take_gradient[ENV, DATA, OUT: jax.Array, AUX](
+    transition: Callable[[ENV, DATA], tuple[AUX, OUT]],
+    learn_interface: LearnInterface[ENV],
+) -> Callable[[ENV, DATA], tuple[AUX, GRADIENT]]:
+    def gradient_fn(env: ENV, data: DATA) -> tuple[AUX, GRADIENT]:
+        p = learn_interface.get_param(env)
+
+        def fn(param: jax.Array, data: DATA) -> tuple[OUT, AUX]:
+            _env = learn_interface.put_param(env, param)
+            aux, out = transition(_env, data)
+            return out, aux
+
+        gradient, aux = eqx.filter_grad(fn, has_aux=True)(p, data)
+        return aux, GRADIENT(gradient)
+
+    return gradient_fn
 
 
 # add inference to the the validation lista and the size will work out
@@ -204,8 +239,6 @@ def create_meta_learner[ENV, DATA](
     last_unpadded_lengths: list[int],
 ):
     """from here on out the types stop making sense because I have to rely on dynamic typing to get the algorithm to work. just make sure the data is in the correct shape and everything should work out thats the only assumption I need to make"""
-    _readout_gr = take_jacobian(lambda env, data: (readout_fns[0](env, data)[1], None), learn_interfaces[0])
-    readout_gr = lambda env, data: GRADIENT(_readout_gr(env, data)[0])
 
     gr_fns = []
     for (
@@ -225,9 +258,29 @@ def create_meta_learner[ENV, DATA](
         transition_fns,
         readout_fns,
     ):
+        readout_gr = take_jacobian(statistic_fn, learn_interface)
+
         match config.learners[0].learner:
             case RTRLConfig():
-                ...
+
+                def _learner(
+                    env: ENV,
+                    data: tuple[traverse[DATA], jax.Array],
+                    transition_fn=transition_fn,
+                    statistic_fn=statistic_fn,
+                    readout_gr=readout_gr,
+                    learn_interface=learn_interface,
+                ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+                    tr_data, mask = data
+                    return rtrl(
+                        lambda e, d: (transition_fn(e, d), ()),
+                        statistic_fn,
+                        readout_gr,
+                        learn_interface,
+                        lambda x: x,
+                        lambda x: (x, mask),
+                    )(env, tr_data)
+
             case BPTTConfig():
 
                 def _learner(
@@ -312,7 +365,7 @@ def create_meta_learner[ENV, DATA](
 
         match learn_config.learner:
             case RTRLConfig():
-                ...
+                _learner = rtrl(learner0, vl_readout, vl_readout_gr, learn_interface, lambda x: x[0], lambda x: x[1])
             case BPTTConfig():
                 _learner = bptt(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
             case IdentityConfig():

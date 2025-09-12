@@ -8,6 +8,7 @@ import equinox as eqx
 import toolz
 
 from lib.config import BPTTConfig, GodConfig, IdentityConfig, RFLOConfig, RTRLConfig, UOROConfig
+from lib.env import Logs
 from lib.interface import GeneralInterface, LearnInterface
 from lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, batched, traverse
 from lib.util import filter_cond, jacobian_matrix_product, to_vector
@@ -28,9 +29,11 @@ def do_optimizer[ENV](env: ENV, gr: GRADIENT, learn_interface: LearnInterface[EN
 def optimization[ENV, DATA](
     gr_fn: Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...], GRADIENT]],
     learn_interface: LearnInterface[ENV],
+    general_interface: GeneralInterface[ENV],
 ) -> Callable[[ENV, DATA], tuple[ENV, tuple[STAT, ...]]]:
     def f(env: ENV, data: DATA) -> tuple[ENV, tuple[STAT, ...]]:
         env, tr_stat, gr = gr_fn(env, data)
+        env = general_interface.put_logs(env, Logs(gradient=gr))
         env = do_optimizer(env, gr, learn_interface)
         return env, tr_stat
 
@@ -357,9 +360,16 @@ def create_meta_learner[ENV, DATA](
 
     readout_grs = [lambda env, data, g=gr_fn: g(env, data)[1:] for gr_fn in gr_fns[1:]]
 
-    learner0 = optimization(lambda env, data: gr_fns[0](resets[0](env), data), learn_interfaces[0])
-    for learn_config, vl_readout_gr, vl_readout, vl_reset, learn_interface in zip(
-        toolz.drop(1, config.learners.values()), readout_grs, readouts[1:], resets[1:], learn_interfaces[1:]
+    learner0 = optimization(
+        lambda env, data: gr_fns[0](resets[0](env), data), learn_interfaces[0], general_interfaces[0]
+    )
+    for learn_config, vl_readout_gr, vl_readout, vl_reset, learn_interface, general_interface in zip(
+        toolz.drop(1, config.learners.values()),
+        readout_grs,
+        readouts[1:],
+        resets[1:],
+        learn_interfaces[1:],
+        general_interfaces[1:],
     ):
         learner0 = lambda env, data, r=vl_reset, l=learner0: l(r(env), data)
 
@@ -375,7 +385,7 @@ def create_meta_learner[ENV, DATA](
             case UOROConfig():
                 ...
 
-        learner0 = optimization(_learner, learn_interface)
+        learner0 = optimization(_learner, learn_interface, general_interface)
 
     def final_learner(env: ENV, data: traverse) -> tuple[ENV, tuple[STAT, ...], traverse[LOSS]]:
         arr, static = eqx.partition(env, eqx.is_array)

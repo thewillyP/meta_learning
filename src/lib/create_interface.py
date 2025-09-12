@@ -193,6 +193,7 @@ def create_general_interfaces(config: GodConfig) -> dict[int, GeneralInterface[G
             put_current_virtual_minibatch=lambda env, value, i=j: env.transform(
                 ["general", i, "current_virtual_minibatch"], lambda _: value
             ),
+            put_logs=lambda env, logs, i=j: env.transform(["general", i, "logs"], lambda _: logs),
         )
         interpreters[j] = interpreter
 

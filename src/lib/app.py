@@ -17,7 +17,7 @@ import math
 
 from lib.config import *
 from lib.create_axes import create_axes
-from lib.create_env import create_env, reinitialize_env
+from lib.create_env import create_env
 from lib.create_interface import (
     create_general_interfaces,
     create_learn_interfaces,
@@ -25,12 +25,14 @@ from lib.create_interface import (
     create_validation_learn_interfaces,
 )
 from lib.datasets import create_dataloader
+from lib.env import GodState
 from lib.inference import create_inferences, hard_reset_inference, make_resets
 from lib.interface import ClassificationInterface
-from lib.learning import create_meta_learner
+from lib.learning import create_meta_learner, identity
 from lib.lib_types import *
+from lib.log import get_logs
 from lib.loss_function import make_statistics_fns
-from lib.util import create_fractional_list, hyperparameter_reparametrization
+from lib.util import create_fractional_list
 
 
 def runApp() -> None:
@@ -67,13 +69,13 @@ def runApp() -> None:
     config = GodConfig(
         clearml_run=True,
         data_root_dir="/tmp",
-        # dataset=MnistConfig(28),
-        dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=20,
-        checkpoint_every_n_minibatches=1_000,
+        dataset=MnistConfig(28),
+        # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
+        num_base_epochs=1,
+        checkpoint_every_n_minibatches=1,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
-        # loss_fn="cross_entropy_with_integer_labels",
-        loss_fn="mse",
+        loss_fn="cross_entropy_with_integer_labels",
+        # loss_fn="mse",
         transition_function={
             # 0: GRULayer(
             #     n=128,
@@ -85,7 +87,7 @@ def runApp() -> None:
             #     use_bias=True,
             # ),
             0: NNLayer(
-                n=32,
+                n=128,
                 activation_fn="tanh",
                 use_bias=True,
             ),
@@ -104,33 +106,23 @@ def runApp() -> None:
             #     use_bias=True,
             # ),
         },
-        readout_function=FeedForwardConfig(
-            ffw_layers={
-                0: NNLayer(n=2, activation_fn="identity", use_bias=True),
-            }
-        ),
         # readout_function=FeedForwardConfig(
         #     ffw_layers={
-        #         0: NNLayer(n=128, activation_fn="relu", use_bias=True),
-        #         1: NNLayer(n=128, activation_fn="relu", use_bias=True),
-        #         2: NNLayer(n=10, activation_fn="identity", use_bias=True),
+        #         0: NNLayer(n=10, activation_fn="identity", use_bias=True),
         #     }
         # ),
+        readout_function=FeedForwardConfig(
+            ffw_layers={
+                0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                # 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                # 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                1: NNLayer(n=10, activation_fn="identity", use_bias=True),
+            }
+        ),
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=AdamConfig(
-                    learning_rate=0.001,
-                ),
-                hyperparameter_parametrization="softplus",
-                lanczos_iterations=0,
-                track_logs=True,
-                track_special_logs=False,
-                num_virtual_minibatches_per_turn=1,
-            ),
-            1: LearnConfig(  # normal OHO
-                learner=IdentityConfig(),
-                optimizer=SGDConfig(
+                optimizer=SGDNormalizedConfig(
                     learning_rate=0.01,
                     momentum=0.0,
                 ),
@@ -140,24 +132,36 @@ def runApp() -> None:
                 track_special_logs=False,
                 num_virtual_minibatches_per_turn=1,
             ),
+            1: LearnConfig(
+                learner=RTRLConfig(),
+                optimizer=AdamConfig(
+                    learning_rate=0.001,
+                    # momentum=0.0,
+                ),
+                hyperparameter_parametrization="softplus",
+                lanczos_iterations=0,
+                track_logs=True,
+                track_special_logs=False,
+                num_virtual_minibatches_per_turn=500,
+            ),
         },
         data={
             0: DataConfig(
-                train_percent=80,
-                num_examples_in_minibatch=1,
-                num_steps_in_timeseries=16,
+                train_percent=83.33,
+                num_examples_in_minibatch=100,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=20,
-                num_examples_in_minibatch=1,
-                num_steps_in_timeseries=4,
+                train_percent=16.67,
+                num_examples_in_minibatch=100,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
-        test_batch_size=1,
+        test_batch_size=100,
     )
 
     converter = Converter()
@@ -224,7 +228,7 @@ def runApp() -> None:
         get_sequence=lambda data: data.b[2],
     )
     env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
-    eqx.tree_pprint(env.serialize())
+    # eqx.tree_pprint(env.serialize())
     axes = create_axes(env, inference_interface)
     transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
     resets = make_resets(
@@ -249,6 +253,7 @@ def runApp() -> None:
         general_interfaces,
         virtual_minibatches,
         last_unpadded_lengths,
+        lambda e: get_logs(config, e),
     )
 
     meta_learner = create_meta_learner(
@@ -264,43 +269,6 @@ def runApp() -> None:
         [v for _, v in sorted(last_unpadded_lengths.items())],
     )
 
-    # eqx.tree_pprint(env.serialize())
-    # print(virtual_minibatches)
-
-    # for ((tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask)), (te_x, te_y, te_mask) in toolz.take(3, dataloader):
-    #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
-    #     print(f"Train batch mask shape: {tr_mask.shape}")
-    #     print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
-    #     print(f"Validation batch mask shape: {vl_mask.shape}")
-    #     print(f"Test batch shape: {te_x.shape}, {te_y.shape}")
-    #     print(f"Test batch mask shape: {te_mask.shape}")
-    #     # data = (batched(traverse((tr_x[0][0], tr_y[0][0]))), tr_mask[0][0])
-    #     # loss = model_loss_fns[0](env, data)[1]
-    #     # jax.block_until_ready(loss)
-    #     # print(tr_x.shape)
-    #     # print(f"Initial loss: {loss}")
-
-    # return
-
-    # _learner = bptt(model_statistics_fns[0], learn_interfaces[0])
-
-    # def learner(
-    #     env: GodState, data: tuple[batched[traverse[tuple[jax.Array, jax.Array]]], jax.Array]
-    # ) -> tuple[GodState, GRADIENT, STAT]:
-    #     env = resets[1](resets[0](env))
-    #     return _learner(env, data)
-
-    # opt = optimization(learner, lambda e, d: model_statistics_fns[1](e, d)[1:], learn_interfaces[0])
-
-    arr, static = eqx.partition(env, eqx.is_array)
-
-    def make_step(carry, data):
-        print(data)
-        model = eqx.combine(carry, static)
-        update_model, stats, losses = meta_learner(model, data)
-        carry, _ = eqx.partition(update_model, eqx.is_array)
-        return carry, (losses, stats)
-
     (((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask)), dataloader = (
         toolz.peek(dataloader)
     )
@@ -309,9 +277,9 @@ def runApp() -> None:
     )
     scan_data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
 
-    jax_scan_fn = (
-        eqx.filter_jit(lambda data, init_model: make_step(init_model, data), donate="all-except-first")
-        .lower(scan_data, arr)
+    update_fn = (
+        eqx.filter_jit(lambda data, init_model: meta_learner(init_model, data), donate="all-except-first")
+        .lower(scan_data, env)
         .compile()
     )
 
@@ -320,273 +288,128 @@ def runApp() -> None:
     )
     total_iterations = iterations_per_epoch * config.num_base_epochs
 
-    for ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask) in toolz.take(
-        total_iterations, dataloader
-    ):
+    for k, (
+        ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
+        (te_x, te_y, te_seqs, te_mask),
+    ) in enumerate(toolz.take(total_iterations, dataloader)):
         _scan_data = traverse(
             ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
         )
         data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
-        # data = traverse(((batched(traverse((tr_x, tr_y))), tr_mask), (batched(traverse((vl_x, vl_y))), vl_mask)))
-        # print(data)
-        arr, (te_losses, stats) = jax_scan_fn(data, arr)
+        env, stats, te_losses = update_fn(data, env)
         tr_stats, vl_stats, te_stats = stats
 
-        te_losses = te_losses.d[-1]
-        te_stats = te_stats[-1, -1]
-        tr_stats = tr_stats[-1, -1, -1]
-        vl_stats = vl_stats[-1, -1, -1]
-        jax.block_until_ready(te_losses)
-        print(f"Test loss: {te_losses}")
-        print(f"Test stats: {te_stats}")
-        print(f"Train stats: {tr_stats}")
-        print(f"Validation stats: {vl_stats}")
+        tr_loss, tr_acc, _, tr_grs, __ = tr_stats
+        vl_loss, vl_acc, _, vl_grs, __ = vl_stats
+        te_loss, te_acc, _, __, ___ = te_stats
+        _, __, lrs, ___, meta_grs = tr_stats
 
-        new_env = eqx.combine(arr, static)
-        forward, _ = hyperparameter_reparametrization(config.learners[0].hyperparameter_parametrization)
-        print(f"New Learning Rate: {forward(new_env.parameters[1].learning_parameter.learning_rate)}")
+        tr_loss = jnp.sum(tr_loss, axis=2)
+        tr_acc = jnp.sum(tr_acc, axis=2)
+        tr_grs = tr_grs[:, :, -1]
+        vl_loss = jnp.sum(vl_loss, axis=2)
+        vl_acc = jnp.sum(vl_acc, axis=2)
+        vl_grs = vl_grs[:, :, -1]
+        te_loss = jnp.sum(te_loss, axis=1)
+        te_acc = jnp.sum(te_acc, axis=1)
+        lrs = lrs[:, :, -1]
+        meta_grs = meta_grs[:, :, -1]
+        jax.block_until_ready(env)
 
-    # env_new = eqx.combine(arr, static)
-    # print("")
+        for i in range(tr_loss.shape[0]):
+            for j in range(tr_loss.shape[1]):
+                iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
+                if iteration % config.checkpoint_every_n_minibatches == 0:
+                    clearml.Logger.current_logger().report_scalar(
+                        title="train/loss", series="train_loss", value=tr_loss[i, j], iteration=iteration
+                    )
+                    clearml.Logger.current_logger().report_scalar(
+                        title="train/accuracy", series="train_accuracy", value=tr_acc[i, j], iteration=iteration
+                    )
+                    clearml.Logger.current_logger().report_scalar(
+                        title="train/learning_rate",
+                        series="train_learning_rate",
+                        value=lrs[i, j][0],
+                        iteration=iteration,
+                    )
+                    clearml.Logger.current_logger().report_scalar(
+                        title="train/gradient_norm",
+                        series="train_gradient_norm",
+                        value=jnp.linalg.norm(tr_grs[i, j]),
+                        iteration=iteration,
+                    )
+                    clearml.Logger.current_logger().report_scalar(
+                        title="validation/loss",
+                        series="validation_loss",
+                        value=vl_loss[i, j],
+                        iteration=iteration,
+                    )
+                    clearml.Logger.current_logger().report_scalar(
+                        title="validation/accuracy",
+                        series="validation_accuracy",
+                        value=vl_acc[i, j],
+                        iteration=iteration,
+                    )
+                    clearml.Logger.current_logger().report_scalar(
+                        title="validation/gradient_norm",
+                        series="validation_gradient_norm",
+                        value=jnp.linalg.norm(vl_grs[i, j]),
+                        iteration=iteration,
+                    )
+                    clearml.Logger.current_logger().report_scalar(
+                        title="meta/gradient_norm",
+                        series="meta_gradient_norm",
+                        value=jnp.linalg.norm(meta_grs[i, j]),
+                        iteration=iteration,
+                    )
 
-    # _, preds = inferences[1](eqx.combine(arr, static), batched(traverse((vl_x[0][0], vl_y[0][0]))))
-    # accuracy = statistics_fns[1](preds.b.d, vl_y[0][0], vl_mask[0][0])
-    # jax.block_until_ready(accuracy)
-    # print(f"Validation accuracy: {accuracy}")
+            clearml.Logger.current_logger().report_scalar(
+                title="test/loss",
+                series="test_loss",
+                value=te_loss[i],
+                iteration=iteration,
+            )
+            clearml.Logger.current_logger().report_scalar(
+                title="test/accuracy",
+                series="test_accuracy",
+                value=te_acc[i],
+                iteration=iteration,
+            )
 
-    # for (tr_x, tr_y, tr_mask), (vl_x, vl_y, vl_mask) in toolz.take(3, dataloader):
-    #     print(f"Train batch shape: {tr_x.shape}, {tr_y.shape}")
-    #     print(f"Train batch mask shape: {tr_mask.shape}")
-    #     print(f"Validation batch shape: {vl_x.shape}, {vl_y.shape}")
-    #     print(f"Validation batch mask shape: {vl_mask.shape}")
+    def te_inf(
+        _env: GodState, ds: traverse[batched[tuple[jax.Array, jax.Array, jax.Array]]], mask: jax.Array
+    ) -> tuple[STAT, ...]:
+        return identity(
+            lambda e, d: (transitions[0](e, d), ()),
+            model_statistics_fns[0],
+            learn_interfaces[0],
+            lambda x: x,
+            lambda x: (x, mask),
+        )(_env, ds)[1]
 
-    # return
+    final_te_loss = 0
+    final_te_acc = 0
+    for te_x, te_y, te_seqs, te_mask in dataloader_te:
+        ds = traverse(batched((te_x, te_y, te_seqs)))
+        stats = te_inf(env, ds, te_mask)
+        te_loss, te_acc, _, __, ___ = stats
+        te_loss = jnp.sum(te_loss)
+        te_acc = jnp.sum(te_acc)
+        final_te_loss += te_loss
+        final_te_acc += te_acc
 
-
-#     # make test data
-#     x = jnp.ones((100, 50, n_in_shape[0]))
-#     y = jnp.ones((100, 50, 10))
-
-#     env = copy.deepcopy(env)
-
-#     arr, static = eqx.partition(env, eqx.is_array)
-
-#     def make_step(carry, data):
-#         model = eqx.combine(carry, static)
-#         update_model, out = inferences[0](model, data)
-#         carry, _ = eqx.partition(update_model, eqx.is_array)
-#         return carry, out
-
-#     # Speed comparison with PyTorch RNN
-#     print("\n" + "=" * 50)
-#     print("SPEED COMPARISON: JAX vs PyTorch RNN")
-#     print("=" * 50)
-
-#     batch_size, seq_len, input_size = x.shape
-#     hidden_size = 32  # From your config
-#     output_size = 10
-
-#     # Create PyTorch RNN model with 2 layers
-#     class PyTorchRNN(torch.nn.Module):
-#         def __init__(self, input_size, hidden_size, output_size):
-#             super().__init__()
-#             self.rnn = torch.nn.RNN(input_size, hidden_size, num_layers=2, batch_first=True)
-#             self.linear = torch.nn.Linear(hidden_size, output_size)
-
-#         def forward(self, x):
-#             out, _ = self.rnn(x)
-#             return self.linear(out)
-
-#     pytorch_model = PyTorchRNN(input_size, hidden_size, output_size)
-#     pytorch_model.eval()
-
-#     # Convert JAX data to PyTorch tensors
-#     x_torch = torch.from_numpy(np.array(x)).float()
-
-#     # Create data for scan (1000 copies of the same data)
-#     scan_data = jax.tree.map(lambda x: jnp.repeat(x[None], 3000, axis=0), batched(traverse((x, y))))
-
-#     def test(data, init_model):
-#         print("recompiled")
-#         return jax.lax.scan(make_step, init_model, data)
-
-#     # Create and compile the scan function
-#     # lambda data, init_model: jax.lax.scan(make_step, init_model, data)
-#     jax_scan_fn = eqx.filter_jit(test, donate="all-except-first").lower(scan_data, arr).compile()
-
-#     # Create PyTorch batch function for fair comparison
-#     def pytorch_batch_forward(model, x_batch):
-#         outputs = []
-#         for x in x_batch:
-#             with torch.no_grad():
-#                 out = model(x)
-#                 outputs.append(out)
-#         return torch.stack(outputs)
-
-#     # Create batch data for PyTorch
-#     x_torch_batch = x_torch.unsqueeze(0).repeat(3000, 1, 1, 1)
-
-#     # # Warmup runs
-#     # print("Warming up...")
-#     # for _ in range(1):
-#     #     arr, all_outputs = jax_scan_fn(scan_data, arr)
-#     #     jax.block_until_ready(all_outputs)
-
-#     #     pytorch_batch_outputs = pytorch_batch_forward(pytorch_model, x_torch_batch)
-#     #     if torch.cuda.is_available():
-#     #         torch.cuda.synchronize()
-
-#     # with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=True):
-#     #     arr, all_outputs = jax_scan_fn(scan_data, arr)
-#     #     jax.block_until_ready(all_outputs)
-
-#     # JAX timing with scan
-#     print("Timing JAX scan inference...")
-#     jax_times = []
-#     for _ in range(10):
-#         start_time = time.time()
-#         arr, all_outputs = jax_scan_fn(scan_data, arr)
-#         jax.block_until_ready(all_outputs)
-#         end_time = time.time()
-#         jax_times.append(end_time - start_time)
-
-#     # PyTorch timing with batch
-#     print("Timing PyTorch batch inference...")
-#     pytorch_times = []
-#     for _ in range(10):
-#         start_time = time.time()
-#         pytorch_batch_outputs = pytorch_batch_forward(pytorch_model, x_torch_batch)
-#         if torch.cuda.is_available():
-#             torch.cuda.synchronize()
-#         end_time = time.time()
-#         pytorch_times.append(end_time - start_time)
-
-#     # Results
-#     jax_mean = np.mean(jax_times) * 1000  # Convert to ms
-#     jax_std = np.std(jax_times) * 1000
-#     pytorch_mean = np.mean(pytorch_times) * 1000
-#     pytorch_std = np.std(pytorch_times) * 1000
-
-#     # Per-step timing
-#     jax_per_step = jax_mean / 3000
-#     pytorch_per_step = pytorch_mean / 3000
-
-#     print(f"\nResults (10 runs of 1000 steps each):")
-#     print(f"JAX Scan Total:      {jax_mean:.3f} ± {jax_std:.3f} ms")
-#     print(f"PyTorch Batch Total: {pytorch_mean:.3f} ± {pytorch_std:.3f} ms")
-#     print(f"JAX per step:        {jax_per_step:.6f} ms")
-#     print(f"PyTorch per step:    {pytorch_per_step:.6f} ms")
-#     print(
-#         f"Speedup factor:      {pytorch_mean / jax_mean:.2f}x {'(JAX faster)' if jax_mean < pytorch_mean else '(PyTorch faster)'}"
-#     )
-
-#     print(f"\nData shape: {x.shape}")
-#     print(f"Model size: {input_size} -> {hidden_size} (2 layers) -> {output_size}")
-#     print(f"Total operations: 1000 steps x {batch_size} batch size")
-
-#     # inferences = create_inferences(config, inference_interface, data_interface, axes)
-#     # # make test data
-#     # x = jnp.ones((100, 5, n_in_shape[0]))
-#     # y = jnp.ones((100, 5, 10))
-#     # # inference = (
-#     # #     eqx.filter_jit(lambda x, y: inferences[0](y, x), donate="all-except-first")
-#     # #     .lower(batched(traverse((x, y))), env)
-#     # #     .compile()
-#     # # )
-
-#     # # env, out = inference(env, batched(traverse((x, y))))
-#     # # print("Inference")
-#     # # print(out)
-#     # # print(env)
-#     # # 1. create inference function dict[int, Callable] for each level
-#     # # 2. create meta learning function that hierarchically takes dict[int, Callable]
-#     # # 3. inrepreter config to get dict[int, Callable] that will be passed into the folds above
-#     # # 4. resetting?
-#     # # 5. data loading?
-#     # # 6. combining vl data with prev data when building meta learning function?
-
-#     # flat_model, treedef_model = jax.tree_util.tree_flatten(env)
-
-#     # def make_step(data, flat_model):
-#     #     model = jax.tree_util.tree_unflatten(treedef_model, flat_model)
-#     #     update_model, out = inferences[0](model, data)
-#     #     flat_update_model = jax.tree_util.tree_leaves(update_model)
-#     #     return flat_update_model, out
-
-#     # inference = (
-#     #     eqx.filter_jit(make_step, donate="all-except-first").lower(batched(traverse((x, y))), flat_model).compile()
-#     # )
-
-#     # # Speed comparison with PyTorch RNN
-#     # print("\n" + "=" * 50)
-#     # print("SPEED COMPARISON: JAX vs PyTorch RNN")
-#     # print("=" * 50)
-
-#     # batch_size, seq_len, input_size = x.shape
-#     # hidden_size = 32  # From your config
-#     # output_size = 10
-
-#     # # Create PyTorch RNN model with 2 layers
-#     # class PyTorchRNN(torch.nn.Module):
-#     #     def __init__(self, input_size, hidden_size, output_size):
-#     #         super().__init__()
-#     #         self.rnn = torch.nn.RNN(input_size, hidden_size, num_layers=2, batch_first=True)
-#     #         self.linear = torch.nn.Linear(hidden_size, output_size)
-
-#     #     def forward(self, x):
-#     #         out, _ = self.rnn(x)
-#     #         return self.linear(out)
-
-#     # pytorch_model = PyTorchRNN(input_size, hidden_size, output_size)
-#     # pytorch_model.eval()
-
-#     # # Convert JAX data to PyTorch tensors
-#     # x_torch = torch.from_numpy(np.array(x)).float()
-
-#     # # Warmup runs
-#     # print("Warming up...")
-#     # for _ in range(10):
-#     #     flat_model, _ = inference(batched(traverse((x, y))), flat_model)
-#     #     with torch.no_grad():
-#     #         _ = pytorch_model(x_torch)
-
-#     # # JAX timing
-#     # print("Timing JAX inference...")
-#     # jax_times = []
-#     # for _ in range(1000):
-#     #     start_time = time.time()
-#     #     flat_model, out_jax = inference(batched(traverse((x, y))), flat_model)
-#     #     jax.block_until_ready(out_jax)
-#     #     end_time = time.time()
-#     #     jax_times.append(end_time - start_time)
-
-#     # # PyTorch timing
-#     # print("Timing PyTorch RNN...")
-#     # pytorch_times = []
-#     # with torch.no_grad():
-#     #     for _ in range(1000):
-#     #         start_time = time.time()
-#     #         out_torch = pytorch_model(x_torch)
-#     #         if torch.cuda.is_available():
-#     #             torch.cuda.synchronize()
-#     #         end_time = time.time()
-#     #         pytorch_times.append(end_time - start_time)
-
-#     # # Results
-#     # jax_mean = np.mean(jax_times) * 1000  # Convert to ms
-#     # jax_std = np.std(jax_times) * 1000
-#     # pytorch_mean = np.mean(pytorch_times) * 1000
-#     # pytorch_std = np.std(pytorch_times) * 1000
-
-#     # print(f"\nResults (100 runs):")
-#     # print(f"JAX Inference:    {jax_mean:.3f} ± {jax_std:.3f} ms")
-#     # print(f"PyTorch RNN:      {pytorch_mean:.3f} ± {pytorch_std:.3f} ms")
-#     # print(
-#     #     f"Speedup factor:   {pytorch_mean / jax_mean:.2f}x {'(JAX faster)' if jax_mean < pytorch_mean else '(PyTorch faster)'}"
-#     # )
-
-#     # print(f"\nData shape: {x.shape}")
-#     # print(f"Model size: {input_size} -> {hidden_size} (2 layers) -> {output_size}")
+    clearml.Logger.current_logger().report_scalar(
+        title="final_test/loss",
+        series="final_test_loss",
+        value=final_te_loss / len(dataloader_te.dataset),
+        iteration=total_iterations,
+    )
+    clearml.Logger.current_logger().report_scalar(
+        title="final_test/accuracy",
+        series="final_test_accuracy",
+        value=final_te_acc / len(dataloader_te.dataset),
+        iteration=total_iterations,
+    )
 
 
 # # def create_learner(

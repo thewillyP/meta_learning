@@ -63,7 +63,7 @@ def register_pytree(cls, static_fields):
 
 
 class Logs(PClass):
-    gradient: Optional[jax.Array] = field()
+    gradient: Optional[jax.Array] = field(initial=None)
 
 
 class SpecialLogs(PClass):

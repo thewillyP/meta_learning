@@ -17,14 +17,14 @@ def make_statistics_fns[ENV, DATA, OUT](
     general_interfaces: dict[int, GeneralInterface[ENV]],
     virtual_minibatches: dict[int, int],
     last_unpadded_lengths: dict[int, int],
+    get_logs: Callable[[ENV], tuple[jax.Array, ...]],
 ) -> dict[int, Callable[[ENV, tuple[DATA, jax.Array]], tuple[tuple[STAT, ...], LOSS]]]:
     model_loss_fns = {}
-    for i, (general_interface, virtual_minibatch, last_unpadded_length, data_config) in enumerate(
+    for i, (general_interface, virtual_minibatch, last_unpadded_length) in enumerate(
         zip(
             general_interfaces.values(),
             virtual_minibatches.values(),
             last_unpadded_lengths.values(),
-            config.data.values(),
         )
     ):
         loss_fn = make_loss_fn(
@@ -32,7 +32,6 @@ def make_statistics_fns[ENV, DATA, OUT](
             general_interface,
             virtual_minibatch,
             last_unpadded_length,
-            data_config.num_times_to_avg_in_timeseries,
         )
 
         statistics_fn = make_statistics_fn(
@@ -40,7 +39,7 @@ def make_statistics_fns[ENV, DATA, OUT](
             general_interface,
             virtual_minibatch,
             last_unpadded_length,
-            data_config.num_times_to_avg_in_timeseries,
+            get_logs,
         )
 
         def model_loss_fn(env: ENV, ds: tuple[DATA, jax.Array], j=i) -> tuple[tuple[STAT, ...], LOSS]:
@@ -49,7 +48,7 @@ def make_statistics_fns[ENV, DATA, OUT](
             targets = data_interface.get_target(data)
             seq_num = data_interface.get_sequence(data)
             loss = loss_fn(env, preds, targets, seq_num, mask)
-            stat = statistics_fn(env, preds, targets, seq_num, mask)
+            stat = statistics_fn(env, preds, targets, seq_num, mask, loss)
             return (stat,), loss
 
         model_loss_fns[i] = model_loss_fn
@@ -62,7 +61,6 @@ def make_loss_fn[ENV](
     general_interface: GeneralInterface[ENV],
     virtual_minibatch: int,
     last_unpadded_length: int,
-    num_times_to_avg_in_timeseries: int,
 ) -> Callable[[ENV, jax.Array, jax.Array, jax.Array, jax.Array], LOSS]:
     match config.dataset:
         case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
@@ -107,7 +105,7 @@ def make_statistics_fn[ENV](
     general_interface: GeneralInterface[ENV],
     virtual_minibatch: int,
     last_unpadded_length: int,
-    num_times_to_avg_in_timeseries: int,
+    get_logs: Callable[[ENV], tuple[jax.Array, ...]],
 ) -> Callable[[ENV, jax.Array, jax.Array, jax.Array], STAT]:
     match config.dataset:
         case DelayAddOnlineConfig():
@@ -118,7 +116,9 @@ def make_statistics_fn[ENV](
             _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
             # premptively multiply by series length so averaging cancels out the factor
 
-    def statistics_fn(env: ENV, pred: jax.Array, target: jax.Array, seq_num: jax.Array, batch_mask: jax.Array) -> STAT:
+    def statistics_fn(
+        env: ENV, pred: jax.Array, target: jax.Array, seq_num: jax.Array, batch_mask: jax.Array, loss: jax.Array
+    ) -> STAT:
         current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
         statistics = _statistics_fn(pred, target)
         sequence_masked_statistics = filter_cond(
@@ -132,6 +132,11 @@ def make_statistics_fn[ENV](
         mask_expanded = jnp.reshape(batch_mask, mask_shape)
         valid_statistics = jnp.where(mask_expanded, sequence_masked_statistics, 0.0)
 
-        return jnp.sum(valid_statistics) / jnp.sum(mask_expanded)
+        statistic = jnp.sum(valid_statistics) / jnp.sum(mask_expanded)
+        logs = get_logs(env)
+        return (
+            loss,
+            statistic,
+        ) + logs
 
     return statistics_fn

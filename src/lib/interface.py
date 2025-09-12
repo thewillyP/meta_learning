@@ -21,6 +21,7 @@ class ClassificationInterface[DATA]:
 class GeneralInterface[ENV]:
     get_current_virtual_minibatch: Callable[[ENV], int]
     put_current_virtual_minibatch: Callable[[ENV, int], ENV]
+    put_logs: Callable[[ENV, Logs], ENV]
 
 
 @dataclass(frozen=True)
@@ -105,4 +106,5 @@ def get_default_general_interface[ENV]() -> GeneralInterface[ENV]:
     return GeneralInterface[ENV](
         get_current_virtual_minibatch=lambda env: None,
         put_current_virtual_minibatch=lambda env, value: env,
+        put_logs=lambda env, logs: env,
     )

@@ -155,18 +155,15 @@ def make_resets[ENV](
     learn_interface: LearnInterface[ENV],
 ) -> dict[int, Callable[[ENV], ENV]]:
     _inferences: dict[int, Callable[[ENV], ENV]] = {}
-    for k, (j, _) in enumerate(sorted(inference_interfaces.items())):
+    for j, _ in sorted(inference_interfaces.items()):
 
-        def reset_inference(env: ENV, i=j, k=k) -> ENV:
+        def reset_inference(env: ENV, i=j) -> ENV:
             current_virtual_minibatch = general_interfaces[i].get_current_virtual_minibatch(env)
 
-            def do_reset(env: ENV, i=i, k=k) -> ENV:
+            def do_reset(env: ENV, i=i) -> ENV:
                 prng, env = validation_interfaces[min(validation_interfaces.keys())].get_prng(env)
                 env0 = get_env(prng)
-                # if you reset training activations, their influence tensor must be reset as well.
-                # doens't apply to vl since they always reset on every turn
-                if k == 0:
-                    env = reset_validation_learn_env(env0, env, learn_interface)
+                env = reset_validation_learn_env(env0, env, learn_interface)
                 return reset_inference_env(env0, env, inference_interfaces[i])
 
             env = filter_cond(
@@ -176,12 +173,6 @@ def make_resets[ENV](
                 env,
             )
             env = general_interfaces[i].put_current_virtual_minibatch(env, current_virtual_minibatch + 1)
-
-            if k > 0:
-                # validation learn env must always reset since their learning is purely a readout
-                prng, env = validation_interfaces[min(validation_interfaces.keys())].get_prng(env)
-                env0 = get_env(prng)
-                env = reset_validation_learn_env(env0, env, validation_interfaces[i])
 
             return env
 

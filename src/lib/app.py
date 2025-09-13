@@ -69,9 +69,9 @@ def runApp() -> None:
     config = GodConfig(
         clearml_run=True,
         data_root_dir="/tmp",
-        dataset=MnistConfig(28),
+        dataset=MnistConfig(784),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=20,
+        num_base_epochs=10,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
@@ -123,7 +123,7 @@ def runApp() -> None:
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
                 optimizer=SGDConfig(
-                    learning_rate=0.01,
+                    learning_rate=0.1,
                     momentum=0.0,
                 ),
                 hyperparameter_parametrization="softplus",
@@ -133,9 +133,9 @@ def runApp() -> None:
                 num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(
-                learner=IdentityConfig(),
+                learner=RTRLConfig(),
                 optimizer=AdamConfig(
-                    learning_rate=0.001,
+                    learning_rate=0.01,
                     # momentum=0.0,
                 ),
                 hyperparameter_parametrization="softplus",
@@ -149,18 +149,18 @@ def runApp() -> None:
             0: DataConfig(
                 train_percent=83.33,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.67,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=False,
+        readout_uses_input_data=True,
         test_batch_size=100,
     )
 

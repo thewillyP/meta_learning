@@ -42,6 +42,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("slurm/time", values=["01:30:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["12GB"]),
+        DiscreteParameterRange("slurm/use_singularity", values=[True]),
     ],
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",

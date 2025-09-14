@@ -181,10 +181,10 @@ def runApp() -> None:
 
     # RNG Stuff
     base_key = jax.random.key(config.seed.global_seed)
-    keys = jax.random.split(base_key, 3)
+    keys = jax.random.split(base_key, 2)
     data_prng = PRNG(jax.random.fold_in(keys[0], config.seed.data_seed))
     env_prng = PRNG(jax.random.fold_in(keys[1], config.seed.parameter_seed))
-    test_prng = PRNG(jax.random.fold_in(keys[2], config.seed.test_seed))
+    test_prng = PRNG(jax.random.key(config.seed.test_seed))
     dataset_gen_prng, torch_prng = jax.random.split(data_prng, 2)
     torch_seed = jax.random.randint(torch_prng, shape=(), minval=0, maxval=1e6, dtype=jnp.uint32)
     torch_seed = int(torch_seed)

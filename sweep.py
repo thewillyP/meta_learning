@@ -13,6 +13,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/seed/global_seed", values=[74274, 41030, 21471, 43250, 72537, 53199, 52890, 51110, 37103, 65874]
         ),
+        DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate",
             values=[

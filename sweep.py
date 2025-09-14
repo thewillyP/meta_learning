@@ -7,7 +7,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="138684a2d9864a4da05470fb61195306",  # Use the actual task ID
+    base_task_id="2551ec64ed124dedbc11aad87100a425",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(

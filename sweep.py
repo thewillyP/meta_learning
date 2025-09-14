@@ -11,19 +11,7 @@ optimizer = HyperParameterOptimizer(
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
-            "config/seed",
-            values=[
-                {"data_seed": 74274, "parameter_seed": 25223, "test_seed": 12345},
-                {"data_seed": 41030, "parameter_seed": 17164, "test_seed": 12345},
-                {"data_seed": 21471, "parameter_seed": 76771, "test_seed": 12345},
-                {"data_seed": 43250, "parameter_seed": 39069, "test_seed": 12345},
-                {"data_seed": 72537, "parameter_seed": 66096, "test_seed": 12345},
-                {"data_seed": 53199, "parameter_seed": 27512, "test_seed": 12345},
-                {"data_seed": 52890, "parameter_seed": 45433, "test_seed": 12345},
-                {"data_seed": 51110, "parameter_seed": 60780, "test_seed": 12345},
-                {"data_seed": 37103, "parameter_seed": 28963, "test_seed": 12345},
-                {"data_seed": 65874, "parameter_seed": 20730, "test_seed": 12345},
-            ],
+            "config/seed/global_seed", values=[74274, 41030, 21471, 43250, 72537, 53199, 52890, 51110, 37103, 65874]
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate",

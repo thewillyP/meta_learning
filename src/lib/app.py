@@ -63,6 +63,8 @@ def runApp() -> None:
         singularity_overlay="",
         singularity_binds="",
         container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
+        use_singularity=False,
+        setup_commands="module load python/intel/3.8.6",
     )
     task.connect(unstructure(slurm_params), name="slurm")
 

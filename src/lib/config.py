@@ -31,6 +31,8 @@ class SlurmParams:
     singularity_overlay: str
     singularity_binds: str
     container_source: Union[DockerContainerSource, SifContainerSource, ArtifactContainerSource]
+    use_singularity: bool
+    setup_commands: str
 
 
 @dataclass(frozen=True)

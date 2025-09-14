@@ -41,6 +41,7 @@ optimizer = HyperParameterOptimizer(
             ],
         ),
         # Fixed parameters
+        DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[10]),
         DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
         DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),

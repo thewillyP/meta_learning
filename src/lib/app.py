@@ -67,7 +67,7 @@ def runApp() -> None:
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=True,
+        clearml_run=False,
         data_root_dir="/tmp",
         dataset=MnistConfig(784),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
@@ -133,7 +133,7 @@ def runApp() -> None:
                 num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(
-                learner=RTRLConfig(),
+                learner=IdentityConfig(),
                 optimizer=AdamConfig(
                     learning_rate=0.01,
                     # momentum=0.0,
@@ -172,7 +172,7 @@ def runApp() -> None:
 
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
-    # task.execute_remotely(queue_name="slurm", clone=False, exit_process=True)
+    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     if not config.clearml_run:
         return

@@ -37,6 +37,7 @@ class SlurmParams:
 
 @dataclass(frozen=True)
 class SeedConfig:
+    global_seed: int
     data_seed: int
     parameter_seed: int
     test_seed: int

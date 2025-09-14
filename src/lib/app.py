@@ -75,7 +75,7 @@ def runApp() -> None:
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
         num_base_epochs=10,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(data_seed=1, parameter_seed=1, test_seed=1),
+        seed=SeedConfig(global_seed=1, data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
         # loss_fn="mse",
         transition_function={
@@ -180,9 +180,11 @@ def runApp() -> None:
         return
 
     # RNG Stuff
-    data_prng = PRNG(jax.random.key(config.seed.data_seed))
-    env_prng = PRNG(jax.random.key(config.seed.parameter_seed))
-    test_prng = PRNG(jax.random.key(config.seed.test_seed))
+    base_key = jax.random.key(config.seed.global_seed)
+    keys = jax.random.split(base_key, 3)
+    data_prng = PRNG(jax.random.fold_in(keys[0], config.seed.data_seed))
+    env_prng = PRNG(jax.random.fold_in(keys[1], config.seed.parameter_seed))
+    test_prng = PRNG(jax.random.fold_in(keys[2], config.seed.test_seed))
     dataset_gen_prng, torch_prng = jax.random.split(data_prng, 2)
     torch_seed = jax.random.randint(torch_prng, shape=(), minval=0, maxval=1e6, dtype=jnp.uint32)
     torch_seed = int(torch_seed)

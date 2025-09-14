@@ -1,6 +1,7 @@
 temp.py 
 test.py 
 test1.py
+sweep.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

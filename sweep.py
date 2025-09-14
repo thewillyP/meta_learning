@@ -39,8 +39,9 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/data/1/train_percent", values=[16.67]),
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[500]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["01:00:00"]),
+        DiscreteParameterRange("slurm/time", values=["01:30:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
+        DiscreteParameterRange("slurm/memory", values=["12GB"]),
     ],
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",

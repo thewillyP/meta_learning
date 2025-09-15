@@ -178,7 +178,7 @@ def runApp() -> None:
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
 
-    # task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
+    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     if not config.clearml_run:
         return

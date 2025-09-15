@@ -66,6 +66,8 @@ def runApp() -> None:
         container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
         use_singularity=False,
         setup_commands="module load python/intel/3.8.6",
+        offline_mode=False,
+        skip_python_env_install=False,
     )
     task.connect(unstructure(slurm_params), name="slurm")
 

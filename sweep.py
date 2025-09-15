@@ -43,6 +43,8 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["12GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
+        DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),
+        DiscreteParameterRange("slurm/offline_mode", values=[True]),
     ],
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",

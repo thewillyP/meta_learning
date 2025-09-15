@@ -33,7 +33,6 @@ class SlurmParams:
     container_source: Union[DockerContainerSource, SifContainerSource, ArtifactContainerSource]
     use_singularity: bool
     setup_commands: str
-    offline_mode: bool
     skip_python_env_install: bool
 
 

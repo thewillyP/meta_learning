@@ -36,7 +36,7 @@ from lib.util import create_fractional_list
 
 
 def runApp() -> None:
-    os.environ["CLEARML_CACHE_DIR"] = "/scratch"
+    # os.environ["CLEARML_CACHE_DIR"] = "/scratch"
     ssm = boto3.client("ssm")
     clearml.Task.set_credentials(
         api_host=ssm.get_parameter(Name="/dev/research/clearml_api_host")["Parameter"]["Value"],
@@ -48,6 +48,7 @@ def runApp() -> None:
         ],
     )
     # names don't matter, can change in UI
+    # clearml.Task.set_offline(True)
     task: clearml.Task = clearml.Task.init(
         project_name="temp",
         task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
@@ -64,10 +65,9 @@ def runApp() -> None:
         singularity_overlay="",
         singularity_binds="/scratch/wlp9800/clearml:/scratch",
         container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
-        use_singularity=False,
+        use_singularity=True,
         setup_commands="module load python/intel/3.8.6",
-        offline_mode=False,
-        skip_python_env_install=False,
+        skip_python_env_install=True,
     )
     task.connect(unstructure(slurm_params), name="slurm")
 
@@ -178,10 +178,10 @@ def runApp() -> None:
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
 
+    # task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
+
     if not config.clearml_run:
         return
-
-    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     # RNG Stuff
     base_key = jax.random.key(config.seed.global_seed)

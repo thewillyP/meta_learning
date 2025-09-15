@@ -36,7 +36,7 @@ from lib.util import create_fractional_list
 
 
 def runApp() -> None:
-    # os.environ["CLEARML_CACHE_DIR"] = "/scratch"
+    os.environ["CLEARML_CACHE_DIR"] = "/scratch"
     ssm = boto3.client("ssm")
     clearml.Task.set_credentials(
         api_host=ssm.get_parameter(Name="/dev/research/clearml_api_host")["Parameter"]["Value"],
@@ -47,7 +47,6 @@ def runApp() -> None:
             "Value"
         ],
     )
-    clearml.Task.set_offline(offline_mode=True)
     # names don't matter, can change in UI
     task: clearml.Task = clearml.Task.init(
         project_name="temp",

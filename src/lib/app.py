@@ -32,7 +32,7 @@ from lib.learning import create_meta_learner, identity
 from lib.lib_types import *
 from lib.log import get_logs
 from lib.loss_function import make_statistics_fns
-from lib.util import create_fractional_list
+from lib.util import create_fractional_list, setup_flattened_union
 
 
 def runApp() -> None:
@@ -70,8 +70,6 @@ def runApp() -> None:
         skip_python_env_install=True,
     )
     task.connect(unstructure(slurm_params), name="slurm")
-
-    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     config = GodConfig(
         clearml_run=False,
@@ -172,13 +170,15 @@ def runApp() -> None:
     )
 
     converter = Converter()
-    configure_tagged_union(Union[NNLayer, GRULayer, LSTMLayer], converter)
-    configure_tagged_union(Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig], converter)
-    configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
-    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
+    setup_flattened_union(converter, Union[NNLayer, GRULayer, LSTMLayer])
+    setup_flattened_union(converter, Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig])
+    setup_flattened_union(converter, Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig])
+    setup_flattened_union(converter, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig])
 
-    _config = task.connect(converter.unstructure(config), name="config")
+    _config = task.connect_configuration(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
+
+    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     if not config.clearml_run:
         return

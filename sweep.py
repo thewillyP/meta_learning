@@ -36,7 +36,8 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
         DiscreteParameterRange("config/learners/1/optimizer/_type", values=["SGDConfig"]),
         DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.0]),
-        DiscreteParameterRange("config/learners/1/optimizer/learning_rate", values=[1.0e-4, 1.0e-5]),
+        # DiscreteParameterRange("config/learners/1/optimizer/learning_rate", values=[1.0e-4, 1.0e-5]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate", values=[1.0e-3, 1.0e-4]),
         DiscreteParameterRange("config/learners/0/optimizer/_type", values=["SGDConfig", "SGDNormalizedConfig"]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),

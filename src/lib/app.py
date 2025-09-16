@@ -10,10 +10,12 @@ import random
 import os
 import jax
 import jax.numpy as jnp
+from mypy_boto3_ssm import SSMClient
 import torch
 import numpy as np
 import toolz
 import math
+import time
 
 from lib.config import *
 from lib.create_axes import create_axes
@@ -35,17 +37,29 @@ from lib.loss_function import make_statistics_fns
 from lib.util import create_fractional_list, setup_flattened_union
 
 
+def get_parameter_with_backoff(ssm: SSMClient, name, decrypt=False, max_retries=5, base_delay=1.0):
+    delay = base_delay
+    for attempt in range(max_retries):
+        try:
+            return ssm.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
+        except ssm.exceptions.ThrottlingException:
+            sleep_time = delay + random.uniform(0, 1)
+            time.sleep(sleep_time)
+            delay *= 2
+    raise RuntimeError(f"Failed to get parameter {name} after {max_retries} retries")
+
+
 def runApp() -> None:
-    # os.environ["CLEARML_CACHE_DIR"] = "/scratch"
+    _jitter_rng = random.Random()
+    time.sleep(_jitter_rng.uniform(1, 10))
+
     ssm = boto3.client("ssm")
     clearml.Task.set_credentials(
-        api_host=ssm.get_parameter(Name="/dev/research/clearml_api_host")["Parameter"]["Value"],
-        web_host=ssm.get_parameter(Name="/dev/research/clearml_web_host")["Parameter"]["Value"],
-        files_host=ssm.get_parameter(Name="/dev/research/clearml_files_host")["Parameter"]["Value"],
-        key=ssm.get_parameter(Name="/dev/research/clearml_api_access_key", WithDecryption=True)["Parameter"]["Value"],
-        secret=ssm.get_parameter(Name="/dev/research/clearml_api_secret_key", WithDecryption=True)["Parameter"][
-            "Value"
-        ],
+        api_host=get_parameter_with_backoff(ssm, "/dev/research/clearml_api_host"),
+        web_host=get_parameter_with_backoff(ssm, "/dev/research/clearml_web_host"),
+        files_host=get_parameter_with_backoff(ssm, "/dev/research/clearml_files_host"),
+        key=get_parameter_with_backoff(ssm, "/dev/research/clearml_api_access_key", decrypt=True),
+        secret=get_parameter_with_backoff(ssm, "/dev/research/clearml_api_secret_key", decrypt=True),
     )
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)

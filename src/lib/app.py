@@ -175,7 +175,7 @@ def runApp() -> None:
     setup_flattened_union(converter, Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig])
     setup_flattened_union(converter, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig])
 
-    _config = task.connect_configuration(converter.unstructure(config), name="config")
+    _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
 
     task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)

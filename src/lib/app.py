@@ -51,7 +51,7 @@ def get_parameter_with_backoff(ssm: SSMClient, name, decrypt=False, max_retries=
 
 def runApp() -> None:
     _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 10))
+    time.sleep(_jitter_rng.uniform(1, 60))
 
     ssm = boto3.client("ssm")
     clearml.Task.set_credentials(

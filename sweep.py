@@ -2,12 +2,12 @@ from clearml.automation import HyperParameterOptimizer, DiscreteParameterRange, 
 from clearml import Task
 
 # Create optimizer task
-opt_task = Task.init(project_name="oho", task_name="OHO Seed+ILR Sweep: MLP,SGD/SGDN-SGD,BPTT-RTRL")
+opt_task = Task.init(project_name="oho", task_name="Seed+ILR Sweep: FashionMNIST,MLP,SGD/SGDN-SGD,BPTT-RTRL")
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="64425467911e4118b9f8ce06ab05ac94",  # Use the actual task ID
+    base_task_id="8e090edfd0144210bffe18b1f9415054",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(

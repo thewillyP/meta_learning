@@ -55,6 +55,8 @@ def runApp() -> None:
         task_type=clearml.TaskTypes.training,
     )
 
+    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
+
     # Values dont matter because can change in UI
     slurm_params = SlurmParams(
         memory="8GB",
@@ -177,8 +179,6 @@ def runApp() -> None:
 
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
-
-    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     if not config.clearml_run:
         return

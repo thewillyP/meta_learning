@@ -2,12 +2,12 @@ from clearml.automation import HyperParameterOptimizer, DiscreteParameterRange, 
 from clearml import Task
 
 # Create optimizer task
-opt_task = Task.init(project_name="oho", task_name="Seed+LR Sweep: MLP,SGD-ADAM,BPTT-ID")
+opt_task = Task.init(project_name="oho", task_name="OHO Seed+ILR Sweep: MLP,SGD/SGDN-SGD,BPTT-RTRL")
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="7b2bc497a366461fae6f88143adf7d8d",  # Use the actual task ID
+    base_task_id="64425467911e4118b9f8ce06ab05ac94",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -16,19 +16,26 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate",
-            values=[
-                1.00000000e-05,
-                3.45417413e-05,
-                1.19313189e-04,
-                4.12128530e-04,
-                1.42356370e-03,
-                4.91723692e-03,
-                1.69849925e-02,
-                5.86691217e-02,
-                2.02653362e-01,
-                7.00000000e-01,
-            ],
+            # values=[
+            #     1.00000000e-05,
+            #     3.45417413e-05,
+            #     1.19313189e-04,
+            #     4.12128530e-04,
+            #     1.42356370e-03,
+            #     4.91723692e-03,
+            #     1.69849925e-02,
+            #     5.86691217e-02,
+            #     2.02653362e-01,
+            #     7.00000000e-01,
+            # ],
+            values=[1.0e-1, 1.0e-2, 1.0e-3],
         ),
+        # OHO
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
+        DiscreteParameterRange("config/learners/1/optimizer/_type", values=["SGDConfig"]),
+        DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.0]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate", values=[1.0e-4, 1.0e-5]),
+        DiscreteParameterRange("config/learners/0/optimizer/_type", values=["SGDConfig", "SGDNormalizedConfig"]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[10]),

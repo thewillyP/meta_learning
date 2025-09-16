@@ -358,36 +358,113 @@ def plot_and_test(all_results):
         for opt_type, data in result_dict.items():
             all_conditions.append((f"{exp_name}-{opt_type}", data))
 
-    # Create plots
+    # Create plots - separate violin and box plots
     n_conditions = len(all_conditions)
     if n_conditions > 0:
-        fig, axes = plt.subplots(2, n_conditions, figsize=(4 * n_conditions, 8))
+        # Violin plots
+        fig1, axes1 = plt.subplots(2, n_conditions, figsize=(4 * n_conditions, 8))
         if n_conditions == 1:
-            axes = axes.reshape(2, 1)
+            axes1 = axes1.reshape(2, 1)
 
         for i, (name, data) in enumerate(all_conditions):
-            # Final test loss
-            axes[0, i].violinplot([data["final_losses"]], positions=[0], showmeans=True, showmedians=True)
-            axes[0, i].set_title(f"{name}: Final Test Loss")
-            axes[0, i].set_ylabel("Final Test Loss")
-            axes[0, i].set_xticks([0])
-            axes[0, i].set_xticklabels([name.split("-")[-1]])
+            # Final test loss violin
+            final_losses = data["final_losses"]
+            parts = axes1[0, i].violinplot([final_losses], positions=[0], showmeans=True, showmedians=True)
 
-            # Effective learning rate
+            mean_val = np.mean(final_losses)
+            std_val = np.std(final_losses)
+            axes1[0, i].text(
+                0.1,
+                mean_val,
+                f"μ={mean_val:.4f}\nσ={std_val:.4f}",
+                transform=axes1[0, i].get_xaxis_transform(),
+                verticalalignment="center",
+            )
+
+            axes1[0, i].set_title(f"{name}: Final Test Loss")
+            axes1[0, i].set_ylabel("Final Test Loss")
+            axes1[0, i].set_xticks([0])
+            axes1[0, i].set_xticklabels([name.split("-")[-1]])
+
+            # Effective learning rate violin
             if data["effective_learning_rates"]:
-                axes[1, i].violinplot(
-                    [data["effective_learning_rates"]], positions=[0], showmeans=True, showmedians=True
+                eff_lrs = data["effective_learning_rates"]
+                parts = axes1[1, i].violinplot([eff_lrs], positions=[0], showmeans=True, showmedians=True)
+
+                mean_val = np.mean(eff_lrs)
+                std_val = np.std(eff_lrs)
+                axes1[1, i].text(
+                    0.1,
+                    mean_val,
+                    f"μ={mean_val:.4f}\nσ={std_val:.4f}",
+                    transform=axes1[1, i].get_xaxis_transform(),
+                    verticalalignment="center",
                 )
-                axes[1, i].set_title(f"{name}: Effective LR")
-                axes[1, i].set_ylabel("Effective Learning Rate")
-                axes[1, i].set_xticks([0])
-                axes[1, i].set_xticklabels([name.split("-")[-1]])
+
+                axes1[1, i].set_title(f"{name}: Effective LR")
+                axes1[1, i].set_ylabel("Effective Learning Rate")
+                axes1[1, i].set_xticks([0])
+                axes1[1, i].set_xticklabels([name.split("-")[-1]])
             else:
-                axes[1, i].text(0.5, 0.5, "No Data", ha="center", va="center", transform=axes[1, i].transAxes)
-                axes[1, i].set_title(f"{name}: Effective LR (No Data)")
+                axes1[1, i].text(0.5, 0.5, "No Data", ha="center", va="center", transform=axes1[1, i].transAxes)
+                axes1[1, i].set_title(f"{name}: Effective LR (No Data)")
 
         plt.tight_layout()
-        plt.savefig("analysis_results.png", dpi=300, bbox_inches="tight")
+        plt.show()
+
+        # Box plots
+        fig2, axes2 = plt.subplots(2, n_conditions, figsize=(4 * n_conditions, 8))
+        if n_conditions == 1:
+            axes2 = axes2.reshape(2, 1)
+
+        for i, (name, data) in enumerate(all_conditions):
+            # Final test loss box
+            final_losses = data["final_losses"]
+            bp = axes2[0, i].boxplot(
+                [final_losses], positions=[0], patch_artist=True, boxprops=dict(facecolor="lightblue", alpha=0.7)
+            )
+
+            mean_val = np.mean(final_losses)
+            std_val = np.std(final_losses)
+            axes2[0, i].text(
+                0.1,
+                mean_val,
+                f"μ={mean_val:.4f}\nσ={std_val:.4f}",
+                transform=axes2[0, i].get_xaxis_transform(),
+                verticalalignment="center",
+            )
+
+            axes2[0, i].set_title(f"{name}: Final Test Loss")
+            axes2[0, i].set_ylabel("Final Test Loss")
+            axes2[0, i].set_xticks([0])
+            axes2[0, i].set_xticklabels([name.split("-")[-1]])
+
+            # Effective learning rate box
+            if data["effective_learning_rates"]:
+                eff_lrs = data["effective_learning_rates"]
+                bp = axes2[1, i].boxplot(
+                    [eff_lrs], positions=[0], patch_artist=True, boxprops=dict(facecolor="lightgreen", alpha=0.7)
+                )
+
+                mean_val = np.mean(eff_lrs)
+                std_val = np.std(eff_lrs)
+                axes2[1, i].text(
+                    0.1,
+                    mean_val,
+                    f"μ={mean_val:.4f}\nσ={std_val:.4f}",
+                    transform=axes2[1, i].get_xaxis_transform(),
+                    verticalalignment="center",
+                )
+
+                axes2[1, i].set_title(f"{name}: Effective LR")
+                axes2[1, i].set_ylabel("Effective Learning Rate")
+                axes2[1, i].set_xticks([0])
+                axes2[1, i].set_xticklabels([name.split("-")[-1]])
+            else:
+                axes2[1, i].text(0.5, 0.5, "No Data", ha="center", va="center", transform=axes2[1, i].transAxes)
+                axes2[1, i].set_title(f"{name}: Effective LR (No Data)")
+
+        plt.tight_layout()
         plt.show()
 
     # Mann-Whitney U tests

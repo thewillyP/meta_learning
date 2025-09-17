@@ -69,7 +69,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             # Add test dataset info
             virtual_minibatches[len(datasets)] = 1
             last_unpadded_lengths[len(datasets)] = 0
-            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.test_batch_size)
+            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, 1)
 
         case MnistConfig(n_in) | FashionMnistConfig(n_in):
             n_in_shape = (n_in,)
@@ -118,7 +118,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             # Add test dataset info
             virtual_minibatches[len(datasets)] = 1
             last_unpadded_lengths[len(datasets)] = 0
-            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.test_batch_size)
+            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.data[0].num_examples_in_minibatch)
 
     subkeys = jax.random.split(dataloader_prng, len(datasets))
     loaders = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(len(datasets))]

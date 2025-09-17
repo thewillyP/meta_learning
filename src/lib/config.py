@@ -164,4 +164,5 @@ class GodConfig:
     data: dict[int, DataConfig]
     ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
     readout_uses_input_data: bool
-    test_batch_size: int  # for test dataloader, how many examples to use in a batch
+    force_max_scan_mem_usage: bool  # will force the max scan size to be used in memory allocation
+    max_scan_size_limit: int  # max size of scan to fit in memory

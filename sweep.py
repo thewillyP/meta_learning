@@ -2,16 +2,19 @@ from clearml.automation import HyperParameterOptimizer, DiscreteParameterRange, 
 from clearml import Task
 
 # Create optimizer task
-opt_task = Task.init(project_name="oho", task_name="Fixed Seed+ILR Sweep: Epochs-30,FashionMNIST,MLP,SGD-Adam,BPTT-ID")
+opt_task = Task.init(
+    project_name="oho", task_name="Fixed Seed+ILR Sweep: Epochs-30,FashionMNIST,RNN-256,SGD-Adam,BPTT-ID"
+)
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="6682402deda54997b2bb6c776608e325",  # Use the actual task ID
+    base_task_id="746aa77abb38469a99b7a7f04edb0440",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
-            "config/seed/global_seed", values=[74274, 41030, 21471, 43250, 72537, 53199, 52890, 51110, 37103, 65874]
+            "config/seed/global_seed",
+            values=[760, 202, 747, 995, 972, 579, 274, 283, 201, 480, 14, 530, 842, 774, 32, 471, 102, 104, 479, 789],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         DiscreteParameterRange(
@@ -32,6 +35,7 @@ optimizer = HyperParameterOptimizer(
         ),
         # dataset
         DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
+        DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
         # DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
         # DiscreteParameterRange("config/learners/1/optimizer/_type", values=["SGDConfig"]),
@@ -47,7 +51,10 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/test_batch_size", values=[100]),
         DiscreteParameterRange("config/data/0/train_percent", values=[83.33]),
         DiscreteParameterRange("config/data/1/train_percent", values=[16.67]),
+        DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
+        DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[28]),
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[500]),
+        DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["01:30:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
@@ -58,7 +65,7 @@ optimizer = HyperParameterOptimizer(
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",
     objective_metric_sign="min",
-    max_number_of_concurrent_tasks=20,
+    max_number_of_concurrent_tasks=25,
     optimizer_class=GridSearch,
     execution_queue="willyp",
     total_max_jobs=100_000,

@@ -3,7 +3,7 @@ from clearml import Task
 
 # Create optimizer task
 opt_task = Task.init(
-    project_name="oho", task_name="OHO Seed+ILR Sweep: Epochs-30,FashionMNIST,RNN-256,SGD/SGDN-Adam,BPTT-RTRL"
+    project_name="oho", task_name="OHO Seed+ILR Sweep: Epochs-50,FashionMNIST,RNN-256,SGD/SGDN-Adam,BPTT-RTRL"
 )
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
@@ -31,7 +31,7 @@ optimizer = HyperParameterOptimizer(
             #     2.02653362e-01,
             #     7.00000000e-01,
             # ],
-            values=[1.0e-1, 1.0e-2, 1.0e-3],
+            values=[1.0e-2, 1.0e-3],
         ),
         # dataset
         DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
@@ -45,7 +45,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/0/optimizer/_type", values=["SGDConfig", "SGDNormalizedConfig"]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[30]),
+        DiscreteParameterRange("config/num_base_epochs", values=[50]),
         DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
         DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
         DiscreteParameterRange("config/test_batch_size", values=[100]),
@@ -65,7 +65,7 @@ optimizer = HyperParameterOptimizer(
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",
     objective_metric_sign="min",
-    max_number_of_concurrent_tasks=25,
+    max_number_of_concurrent_tasks=30,
     optimizer_class=GridSearch,
     execution_queue="willyp",
     total_max_jobs=100_000,

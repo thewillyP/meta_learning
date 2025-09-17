@@ -1,6 +1,3 @@
-from typing import Callable, get_args
-from cattrs.strategies import configure_tagged_union
-from cattrs.gen import make_dict_unstructure_fn
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
@@ -10,32 +7,6 @@ import equinox.internal as eqxi
 import optax
 import jax.lax as lax
 from lib.lib_types import LOSS, PRNG, FractionalList
-
-
-def setup_flattened_union(converter, union_type):
-    union_members = get_args(union_type)
-
-    def factory(cls, converter):
-        all_fields = set()
-        for member_type in union_members:
-            if hasattr(member_type, "__attrs_attrs__"):  # attrs class
-                all_fields.update(field.name for field in member_type.__attrs_attrs__)
-            elif hasattr(member_type, "__dataclass_fields__"):  # dataclass
-                all_fields.update(member_type.__dataclass_fields__.keys())
-
-        base_fn = make_dict_unstructure_fn(cls, converter)
-
-        def flatten_unstructure(obj):
-            result = base_fn(obj)
-            for field_name in all_fields:
-                if field_name not in result:
-                    result[field_name] = None
-            return result
-
-        return flatten_unstructure
-
-    converter.register_unstructure_hook_factory(lambda cls: cls in union_members, factory)
-    configure_tagged_union(union_type, converter)
 
 
 def jvp(f, primal, tangent):

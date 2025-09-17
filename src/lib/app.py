@@ -34,7 +34,7 @@ from lib.learning import create_meta_learner, identity
 from lib.lib_types import *
 from lib.log import get_logs
 from lib.loss_function import make_statistics_fns
-from lib.util import create_fractional_list, setup_flattened_union
+from lib.util import create_fractional_list
 
 
 def get_parameter_with_backoff(ssm: SSMClient, name, decrypt=False, max_retries=5, base_delay=1.0):
@@ -184,15 +184,17 @@ def runApp() -> None:
     )
 
     converter = Converter()
-    setup_flattened_union(converter, Union[NNLayer, GRULayer, LSTMLayer])
-    setup_flattened_union(converter, Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig])
-    setup_flattened_union(converter, Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig])
-    setup_flattened_union(converter, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig])
+    configure_tagged_union(Union[NNLayer, GRULayer, LSTMLayer], converter)
+    configure_tagged_union(Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig], converter)
+    configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
+    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
+
+    # Need two connects in order to change config in UI as well as make it HPO-able since HPO can't add new hyperparameter fields
+    _config = task.connect_configuration(converter.unstructure(config), name="config")
+    config = converter.structure(_config, GodConfig)
 
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
-
-    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     if not config.clearml_run:
         return

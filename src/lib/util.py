@@ -1,3 +1,4 @@
+from typing import Callable
 import jax
 import jax.flatten_util
 import jax.numpy as jnp

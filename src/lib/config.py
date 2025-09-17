@@ -92,11 +92,15 @@ class SGDConfig:
 
 
 @dataclass(frozen=True)
-class SGDNormalizedConfig(SGDConfig): ...
+class SGDNormalizedConfig:
+    learning_rate: float
+    momentum: float
 
 
 @dataclass(frozen=True)
-class SGDClipConfig(SGDConfig):
+class SGDClipConfig:
+    learning_rate: float
+    momentum: float
     clip_threshold: float
     clip_sharpness: float
 
@@ -164,5 +168,3 @@ class GodConfig:
     data: dict[int, DataConfig]
     ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
     readout_uses_input_data: bool
-    force_max_scan_mem_usage: bool  # will force the max scan size to be used in memory allocation
-    max_scan_size_limit: int  # max size of scan to fit in memory

@@ -180,8 +180,6 @@ def runApp() -> None:
         },
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=True,
-        force_max_scan_mem_usage=True,
-        max_scan_size_limit=1_000,
     )
 
     converter = Converter()
@@ -312,13 +310,6 @@ def runApp() -> None:
         [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
     )
 
-    if config.force_max_scan_mem_usage:
-        iterations_per_epoch = total_tr_vb
-        for d in reversed(range(1, config.max_scan_size_limit + 1)):
-            if total_tr_vb % d == 0:
-                iterations_per_epoch = d
-                break
-
     total_iterations = iterations_per_epoch * config.num_base_epochs
 
     for k, (
@@ -430,11 +421,11 @@ def runApp() -> None:
         title="final_test/loss",
         series="final_test_loss",
         value=final_te_loss / num_te_batches,
-        iteration=total_iterations,
+        iteration=iteration + 1,
     )
     clearml.Logger.current_logger().report_scalar(
         title="final_test/accuracy",
         series="final_test_accuracy",
         value=final_te_acc / num_te_batches,
-        iteration=total_iterations,
+        iteration=iteration + 1,
     )

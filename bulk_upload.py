@@ -87,7 +87,7 @@ if __name__ == "__main__":
     upload_config = {"offline_log_dir": "/scratch/offline_logs", "max_workers": 50, "batch_size": 1000}
     task.connect(upload_config, name="upload")
 
-    # task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
+    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
 
     # Get configuration from task
 

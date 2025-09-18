@@ -8,6 +8,7 @@ from cattrs import unstructure, Converter
 from cattrs.strategies import configure_tagged_union
 import random
 import os
+import h5py
 import jax
 import jax.numpy as jnp
 from mypy_boto3_ssm import SSMClient
@@ -33,6 +34,7 @@ from lib.interface import ClassificationInterface
 from lib.learning import create_meta_learner, identity
 from lib.lib_types import *
 from lib.log import get_logs
+from lib.logger import HDF5Logger
 from lib.loss_function import make_statistics_fns
 from lib.util import create_fractional_list
 
@@ -88,9 +90,10 @@ def runApp() -> None:
     config = GodConfig(
         clearml_run=False,
         data_root_dir="/tmp",
+        log_dir="/scratch/offline_logs",
         dataset=MnistConfig(784),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=10,
+        num_base_epochs=2,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=1, data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
@@ -161,7 +164,7 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=1,
+                num_virtual_minibatches_per_turn=500,
             ),
         },
         data={
@@ -312,6 +315,8 @@ def runApp() -> None:
 
     total_iterations = iterations_per_epoch * config.num_base_epochs
 
+    logger = HDF5Logger(config.log_dir, task.task_id)
+
     for k, (
         ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
         (te_x, te_y, te_seqs, te_mask),
@@ -339,59 +344,74 @@ def runApp() -> None:
         meta_grs = meta_grs[:, :, -1]
         jax.block_until_ready(env)
 
-        for i in range(tr_loss.shape[0]):
-            for j in range(tr_loss.shape[1]):
-                iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
-                if iteration % config.checkpoint_every_n_minibatches == 0:
-                    clearml.Logger.current_logger().report_scalar(
-                        title="train/loss", series="train_loss", value=tr_loss[i, j], iteration=iteration
-                    )
-                    clearml.Logger.current_logger().report_scalar(
-                        title="train/accuracy", series="train_accuracy", value=tr_acc[i, j], iteration=iteration
-                    )
-                    clearml.Logger.current_logger().report_scalar(
-                        title="train/learning_rate",
-                        series="train_learning_rate",
-                        value=lrs[i, j][0],
-                        iteration=iteration,
-                    )
-                    clearml.Logger.current_logger().report_scalar(
-                        title="train/gradient_norm",
-                        series="train_gradient_norm",
-                        value=jnp.linalg.norm(tr_grs[i, j]),
-                        iteration=iteration,
-                    )
-                    clearml.Logger.current_logger().report_scalar(
-                        title="validation/loss",
-                        series="validation_loss",
-                        value=vl_loss[i, j],
-                        iteration=iteration,
-                    )
-                    clearml.Logger.current_logger().report_scalar(
-                        title="validation/accuracy",
-                        series="validation_accuracy",
-                        value=vl_acc[i, j],
-                        iteration=iteration,
-                    )
-                    clearml.Logger.current_logger().report_scalar(
-                        title="meta/gradient_norm",
-                        series="meta_gradient_norm",
-                        value=jnp.linalg.norm(meta_grs[i, j]),
-                        iteration=iteration,
-                    )
+        with h5py.File(logger.log_file, "a") as f:
+            for i in range(tr_loss.shape[0]):
+                for j in range(tr_loss.shape[1]):
+                    iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
+                    if iteration % config.checkpoint_every_n_minibatches == 0:
+                        logger.log_scalar(
+                            f,
+                            "train/loss",
+                            "train_loss",
+                            tr_loss[i, j],
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
+                        logger.log_scalar(
+                            f,
+                            "train/accuracy",
+                            "train_accuracy",
+                            tr_acc[i, j],
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
+                        logger.log_scalar(
+                            f,
+                            "train/learning_rate",
+                            "train_learning_rate",
+                            lrs[i, j][0],
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
+                        logger.log_scalar(
+                            f,
+                            "train/gradient_norm",
+                            "train_gradient_norm",
+                            jnp.linalg.norm(tr_grs[i, j]),
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
+                        logger.log_scalar(
+                            f,
+                            "validation/loss",
+                            "validation_loss",
+                            vl_loss[i, j],
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
+                        logger.log_scalar(
+                            f,
+                            "validation/accuracy",
+                            "validation_accuracy",
+                            vl_acc[i, j],
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
+                        logger.log_scalar(
+                            f,
+                            "meta/gradient_norm",
+                            "meta_gradient_norm",
+                            jnp.linalg.norm(meta_grs[i, j]),
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
 
-            clearml.Logger.current_logger().report_scalar(
-                title="test/loss",
-                series="test_loss",
-                value=te_loss[i],
-                iteration=iteration,
-            )
-            clearml.Logger.current_logger().report_scalar(
-                title="test/accuracy",
-                series="test_accuracy",
-                value=te_acc[i],
-                iteration=iteration,
-            )
+                logger.log_scalar(
+                    f, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs
+                )
+                logger.log_scalar(
+                    f, "test/accuracy", "test_accuracy", te_acc[i], iteration, total_tr_vb * config.num_base_epochs
+                )
 
     def te_inf(
         _env: GodState, ds: traverse[batched[tuple[jax.Array, jax.Array, jax.Array]]], mask: jax.Array
@@ -417,15 +437,8 @@ def runApp() -> None:
         final_te_acc += te_acc
         num_te_batches += 1
 
-    clearml.Logger.current_logger().report_scalar(
-        title="final_test/loss",
-        series="final_test_loss",
-        value=final_te_loss / num_te_batches,
-        iteration=iteration + 1,
-    )
-    clearml.Logger.current_logger().report_scalar(
-        title="final_test/accuracy",
-        series="final_test_accuracy",
-        value=final_te_acc / num_te_batches,
-        iteration=iteration + 1,
-    )
+    with h5py.File(logger.log_file, "a") as f:
+        logger.log_scalar(f, "final_test/loss", "final_test_loss", final_te_loss / num_te_batches, total_iterations, 1)
+        logger.log_scalar(
+            f, "final_test/accuracy", "final_test_accuracy", final_te_acc / num_te_batches, total_iterations, 1
+        )

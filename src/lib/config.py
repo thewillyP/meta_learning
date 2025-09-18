@@ -157,6 +157,7 @@ class FeedForwardConfig:
 class GodConfig:
     clearml_run: bool
     data_root_dir: str
+    log_dir: str
     dataset: Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig]
     num_base_epochs: int
     checkpoint_every_n_minibatches: int

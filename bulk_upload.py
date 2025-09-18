@@ -85,16 +85,18 @@ if __name__ == "__main__":
     task.connect(slurm_params, name="slurm")
 
     # Upload configuration
-    upload_config = {"offline_log_dir": "/scratch/offline_logs", "max_workers": 50, "batch_size": 1000}
+    upload_config = {
+        "offline_log_dir": "/scratch/offline_logs",
+        "max_workers": 50,
+        "batch_size": 1000,
+        "clearml_run": False,
+    }
     task.connect(upload_config, name="upload")
 
-    task.execute_remotely(queue_name="willyp", clone=False, exit_process=True)
-
-    # Get configuration from task
-
-    # Upload all offline metrics to their original tasks
-    bulk_upload_hdf5_files(
-        task.get_parameter("upload/offline_log_dir"),
-        task.get_parameter("upload/max_workers", cast=True),
-        task.get_parameter("upload/batch_size", cast=True),
-    )
+    if task.get_parameter("upload/clearml_run", cast=True):
+        # Upload all offline metrics to their original tasks
+        bulk_upload_hdf5_files(
+            task.get_parameter("upload/offline_log_dir"),
+            task.get_parameter("upload/max_workers", cast=True),
+            task.get_parameter("upload/batch_size", cast=True),
+        )

@@ -49,6 +49,10 @@ def upload_hdf5_file(hdf5_path: str, batch_size: int) -> str:
 
 def bulk_upload_hdf5_files(offline_log_dir: str, max_workers: int, batch_size: int):
     """Upload all HDF5 metric files in parallel to their original tasks"""
+
+    print(f"Scanning for HDF5 metric files in {offline_log_dir}")
+    print(f"Using max_workers={max_workers}, batch_size={batch_size}")
+
     h5_files = glob.glob(os.path.join(offline_log_dir, "metrics_*.h5"))
 
     if not h5_files:

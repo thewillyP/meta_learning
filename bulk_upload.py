@@ -40,7 +40,7 @@ def upload_hdf5_file(hdf5_path: str, batch_size: int) -> str:
                         logger.report_scalar(title=title, series=series, value=float(value), iteration=int(iteration))
                         metric_count += 1
 
-        os.remove(hdf5_path)
+        # os.remove(hdf5_path)
         return f"Success: {hdf5_path} -> Task {task_id} ({metric_count} metrics uploaded)"
 
     except Exception as e:

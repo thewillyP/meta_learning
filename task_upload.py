@@ -3,23 +3,23 @@ import glob
 import os
 import time
 import random
+import argparse
 import numpy as np
-from clearml import Task
 from clearml.backend_api.session.client import APIClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Optional
 
 
-def upload_hdf5_file_rest_api(hdf5_path: str, batch_size: int) -> str:
+def upload_hdf5_file_rest_api(hdf5_path: str, batch_size: int, target_task_id: Optional[str] = None) -> str:
     """Upload metrics using ClearML REST API batch endpoint"""
-    # Add random jitter at start to spread out worker load
-    # jitter = random.uniform(0, 2.0)
-    # time.sleep(jitter)
-
     try:
         with h5py.File(hdf5_path, "r") as f:
-            task_id = f.attrs.get("task_id")
-            if not task_id:
+            original_task_id = f.attrs.get("task_id")
+            if not original_task_id:
                 return f"Error {hdf5_path}: No task_id found in file"
+
+            # Use target_task_id if provided, otherwise use original
+            task_id = target_task_id if target_task_id else original_task_id
 
             # Get API client for authentication
             client = APIClient()
@@ -83,8 +83,6 @@ def upload_hdf5_file_rest_api(hdf5_path: str, batch_size: int) -> str:
                         batch_count += 1
                         print(f"Uploaded batch {batch_count}: {response.added} metrics")
 
-                        # time.sleep(2.0)
-
                     except Exception as e:
                         import traceback
 
@@ -98,60 +96,58 @@ def upload_hdf5_file_rest_api(hdf5_path: str, batch_size: int) -> str:
         return f"Error {hdf5_path}: {e}\nTraceback: {traceback.format_exc()}"
 
 
-def bulk_upload_hdf5_files_api(offline_log_dir: str, max_workers: int, batch_size: int):
-    """Upload all HDF5 metric files using REST API batch upload"""
-    print(f"Scanning for HDF5 metric files in {offline_log_dir}")
+def find_hdf5_files_for_tasks(offline_log_dir: str, task_ids: List[str]) -> List[tuple]:
+    """Find HDF5 files for specific task IDs and return list of (file_path, task_id) tuples"""
+    matching_files = []
+
+    for task_id in task_ids:
+        h5_file = os.path.join(offline_log_dir, f"metrics_{task_id}.h5")
+        if os.path.exists(h5_file):
+            matching_files.append((h5_file, task_id))
+            print(f"Found: {h5_file}")
+        else:
+            print(f"Not found: {h5_file}")
+
+    return matching_files
+
+
+def bulk_upload_hdf5_files_by_task_ids(offline_log_dir: str, task_ids: List[str], max_workers: int, batch_size: int):
+    """Upload HDF5 metric files for specific task IDs using REST API batch upload"""
     print(f"Using {max_workers} workers with batch API")
     print(f"Using batch upload with batch_size={batch_size}")
 
-    h5_files = glob.glob(os.path.join(offline_log_dir, "metrics_*.h5"))
-    if not h5_files:
-        print(f"No HDF5 metric files found in {offline_log_dir}")
+    matching_files = find_hdf5_files_for_tasks(offline_log_dir, task_ids)
+
+    if not matching_files:
+        print("No matching HDF5 files found for the specified task IDs")
         return
 
-    print(f"Found {len(h5_files)} HDF5 metric files to upload")
-
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(upload_hdf5_file_rest_api, h5_file, batch_size): h5_file for h5_file in h5_files}
+        futures = {
+            executor.submit(upload_hdf5_file_rest_api, h5_file, batch_size): (h5_file, task_id)
+            for h5_file, task_id in matching_files
+        }
 
         completed = 0
         for future in as_completed(futures):
             result = future.result()
             completed += 1
-            print(f"[{completed}/{len(h5_files)}] {result}")
+            print(f"[{completed}/{len(matching_files)}] {result}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Upload HDF5 metrics for specific ClearML task IDs")
+    parser.add_argument("--offline-log-dir", required=True, help="Directory containing HDF5 metric files")
+    parser.add_argument("--task-ids", required=True, nargs="+", help="List of task IDs to upload metrics for")
+    parser.add_argument("--max-workers", type=int, default=5, help="Maximum number of worker threads (default: 5)")
+    parser.add_argument("--batch-size", type=int, default=60000, help="Batch size for API uploads (default: 60000)")
+
+    args = parser.parse_args()
+
+    print(f"Task IDs to process: {args.task_ids}")
+
+    bulk_upload_hdf5_files_by_task_ids(args.offline_log_dir, args.task_ids, args.max_workers, args.batch_size)
 
 
 if __name__ == "__main__":
-    task: Task = Task.init(project_name="utilities", task_name="bulk_upload_hdf5_metrics_api")
-
-    # Slurm configuration
-    slurm_params = {
-        "memory": "16GB",
-        "time": "06:00:00",
-        "cpu": 4,
-        "gpu": 0,
-        "log_dir": "/vast/wlp9800/logs",
-        "singularity_overlay": "",
-        "singularity_binds": "/scratch/wlp9800/clearml:/scratch",
-        "container_source": {"sif_path": "/scratch/wlp9800/images/devenv-cpu.sif", "type": "sif_path"},
-        "use_singularity": True,
-        "setup_commands": "module load python/intel/3.8.6",
-        "skip_python_env_install": True,
-    }
-    task.connect(slurm_params, name="slurm")
-
-    # Upload configuration for API version
-    upload_config = {
-        "offline_log_dir": "/scratch/offline_logs",
-        "max_workers": 5,
-        "batch_size": 60000,
-        "clearml_run": False,
-    }
-    task.connect(upload_config, name="upload")
-
-    if task.get_parameter("upload/clearml_run", cast=True):
-        bulk_upload_hdf5_files_api(
-            task.get_parameter("upload/offline_log_dir"),
-            task.get_parameter("upload/max_workers", cast=True),
-            task.get_parameter("upload/batch_size", cast=True),
-        )
+    main()

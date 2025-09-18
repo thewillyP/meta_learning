@@ -3,13 +3,13 @@ from clearml import Task
 
 # Create optimizer task
 opt_task = Task.init(
-    project_name="oho", task_name="Fixed Seed+ILR Sweep: Epochs-20,FashionMNIST,RNN-2-256,SGD-Adam,BPTT-ID"
+    project_name="oho", task_name="Fixed Seed+ILR Sweep: Epochs-20,FashionMNIST,GRU-128,SGD-Adam,BPTT-ID"
 )
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="5d3d52463f0e4bf8a645cdc5bc60e013",  # Use the actual task ID
+    base_task_id="a2f4d504b01b4147bd7185ee60ddee06",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(

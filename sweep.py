@@ -3,7 +3,7 @@ from clearml import Task
 
 # Create optimizer task
 opt_task = Task.init(
-    project_name="oho", task_name="Fixed Seed+ILR Sweep: Batch-100,Epochs-30,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
+    project_name="oho", task_name="Fixed Seed+ILR Sweep: Batch-100,Epochs-30,FashionMNIST,RNN-512,SGD-Adam,BPTT-ID"
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"

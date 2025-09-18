@@ -80,6 +80,7 @@ if __name__ == "__main__":
         "container_source": {"sif_path": "/scratch/wlp9800/images/devenv-cpu.sif", "type": "sif_path"},
         "use_singularity": True,
         "setup_commands": "module load python/intel/3.8.6",
+        "skip_python_env_install": True,
     }
     task.connect(slurm_params, name="slurm")
 

@@ -3,7 +3,7 @@ from clearml import Task
 
 # Create optimizer task
 opt_task = Task.init(
-    project_name="oho", task_name="OHO Seed+ILR Sweep: Epochs-20,FashionMNIST,GRU-128,SGD-Adam,BPTT-RTRL"
+    project_name="oho", task_name="OHO Seed+ILR Sweep: Epochs-100,FashionMNIST,LSTM-128,SGD-Adam,BPTT-RTRL"
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -11,7 +11,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="a2f4d504b01b4147bd7185ee60ddee06",  # Use the actual task ID
+    base_task_id="569a8aaec1454fe9a7809f56f91a1c12",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -62,17 +62,17 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[20]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
+        DiscreteParameterRange("config/num_base_epochs", values=[100]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[5000]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[5000]),
         DiscreteParameterRange("config/data/0/train_percent", values=[83.33]),
         DiscreteParameterRange("config/data/1/train_percent", values=[16.67]),
         DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
         DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[28]),
-        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[500]),
+        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
         DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["01:30:00"]),
+        DiscreteParameterRange("slurm/time", values=["02:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["12GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

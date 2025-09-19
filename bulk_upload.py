@@ -28,12 +28,25 @@ def mark_as_processed(hdf5_path: str, marker_dir: str):
     open(marker_file, "a").close()
 
 
-def upload_hdf5_file_rest_api(hdf5_path: str, batch_size: int, marker_dir: str) -> str:
+def should_exclude_task(hdf5_path: str, excluded_task_ids: set) -> bool:
+    """Check if task should be excluded based on task_id in filename"""
+    if not excluded_task_ids:
+        return False
+
+    filename = os.path.basename(hdf5_path)
+    return any(task_id in filename for task_id in excluded_task_ids)
+
+
+def upload_hdf5_file_rest_api(hdf5_path: str, batch_size: int, marker_dir: str, excluded_task_ids: set) -> str:
     """Upload metrics using ClearML REST API batch endpoint"""
     try:
         # Check if already processed
         if is_already_processed(hdf5_path, marker_dir):
             return f"Skipped {hdf5_path}: Already processed (marker file exists)"
+
+        # Check if task should be excluded
+        if should_exclude_task(hdf5_path, excluded_task_ids):
+            return f"Skipped {hdf5_path}: Task excluded by configuration"
 
         with h5py.File(hdf5_path, "r") as f:
             task_id = f.attrs.get("task_id")
@@ -117,12 +130,20 @@ def upload_hdf5_file_rest_api(hdf5_path: str, batch_size: int, marker_dir: str) 
         return f"Error {hdf5_path}: {e}\nTraceback: {traceback.format_exc()}"
 
 
-def bulk_upload_hdf5_files_api(offline_log_dir: str, max_workers: int, batch_size: int, marker_dir: str):
+def bulk_upload_hdf5_files_api(
+    offline_log_dir: str, max_workers: int, batch_size: int, marker_dir: str, excluded_task_ids: str
+):
     """Upload all HDF5 metric files using REST API batch upload"""
     print(f"Scanning for HDF5 metric files in {offline_log_dir}")
     print(f"Using {max_workers} workers with batch API")
     print(f"Using batch upload with batch_size={batch_size}")
     print(f"Marker files in: {marker_dir}")
+
+    # Parse excluded task IDs
+    excluded_set = set()
+    if excluded_task_ids:
+        excluded_set = set(task_id.strip() for task_id in excluded_task_ids.split(",") if task_id.strip())
+        print(f"Excluding {len(excluded_set)} task IDs: {excluded_set}")
 
     h5_files = glob.glob(os.path.join(offline_log_dir, "metrics_*.h5"))
     if not h5_files:
@@ -133,11 +154,14 @@ def bulk_upload_hdf5_files_api(offline_log_dir: str, max_workers: int, batch_siz
 
     # Count already processed files
     already_processed = sum(1 for f in h5_files if is_already_processed(f, marker_dir))
+    excluded_count = sum(1 for f in h5_files if should_exclude_task(f, excluded_set))
     print(f"Already processed {already_processed} files")
+    print(f"Excluding {excluded_count} files by task ID")
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(upload_hdf5_file_rest_api, h5_file, batch_size, marker_dir): h5_file for h5_file in h5_files
+            executor.submit(upload_hdf5_file_rest_api, h5_file, batch_size, marker_dir, excluded_set): h5_file
+            for h5_file in h5_files
         }
 
         completed = 0
@@ -173,6 +197,7 @@ if __name__ == "__main__":
         "batch_size": 60000,
         "clearml_run": False,
         "marker_dir": "/vast/markers",
+        "excluded_task_ids": "",
     }
     task.connect(upload_config, name="upload")
 
@@ -182,4 +207,5 @@ if __name__ == "__main__":
             task.get_parameter("upload/max_workers", cast=True),
             task.get_parameter("upload/batch_size", cast=True),
             task.get_parameter("upload/marker_dir"),
+            task.get_parameter("upload/excluded_task_ids"),
         )

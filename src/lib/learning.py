@@ -7,7 +7,15 @@ import optax
 import equinox as eqx
 import toolz
 
-from lib.config import BPTTConfig, GodConfig, IdentityConfig, RFLOConfig, RTRLConfig, UOROConfig
+from lib.config import (
+    BPTTConfig,
+    GodConfig,
+    IdentityConfig,
+    RFLOConfig,
+    RTRLConfig,
+    RTRLHessianDecompConfig,
+    UOROConfig,
+)
 from lib.env import Logs
 from lib.interface import GeneralInterface, LearnInterface
 from lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, batched, traverse
@@ -114,6 +122,67 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             _, new_influence_tensor, (_env, tr_stat) = jacobian_matrix_product(
                 state_fn, s__p_vector.vector, state_jacobian
             )
+            new_influence_tensor = JACOBIAN(new_influence_tensor)
+            vl_stat, credit_gr = readout_gr(_env, get_vl(data))
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
+            grad = credit_assignment + output_gr
+
+            _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+            _arr, _ = eqx.partition(_env, eqx.is_array)
+            return _arr, (grad, tr_stat + vl_stat)
+
+        _env, (grads, stats) = jax.lax.scan(step, arr, ds.d)
+        env = eqx.combine(_env, static)
+        return env, stats, GRADIENT(jnp.sum(grads, axis=0))
+
+    return gradient_fn
+
+
+def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, tuple[STAT, ...]]],
+    readout: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], LOSS]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], GRADIENT]],
+    learn_interface: LearnInterface[ENV],
+    get_tr: Callable[[DATA], TR_DATA],
+    get_vl: Callable[[DATA], VL_DATA],
+    epsilon: float,
+) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+        arr, static = eqx.partition(env, eqx.is_array)
+
+        def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
+            _env = eqx.combine(_arr, static)
+
+            s = to_vector(learn_interface.get_state(_env))
+            p = to_vector(learn_interface.get_param(_env))
+
+            def state_fn(state: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+                state = s.to_param(state)
+                __env = learn_interface.put_state(_env, state)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                return state, (__env, stat)
+
+            def param_fn(param: jax.Array) -> jax.Array:
+                param = p.to_param(param)
+                __env = learn_interface.put_param(_env, param)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                return state
+
+            influence_tensor = learn_interface.get_influence_tensor(_env)
+            hessian, (_env, tr_stat) = eqx.filter_jacrev(state_fn, has_aux=True)(s.vector)
+
+            # recompose hessian with normalized eigenvalues
+            eigenvalues, eigenvectors = jnp.linalg.eigh(hessian)
+            spectral_radius = jnp.max(jnp.abs(eigenvalues))
+            normalized_eigenvalues = eigenvalues / (spectral_radius + epsilon)
+            reformed_hessian = (eigenvectors * normalized_eigenvalues) @ eigenvectors.T
+
+            dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
+            new_influence_tensor = reformed_hessian @ influence_tensor + dhdp
+
             new_influence_tensor = JACOBIAN(new_influence_tensor)
             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
             credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
@@ -284,6 +353,28 @@ def create_meta_learner[ENV, DATA](
                         lambda x: (x, mask),
                     )(env, tr_data)
 
+            case RTRLHessianDecompConfig(epsilon):
+
+                def _learner(
+                    env: ENV,
+                    data: tuple[traverse[DATA], jax.Array],
+                    transition_fn=transition_fn,
+                    statistic_fn=statistic_fn,
+                    readout_gr=readout_gr,
+                    learn_interface=learn_interface,
+                    epsilon=epsilon,
+                ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+                    tr_data, mask = data
+                    return rtrl_hessian_decomp(
+                        lambda e, d: (transition_fn(e, d), ()),
+                        statistic_fn,
+                        readout_gr,
+                        learn_interface,
+                        lambda x: x,
+                        lambda x: (x, mask),
+                        epsilon,
+                    )(env, tr_data)
+
             case BPTTConfig():
 
                 def _learner(
@@ -376,6 +467,10 @@ def create_meta_learner[ENV, DATA](
         match learn_config.learner:
             case RTRLConfig():
                 _learner = rtrl(learner0, vl_readout, vl_readout_gr, learn_interface, lambda x: x[0], lambda x: x[1])
+            case RTRLHessianDecompConfig(epsilon):
+                _learner = rtrl_hessian_decomp(
+                    learner0, vl_readout, vl_readout_gr, learn_interface, lambda x: x[0], lambda x: x[1], epsilon
+                )
             case BPTTConfig():
                 _learner = bptt(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
             case IdentityConfig():

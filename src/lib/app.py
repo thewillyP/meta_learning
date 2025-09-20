@@ -8,7 +8,6 @@ from cattrs import unstructure, Converter
 from cattrs.strategies import configure_tagged_union
 import random
 import os
-import h5py
 import jax
 import jax.numpy as jnp
 from mypy_boto3_ssm import SSMClient
@@ -34,7 +33,7 @@ from lib.interface import ClassificationInterface
 from lib.learning import create_meta_learner, identity
 from lib.lib_types import *
 from lib.log import get_logs
-from lib.logger import HDF5Logger
+from lib.logger import ClearMLLogger, HDF5Logger
 from lib.loss_function import make_statistics_fns
 from lib.util import create_fractional_list
 
@@ -88,10 +87,10 @@ def runApp() -> None:
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/tmp",
         log_dir="/scratch/offline_logs",
-        dataset=MnistConfig(784),
+        dataset=MnistConfig(56),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
         num_base_epochs=2,
         checkpoint_every_n_minibatches=1,
@@ -109,7 +108,7 @@ def runApp() -> None:
             #     use_bias=True,
             # ),
             0: NNLayer(
-                n=0,
+                n=32,
                 activation_fn="tanh",
                 use_bias=True,
             ),
@@ -135,10 +134,10 @@ def runApp() -> None:
         # ),
         readout_function=FeedForwardConfig(
             ffw_layers={
-                0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                3: NNLayer(n=10, activation_fn="identity", use_bias=True),
+                # 0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                # 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                # 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                0: NNLayer(n=10, activation_fn="identity", use_bias=True),
             }
         ),
         learners={
@@ -155,7 +154,7 @@ def runApp() -> None:
                 num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(
-                learner=IdentityConfig(),
+                learner=RTRLHessianDecompConfig(epsilon=1e-4),
                 optimizer=AdamConfig(
                     learning_rate=0.01,
                     # momentum=0.0,
@@ -164,32 +163,36 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=500,
+                num_virtual_minibatches_per_turn=100,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=83.33,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=1,
+                num_steps_in_timeseries=14,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.67,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=1,
+                num_steps_in_timeseries=14,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=True,
+        readout_uses_input_data=False,
+        logger_config=ClearMLLoggerConfig(),
     )
 
     converter = Converter()
     configure_tagged_union(Union[NNLayer, GRULayer, LSTMLayer], converter)
-    configure_tagged_union(Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig], converter)
+    configure_tagged_union(
+        Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig], converter
+    )
     configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
     configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
+    configure_tagged_union(Union[HDF5LoggerConfig, ClearMLLoggerConfig], converter)
 
     # Need two connects in order to change config in UI as well as make it HPO-able since HPO can't add new hyperparameter fields
     _config = task.connect_configuration(converter.unstructure(config), name="config")
@@ -315,7 +318,13 @@ def runApp() -> None:
 
     total_iterations = iterations_per_epoch * config.num_base_epochs
 
-    logger = HDF5Logger(config.log_dir, task.task_id)
+    match config.logger_config:
+        case HDF5LoggerConfig():
+            logger = HDF5Logger(config.log_dir, task.task_id)
+        case ClearMLLoggerConfig():
+            logger = ClearMLLogger(task)
+        case _:
+            raise ValueError("Invalid logger configuration.")
 
     for k, (
         ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
@@ -344,74 +353,75 @@ def runApp() -> None:
         meta_grs = meta_grs[:, :, -1]
         jax.block_until_ready(env)
 
-        with h5py.File(logger.log_file, "a") as f:
-            for i in range(tr_loss.shape[0]):
-                for j in range(tr_loss.shape[1]):
-                    iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
-                    if iteration % config.checkpoint_every_n_minibatches == 0:
-                        logger.log_scalar(
-                            f,
-                            "train/loss",
-                            "train_loss",
-                            tr_loss[i, j],
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
-                        logger.log_scalar(
-                            f,
-                            "train/accuracy",
-                            "train_accuracy",
-                            tr_acc[i, j],
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
-                        logger.log_scalar(
-                            f,
-                            "train/learning_rate",
-                            "train_learning_rate",
-                            lrs[i, j][0],
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
-                        logger.log_scalar(
-                            f,
-                            "train/gradient_norm",
-                            "train_gradient_norm",
-                            jnp.linalg.norm(tr_grs[i, j]),
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
-                        logger.log_scalar(
-                            f,
-                            "validation/loss",
-                            "validation_loss",
-                            vl_loss[i, j],
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
-                        logger.log_scalar(
-                            f,
-                            "validation/accuracy",
-                            "validation_accuracy",
-                            vl_acc[i, j],
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
-                        logger.log_scalar(
-                            f,
-                            "meta/gradient_norm",
-                            "meta_gradient_norm",
-                            jnp.linalg.norm(meta_grs[i, j]),
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
+        context = logger.get_context()
+        for i in range(tr_loss.shape[0]):
+            for j in range(tr_loss.shape[1]):
+                iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
+                if iteration % config.checkpoint_every_n_minibatches == 0:
+                    logger.log_scalar(
+                        context,
+                        "train/loss",
+                        "train_loss",
+                        tr_loss[i, j],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "train/accuracy",
+                        "train_accuracy",
+                        tr_acc[i, j],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "train/learning_rate",
+                        "train_learning_rate",
+                        lrs[i, j][0],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "train/gradient_norm",
+                        "train_gradient_norm",
+                        jnp.linalg.norm(tr_grs[i, j]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "validation/loss",
+                        "validation_loss",
+                        vl_loss[i, j],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "validation/accuracy",
+                        "validation_accuracy",
+                        vl_acc[i, j],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "meta/gradient_norm",
+                        "meta_gradient_norm",
+                        jnp.linalg.norm(meta_grs[i, j]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
 
-                logger.log_scalar(
-                    f, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs
-                )
-                logger.log_scalar(
-                    f, "test/accuracy", "test_accuracy", te_acc[i], iteration, total_tr_vb * config.num_base_epochs
-                )
+            logger.log_scalar(
+                context, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs
+            )
+            logger.log_scalar(
+                context, "test/accuracy", "test_accuracy", te_acc[i], iteration, total_tr_vb * config.num_base_epochs
+            )
+        logger.close_context(context)
 
     def te_inf(
         _env: GodState, ds: traverse[batched[tuple[jax.Array, jax.Array, jax.Array]]], mask: jax.Array
@@ -437,8 +447,11 @@ def runApp() -> None:
         final_te_acc += te_acc
         num_te_batches += 1
 
-    with h5py.File(logger.log_file, "a") as f:
-        logger.log_scalar(f, "final_test/loss", "final_test_loss", final_te_loss / num_te_batches, total_iterations, 1)
-        logger.log_scalar(
-            f, "final_test/accuracy", "final_test_accuracy", final_te_acc / num_te_batches, total_iterations, 1
-        )
+    context = logger.get_context()
+    logger.log_scalar(
+        context, "final_test/loss", "final_test_loss", final_te_loss / num_te_batches, total_iterations, 1
+    )
+    logger.log_scalar(
+        context, "final_test/accuracy", "final_test_accuracy", final_te_acc / num_te_batches, total_iterations, 1
+    )
+    logger.close_context(context)

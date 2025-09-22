@@ -263,7 +263,11 @@ def create_env(
         learning_state_vl = create_learning_state(learn_config, env, prev_parameter, learn_interfaces[i], prng1)
 
         if learn_config.track_logs:
-            logs = Logs(gradient=jnp.zeros_like(to_vector(prev_parameter).vector))
+            logs = Logs(
+                gradient=jnp.zeros_like(to_vector(prev_parameter).vector),
+                hessian_contains_nans=jnp.array(False),
+                immediate_influence_contains_nans=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            )
         else:
             logs = None
 

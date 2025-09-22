@@ -176,7 +176,7 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
 
             # recompose hessian with normalized eigenvalues
             eigenvalues, eigenvectors = jnp.linalg.eigh(hessian)
-            spectral_radius = jnp.max(jnp.abs(eigenvalues))
+            spectral_radius = jnp.max(jnp.abs(eigenvalues))  # abs handles complex correctly
             normalized_eigenvalues = eigenvalues / (spectral_radius + epsilon)
             reformed_hessian = (eigenvectors * normalized_eigenvalues) @ eigenvectors.T
 
@@ -190,6 +190,36 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             grad = credit_assignment + output_gr
 
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+
+            # logging
+            hessian_max = jnp.max(jnp.abs(hessian))
+            nonzero_mask = jnp.abs(hessian) > 0
+            hessian_min = jnp.min(jnp.where(nonzero_mask, jnp.abs(hessian), jnp.inf))
+            nonzero_eigenvalue_mask = jnp.abs(eigenvalues) > 1e-6
+            smallest_nonzero_eigenvalue = jnp.min(jnp.where(nonzero_eigenvalue_mask, jnp.abs(eigenvalues), jnp.inf))
+            symmetry_error = jnp.max(jnp.abs(hessian - hessian.T))
+            eigenvalue_inf_count = jnp.sum(jnp.isinf(eigenvalues))
+            eigenvalue_nan_count: jax.Array = jnp.sum(jnp.isnan(eigenvalues))
+            zero_eigenvalue_count = jnp.sum(jnp.abs(eigenvalues) < 1e-6)
+            # immediate_influence_contains_nans = jnp.any(~jnp.isfinite(dhdp))
+            stuff = jnp.stack(
+                [
+                    hessian_max,
+                    hessian_min,
+                    smallest_nonzero_eigenvalue,
+                    symmetry_error,
+                    eigenvalue_inf_count,
+                    eigenvalue_nan_count,
+                    zero_eigenvalue_count,
+                ]
+            )
+            _env = learn_interface.put_logs(
+                _env,
+                Logs(
+                    immediate_influence_contains_nans=stuff,
+                ),
+            )
+
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
 

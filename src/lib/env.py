@@ -64,13 +64,15 @@ def register_pytree(cls, static_fields):
 
 class Logs(PClass):
     gradient: Optional[jax.Array] = field(initial=None)
+    hessian_contains_nans: Optional[bool] = field(initial=None)
+    immediate_influence_contains_nans: Optional[bool] = field(initial=None)
 
 
 class SpecialLogs(PClass):
-    influence_tensor: Optional[jax.Array] = field()
-    immediate_influence_tensor: Optional[jax.Array] = field()
-    largest_jac_eigenvalue: Optional[jax.Array] = field()
-    jacobian: Optional[jax.Array] = field()
+    influence_tensor: Optional[jax.Array] = field(initial=None)
+    immediate_influence_tensor: Optional[jax.Array] = field(initial=None)
+    largest_jac_eigenvalue: Optional[jax.Array] = field(initial=None)
+    jacobian: Optional[jax.Array] = field(initial=None)
 
 
 class CustomSequential(eqx.Module):

@@ -92,7 +92,7 @@ def runApp() -> None:
         log_dir="/scratch/offline_logs",
         dataset=MnistConfig(56),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=2,
+        num_base_epochs=1,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=1, data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
@@ -156,14 +156,14 @@ def runApp() -> None:
             1: LearnConfig(
                 learner=RTRLHessianDecompConfig(epsilon=1e-4),
                 optimizer=AdamConfig(
-                    learning_rate=0.01,
+                    learning_rate=1.0e-2,
                     # momentum=0.0,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=100,
+                num_virtual_minibatches_per_turn=10,
             ),
         },
         data={
@@ -337,10 +337,18 @@ def runApp() -> None:
         env, stats, te_losses = update_fn(data, env)
         tr_stats, vl_stats, te_stats = stats
 
-        tr_loss, tr_acc, _, tr_grs, __ = tr_stats
-        vl_loss, vl_acc, _, ___, __ = vl_stats
-        te_loss, te_acc, _, __, ___ = te_stats
-        _, __, lrs, ___, meta_grs = tr_stats
+        tr_loss, tr_acc, _, tr_grs, __, ___, ____ = tr_stats
+        (
+            vl_loss,
+            vl_acc,
+            _,
+            __,
+            ___,
+            ____,
+            _____,
+        ) = vl_stats
+        te_loss, te_acc, _, __, ___, ____, _____ = te_stats
+        _, __, lrs, ___, meta_grs, hessian_contains_nans, immediate_influence_contains_nans = tr_stats
 
         tr_loss = jnp.sum(tr_loss, axis=2)
         tr_acc = jnp.sum(tr_acc, axis=2)
@@ -351,6 +359,9 @@ def runApp() -> None:
         te_acc = jnp.sum(te_acc, axis=1)
         lrs = lrs[:, :, -1]
         meta_grs = meta_grs[:, :, -1]
+        hessian_contains_nans = hessian_contains_nans[:, :, -1]
+        immediate_influence_contains_nans = immediate_influence_contains_nans[:, :, -1]
+
         jax.block_until_ready(env)
 
         context = logger.get_context()
@@ -411,6 +422,70 @@ def runApp() -> None:
                         "meta/gradient_norm",
                         "meta_gradient_norm",
                         jnp.linalg.norm(meta_grs[i, j]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    # logger.log_scalar(
+                    #     context,
+                    #     "meta/hessian_contains_nans",
+                    #     "meta_hessian_contains_nans",
+                    #     float(hessian_contains_nans[i, j]),
+                    #     iteration,
+                    #     total_tr_vb * config.num_base_epochs,
+                    # )
+                    logger.log_scalar(
+                        context,
+                        "meta/hessian_max",
+                        "meta_hessian_max",
+                        float(immediate_influence_contains_nans[i, j][0]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "meta/hessian_min",
+                        "meta_hessian_min",
+                        float(immediate_influence_contains_nans[i, j][1]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "meta/smallest_nonzero_eigenvalue",
+                        "meta_smallest_nonzero_eigenvalue",
+                        float(immediate_influence_contains_nans[i, j][2]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "meta/hessian_symmetric",
+                        "meta_hessian_symmetric",
+                        float(immediate_influence_contains_nans[i, j][3]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "meta/eigenvalue_inf_count",
+                        "meta_eigenvalue_inf_count",
+                        float(immediate_influence_contains_nans[i, j][4]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "meta/eigenvalue_nan_count",
+                        "meta_eigenvalue_nan_count",
+                        float(immediate_influence_contains_nans[i, j][5]),
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "meta/zero_eigenvalue_count",
+                        "meta_zero_eigenvalue_count",
+                        float(immediate_influence_contains_nans[i, j][6]),
                         iteration,
                         total_tr_vb * config.num_base_epochs,
                     )

@@ -86,9 +86,21 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
             get_uoro=lambda env, i=j: env.learning_states[i].uoro,
             put_uoro=lambda env, uoro, i=j: env.transform(["learning_states", i, "uoro"], lambda _: uoro),
             learn_config=learn_config,
-            put_logs=lambda env, logs, i=j: env.transform(["general", i, "logs"], lambda _: logs),
+            put_logs=lambda env, logs, i=j: env.transform(
+                ["general", i, "logs"],
+                lambda old: old.set(
+                    **{k: getattr(logs, k) for k in logs._pclass_fields if getattr(logs, k) is not None}
+                ),
+            ),
             put_special_logs=lambda env, special_logs, i=j: env.transform(
-                ["general", i, "special_logs"], lambda _: special_logs
+                ["general", i, "special_logs"],
+                lambda old: old.set(
+                    **{
+                        k: getattr(special_logs, k)
+                        for k in special_logs._pclass_fields
+                        if getattr(special_logs, k) is not None
+                    }
+                ),
             ),
             get_prng=lambda env, i=j: get_learning_prng(env, i),
         )
@@ -130,9 +142,21 @@ def create_validation_learn_interfaces(
             get_uoro=lambda env, i=j: env.validation_learning_states[i].uoro,
             put_uoro=lambda env, uoro, i=j: env.transform(["validation_learning_states", i, "uoro"], lambda _: uoro),
             learn_config=config.learners[0],
-            put_logs=lambda env, logs, i=j: env.transform(["general", i, "logs"], lambda _: logs),
+            put_logs=lambda env, logs, i=j: env.transform(
+                ["general", i, "logs"],
+                lambda old: old.set(
+                    **{k: getattr(logs, k) for k in logs._pclass_fields if getattr(logs, k) is not None}
+                ),
+            ),
             put_special_logs=lambda env, special_logs, i=j: env.transform(
-                ["general", i, "special_logs"], lambda _: special_logs
+                ["general", i, "special_logs"],
+                lambda old: old.set(
+                    **{
+                        k: getattr(special_logs, k)
+                        for k in special_logs._pclass_fields
+                        if getattr(special_logs, k) is not None
+                    }
+                ),
             ),
             get_prng=lambda env, i=j: get_learning_prng(env, i),
         )
@@ -193,7 +217,12 @@ def create_general_interfaces(config: GodConfig) -> dict[int, GeneralInterface[G
             put_current_virtual_minibatch=lambda env, value, i=j: env.transform(
                 ["general", i, "current_virtual_minibatch"], lambda _: value
             ),
-            put_logs=lambda env, logs, i=j: env.transform(["general", i, "logs"], lambda _: logs),
+            put_logs=lambda env, logs, i=j: env.transform(
+                ["general", i, "logs"],
+                lambda old: old.set(
+                    **{k: getattr(logs, k) for k in logs._pclass_fields if getattr(logs, k) is not None}
+                ),
+            ),
         )
         interpreters[j] = interpreter
 

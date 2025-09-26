@@ -3,7 +3,7 @@ from clearml import Task
 
 # Create optimizer task
 opt_task = Task.init(
-    project_name="oho", task_name="Fixed Seed+ILR Sweep: Epochs-100,FashionMNIST,LSTM-128,SGD-Adam,BPTT-ID"
+    project_name="oho", task_name="Fixed Seed+ILR Sweep: Batch-100,Epochs-20,FashionMNIST,RNN-32,SGD-Adam,BPTT-ID"
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -11,7 +11,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="569a8aaec1454fe9a7809f56f91a1c12",  # Use the actual task ID
+    base_task_id="37feb2c334c34b21ac8fd99c8aa8e317",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -43,7 +43,8 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
-        # DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
+        # DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
+        # DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-4]),
         # DiscreteParameterRange(
         #     "config/learners/1/optimizer/learning_rate",
         #     values=[
@@ -55,21 +56,21 @@ optimizer = HyperParameterOptimizer(
         #         0.0001,
         #     ],
         # ),
-        # DiscreteParameterRange("config/learners/0/optimizer/_type", values=["SGDConfig"]),
         # DiscreteParameterRange(
         #     "config/learners/0/optimizer/learning_rate",
         #     values=[0.00010, 0.001709975946676698, 0.029240177382128668, 0.50],
         # ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[100]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[5000]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[5000]),
+        DiscreteParameterRange("config/num_base_epochs", values=[20]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
         DiscreteParameterRange("config/data/0/train_percent", values=[83.33]),
         DiscreteParameterRange("config/data/1/train_percent", values=[16.67]),
         DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
         DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[28]),
-        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
+        DiscreteParameterRange("config/learners/0/num_virtual_minibatches_per_turn", values=[10]),
+        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[50]),
         DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["02:00:00"]),

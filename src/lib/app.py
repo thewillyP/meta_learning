@@ -87,14 +87,14 @@ def runApp() -> None:
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=True,
+        clearml_run=False,
         data_root_dir="/tmp",
         log_dir="/scratch/offline_logs",
-        dataset=MnistConfig(14),
+        dataset=MnistConfig(28),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=20,
+        num_base_epochs=1,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=5435, data_seed=1, parameter_seed=1, test_seed=1),
+        seed=SeedConfig(global_seed=1, data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
         # loss_fn="mse",
         transition_function={
@@ -164,8 +164,8 @@ def runApp() -> None:
                 num_virtual_minibatches_per_turn=10,
             ),
             1: LearnConfig(
-                learner=RTRLFiniteHvpConfig(epsilon=1e-4),
-                # learner=RTRLConfig(),
+                learner=IdentityConfig(),
+                # learner=RTRLFiniteHvpConfig(epsilon=1e-4),
                 optimizer=AdamConfig(
                     learning_rate=1.0e-2,
                     # momentum=0.0,
@@ -181,13 +181,13 @@ def runApp() -> None:
             0: DataConfig(
                 train_percent=83.33,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=56,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.67,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=56,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
         },

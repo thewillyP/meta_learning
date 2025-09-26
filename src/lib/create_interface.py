@@ -36,10 +36,17 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
     for j, (_, learn_config) in enumerate(sorted(config.learners.items())):
 
         def get_state_pytree(env: GodState, i) -> PyTree:
+            if i == 0 or config.treat_inference_state_as_online:
+                inference_part = (
+                    dict(islice(env.inference_states.items(), i + 1))
+                    if not config.ignore_validation_inference_recurrence
+                    else {0: env.inference_states[0]}
+                )
+            else:
+                inference_part = {}
+
             return (
-                dict(islice(env.inference_states.items(), i + 1))
-                if not config.ignore_validation_inference_recurrence
-                else {0: env.inference_states[0]},
+                inference_part,
                 dict(islice(env.learning_states.items(), i)),
                 dict(islice(env.parameters.items(), i)),
             )
@@ -48,11 +55,18 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
             return to_vector(get_state_pytree(env, i)).vector
 
         def put_state(env: GodState, state: jax.Array, i) -> GodState:
-            _inference_states, _learning_states, _params = to_vector(
-                (
+            if i == 0 or config.treat_inference_state_as_online:
+                inference_part = (
                     dict(islice(env.inference_states.items(), i + 1))
                     if not config.ignore_validation_inference_recurrence
-                    else {0: env.inference_states[0]},
+                    else {0: env.inference_states[0]}
+                )
+            else:
+                inference_part = {}
+
+            _inference_states, _learning_states, _params = to_vector(
+                (
+                    inference_part,
                     dict(islice(env.learning_states.items(), i)),
                     dict(islice(env.parameters.items(), i)),
                 )

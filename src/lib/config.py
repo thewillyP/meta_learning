@@ -73,6 +73,11 @@ class RTRLHessianDecompConfig:
 
 
 @dataclass(frozen=True)
+class RTRLFiniteHvpConfig:
+    epsilon: float
+
+
+@dataclass(frozen=True)
 class BPTTConfig: ...
 
 
@@ -125,7 +130,9 @@ class DataConfig:
 
 @dataclass(frozen=True)
 class LearnConfig:
-    learner: Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig]
+    learner: Union[
+        RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
+    ]
     optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
     hyperparameter_parametrization: Literal["identity", "softplus", "relu"]
     lanczos_iterations: int
@@ -183,3 +190,4 @@ class GodConfig:
     ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
     readout_uses_input_data: bool
     logger_config: Union[HDF5LoggerConfig, ClearMLLoggerConfig]
+    treat_inference_state_as_online: bool  # if true, influence tensors will be computed for inference state

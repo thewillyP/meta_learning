@@ -90,11 +90,11 @@ def runApp() -> None:
         clearml_run=True,
         data_root_dir="/tmp",
         log_dir="/scratch/offline_logs",
-        dataset=MnistConfig(56),
+        dataset=MnistConfig(14),
         # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=1,
+        num_base_epochs=20,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=1, data_seed=1, parameter_seed=1, test_seed=1),
+        seed=SeedConfig(global_seed=5435, data_seed=1, parameter_seed=1, test_seed=1),
         loss_fn="cross_entropy_with_integer_labels",
         # loss_fn="mse",
         transition_function={
@@ -143,18 +143,29 @@ def runApp() -> None:
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                optimizer=SGDConfig(
+                # optimizer=SGDNormalizedConfig(
+                #     learning_rate=0.1,
+                #     momentum=0.0,
+                # ),
+                # optimizer=SGDConfig(
+                #     learning_rate=0.1,
+                #     momentum=0.0,
+                # ),
+                optimizer=SGDClipConfig(
                     learning_rate=0.1,
                     momentum=0.0,
+                    clip_threshold=1.0,
+                    clip_sharpness=100.0,
                 ),
                 hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=1,
+                num_virtual_minibatches_per_turn=10,
             ),
             1: LearnConfig(
-                learner=RTRLHessianDecompConfig(epsilon=1e-4),
+                learner=RTRLFiniteHvpConfig(epsilon=1e-4),
+                # learner=RTRLConfig(),
                 optimizer=AdamConfig(
                     learning_rate=1.0e-2,
                     # momentum=0.0,
@@ -163,32 +174,36 @@ def runApp() -> None:
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=10,
+                num_virtual_minibatches_per_turn=50,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=83.33,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=14,
+                num_steps_in_timeseries=56,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.67,
                 num_examples_in_minibatch=100,
-                num_steps_in_timeseries=14,
+                num_steps_in_timeseries=56,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
         logger_config=ClearMLLoggerConfig(),
+        treat_inference_state_as_online=True,
     )
 
     converter = Converter()
     configure_tagged_union(Union[NNLayer, GRULayer, LSTMLayer], converter)
     configure_tagged_union(
-        Union[RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig], converter
+        Union[
+            RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
+        ],
+        converter,
     )
     configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
     configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
@@ -337,18 +352,10 @@ def runApp() -> None:
         env, stats, te_losses = update_fn(data, env)
         tr_stats, vl_stats, te_stats = stats
 
-        tr_loss, tr_acc, _, tr_grs, __, ___, ____ = tr_stats
-        (
-            vl_loss,
-            vl_acc,
-            _,
-            __,
-            ___,
-            ____,
-            _____,
-        ) = vl_stats
-        te_loss, te_acc, _, __, ___, ____, _____ = te_stats
-        _, __, lrs, ___, meta_grs, hessian_contains_nans, immediate_influence_contains_nans = tr_stats
+        tr_loss, tr_acc, _, tr_grs, __ = tr_stats
+        (vl_loss, vl_acc, _, __, ___) = vl_stats
+        te_loss, te_acc, _, __, ___ = te_stats
+        _, __, lrs, ___, meta_grs = tr_stats
 
         tr_loss = jnp.sum(tr_loss, axis=2)
         tr_acc = jnp.sum(tr_acc, axis=2)
@@ -359,8 +366,6 @@ def runApp() -> None:
         te_acc = jnp.sum(te_acc, axis=1)
         lrs = lrs[:, :, -1]
         meta_grs = meta_grs[:, :, -1]
-        hessian_contains_nans = hessian_contains_nans[:, :, -1]
-        immediate_influence_contains_nans = immediate_influence_contains_nans[:, :, -1]
 
         jax.block_until_ready(env)
 
@@ -422,70 +427,6 @@ def runApp() -> None:
                         "meta/gradient_norm",
                         "meta_gradient_norm",
                         jnp.linalg.norm(meta_grs[i, j]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    # logger.log_scalar(
-                    #     context,
-                    #     "meta/hessian_contains_nans",
-                    #     "meta_hessian_contains_nans",
-                    #     float(hessian_contains_nans[i, j]),
-                    #     iteration,
-                    #     total_tr_vb * config.num_base_epochs,
-                    # )
-                    logger.log_scalar(
-                        context,
-                        "meta/hessian_max",
-                        "meta_hessian_max",
-                        float(immediate_influence_contains_nans[i, j][0]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "meta/hessian_min",
-                        "meta_hessian_min",
-                        float(immediate_influence_contains_nans[i, j][1]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "meta/smallest_nonzero_eigenvalue",
-                        "meta_smallest_nonzero_eigenvalue",
-                        float(immediate_influence_contains_nans[i, j][2]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "meta/hessian_symmetric",
-                        "meta_hessian_symmetric",
-                        float(immediate_influence_contains_nans[i, j][3]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "meta/eigenvalue_inf_count",
-                        "meta_eigenvalue_inf_count",
-                        float(immediate_influence_contains_nans[i, j][4]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "meta/eigenvalue_nan_count",
-                        "meta_eigenvalue_nan_count",
-                        float(immediate_influence_contains_nans[i, j][5]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "meta/zero_eigenvalue_count",
-                        "meta_zero_eigenvalue_count",
-                        float(immediate_influence_contains_nans[i, j][6]),
                         iteration,
                         total_tr_vb * config.num_base_epochs,
                     )

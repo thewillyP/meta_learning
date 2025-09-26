@@ -176,7 +176,7 @@ def create_learning_state(
     flat_state = learn_interface.get_state(env)
     flat_param = to_vector(parameter)
     match learn_config.learner:
-        case RTRLConfig() | RFLOConfig() | RTRLHessianDecompConfig():
+        case RTRLConfig() | RFLOConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
             # prng1, prng = jax.random.split(prng, 2)
             influence_tensor = jnp.zeros((flat_state.size, flat_param.vector.size))
             state = state.set(influence_tensor=JACOBIAN(influence_tensor))

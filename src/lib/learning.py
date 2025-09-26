@@ -13,6 +13,7 @@ from lib.config import (
     IdentityConfig,
     RFLOConfig,
     RTRLConfig,
+    RTRLFiniteHvpConfig,
     RTRLHessianDecompConfig,
     UOROConfig,
 )
@@ -175,10 +176,14 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             hessian, (_env, tr_stat) = eqx.filter_jacrev(state_fn, has_aux=True)(s.vector)
 
             # recompose hessian with normalized eigenvalues
-            eigenvalues, eigenvectors = jnp.linalg.eigh(hessian)
+            eigenvalues, eigenvectors = jnp.linalg.eigh(hessian, symmetrize_input=True)
             spectral_radius = jnp.max(jnp.abs(eigenvalues))  # abs handles complex correctly
             normalized_eigenvalues = eigenvalues / (spectral_radius + epsilon)
             reformed_hessian = (eigenvectors * normalized_eigenvalues) @ eigenvectors.T
+
+            # threshold = 1e-6
+            # diff_matrix = jnp.abs(hessian - jnp.transpose(hessian))
+            # nontrivial_differences = jnp.sum(diff_matrix > threshold)
 
             dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
             new_influence_tensor = reformed_hessian @ influence_tensor + dhdp
@@ -191,34 +196,102 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
 
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
 
-            # logging
-            hessian_max = jnp.max(jnp.abs(hessian))
-            nonzero_mask = jnp.abs(hessian) > 0
-            hessian_min = jnp.min(jnp.where(nonzero_mask, jnp.abs(hessian), jnp.inf))
-            nonzero_eigenvalue_mask = jnp.abs(eigenvalues) > 1e-6
-            smallest_nonzero_eigenvalue = jnp.min(jnp.where(nonzero_eigenvalue_mask, jnp.abs(eigenvalues), jnp.inf))
-            symmetry_error = jnp.max(jnp.abs(hessian - hessian.T))
-            eigenvalue_inf_count = jnp.sum(jnp.isinf(eigenvalues))
-            eigenvalue_nan_count: jax.Array = jnp.sum(jnp.isnan(eigenvalues))
-            zero_eigenvalue_count = jnp.sum(jnp.abs(eigenvalues) < 1e-6)
-            # immediate_influence_contains_nans = jnp.any(~jnp.isfinite(dhdp))
-            stuff = jnp.stack(
-                [
-                    hessian_max,
-                    hessian_min,
-                    smallest_nonzero_eigenvalue,
-                    symmetry_error,
-                    eigenvalue_inf_count,
-                    eigenvalue_nan_count,
-                    zero_eigenvalue_count,
-                ]
-            )
-            _env = learn_interface.put_logs(
-                _env,
-                Logs(
-                    immediate_influence_contains_nans=stuff,
-                ),
-            )
+            # # logging
+            # hessian_max = jnp.max(jnp.abs(hessian))
+            # nonzero_mask = jnp.abs(hessian) > 0
+            # hessian_min = jnp.min(jnp.where(nonzero_mask, jnp.abs(hessian), jnp.inf))
+            # nonzero_eigenvalue_mask = jnp.abs(eigenvalues) > 1e-6
+            # smallest_nonzero_eigenvalue = jnp.min(jnp.where(nonzero_eigenvalue_mask, jnp.abs(eigenvalues), jnp.inf))
+
+            # symmetry_error = jnp.max(jnp.abs(hessian - hessian.T))
+            # eigenvalue_inf_count = jnp.sum(jnp.isinf(eigenvalues))
+            # eigenvalue_nan_count: jax.Array = jnp.sum(jnp.isnan(eigenvalues))
+            # zero_eigenvalue_count = jnp.sum(jnp.abs(eigenvalues) < 1e-6)
+            # # immediate_influence_contains_nans = jnp.any(~jnp.isfinite(dhdp))
+            # stuff = jnp.stack(
+            #     [
+            #         hessian_max,
+            #         hessian_min,
+            #         smallest_nonzero_eigenvalue,
+            #         symmetry_error,
+            #         eigenvalue_inf_count,
+            #         eigenvalue_nan_count,
+            #         zero_eigenvalue_count,
+            #     ]
+            # )
+            # _env = learn_interface.put_logs(
+            #     _env,
+            #     Logs(
+            #         immediate_influence_contains_nans=stuff,
+            #     ),
+            # )
+
+            # infl = filter_cond(
+            #     nontrivial_differences > 0, lambda _: influence_tensor, lambda _: new_influence_tensor, None
+            # )
+            # _env = learn_interface.put_influence_tensor(_env, infl)
+
+            # grad = filter_cond(nontrivial_differences > 0, lambda _: jnp.zeros_like(grad), lambda _: grad, None)
+
+            _arr, _ = eqx.partition(_env, eqx.is_array)
+            return _arr, (grad, tr_stat + vl_stat)
+
+        _env, (grads, stats) = jax.lax.scan(step, arr, ds.d)
+        env = eqx.combine(_env, static)
+        return env, stats, GRADIENT(jnp.sum(grads, axis=0))
+
+    return gradient_fn
+
+
+def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, tuple[STAT, ...]]],
+    readout: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], LOSS]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], GRADIENT]],
+    learn_interface: LearnInterface[ENV],
+    get_tr: Callable[[DATA], TR_DATA],
+    get_vl: Callable[[DATA], VL_DATA],
+    epsilon: float,
+) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+        arr, static = eqx.partition(env, eqx.is_array)
+
+        def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
+            _env = eqx.combine(_arr, static)
+
+            s = to_vector(learn_interface.get_state(_env))
+            p = to_vector(learn_interface.get_param(_env))
+
+            def state_fn(state: jax.Array) -> jax.Array:
+                state = s.to_param(state)
+                __env = learn_interface.put_state(_env, state)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                return state
+
+            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+                param = p.to_param(param)
+                __env = learn_interface.put_param(_env, param)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                return state, (__env, stat)
+
+            influence_tensor = learn_interface.get_influence_tensor(_env)
+
+            def finite_hvp(v):
+                return (state_fn(s.vector + epsilon * v) - state_fn(s.vector - epsilon * v)) / (2 * epsilon)
+
+            hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor)
+
+            dhdp, (_env, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
+            new_influence_tensor = hmp + dhdp
+
+            new_influence_tensor = JACOBIAN(new_influence_tensor)
+            vl_stat, credit_gr = readout_gr(_env, get_vl(data))
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
+            grad = credit_assignment + output_gr
+
+            _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
 
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
@@ -405,6 +478,28 @@ def create_meta_learner[ENV, DATA](
                         epsilon,
                     )(env, tr_data)
 
+            case RTRLFiniteHvpConfig(epsilon):
+
+                def _learner(
+                    env: ENV,
+                    data: tuple[traverse[DATA], jax.Array],
+                    transition_fn=transition_fn,
+                    statistic_fn=statistic_fn,
+                    readout_gr=readout_gr,
+                    learn_interface=learn_interface,
+                    epsilon=epsilon,
+                ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+                    tr_data, mask = data
+                    return rtrl_finite_hvp(
+                        lambda e, d: (transition_fn(e, d), ()),
+                        statistic_fn,
+                        readout_gr,
+                        learn_interface,
+                        lambda x: x,
+                        lambda x: (x, mask),
+                        epsilon,
+                    )(env, tr_data)
+
             case BPTTConfig():
 
                 def _learner(
@@ -499,6 +594,10 @@ def create_meta_learner[ENV, DATA](
                 _learner = rtrl(learner0, vl_readout, vl_readout_gr, learn_interface, lambda x: x[0], lambda x: x[1])
             case RTRLHessianDecompConfig(epsilon):
                 _learner = rtrl_hessian_decomp(
+                    learner0, vl_readout, vl_readout_gr, learn_interface, lambda x: x[0], lambda x: x[1], epsilon
+                )
+            case RTRLFiniteHvpConfig(epsilon):
+                _learner = rtrl_finite_hvp(
                     learner0, vl_readout, vl_readout_gr, learn_interface, lambda x: x[0], lambda x: x[1], epsilon
                 )
             case BPTTConfig():

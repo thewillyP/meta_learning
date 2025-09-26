@@ -11,12 +11,8 @@ def get_logs(config: GodConfig, env: GodState) -> tuple[jax.Array, ...]:
     tr_gr_norm = jax.numpy.linalg.norm(tr_gr) if tr_gr is not None else jax.numpy.array(0.0)
     meta_gr = env.general[1].logs.gradient
     meta_gr_norm = jax.numpy.linalg.norm(meta_gr) if meta_gr is not None else jax.numpy.array(0.0)
-    hessian_contains_nans = env.general[1].logs.hessian_contains_nans
-    immediate_influence_contains_nans = env.general[1].logs.immediate_influence_contains_nans
     return (
         forward(env.parameters[1].learning_parameter.learning_rate),
         tr_gr_norm,
         meta_gr_norm,
-        hessian_contains_nans,
-        immediate_influence_contains_nans,
     )

@@ -72,6 +72,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/0/num_virtual_minibatches_per_turn", values=[10]),
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[50]),
         DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
+        DiscreteParameterRange("config/logger_config/_type", values=["HDF5LoggerConfig"]),
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["02:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),

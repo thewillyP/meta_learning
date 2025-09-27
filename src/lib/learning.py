@@ -268,12 +268,12 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
                 state = learn_interface.get_state(__env)
                 return state
 
-            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+            def param_fn(param: jax.Array) -> jax.Array:
                 param = p.to_param(param)
                 __env = learn_interface.put_param(_env, param)
                 __env, stat = transition(__env, get_tr(data))
                 state = learn_interface.get_state(__env)
-                return state, (__env, stat)
+                return state
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
 
@@ -282,10 +282,11 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
 
             hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor)
 
-            dhdp, (_env, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
+            dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
             new_influence_tensor = hmp + dhdp
-
             new_influence_tensor = JACOBIAN(new_influence_tensor)
+            _env, tr_stat = transition(_env, get_tr(data))
+
             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
             credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
             output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]

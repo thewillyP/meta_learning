@@ -174,6 +174,10 @@ class ClearMLLoggerConfig: ...
 
 
 @dataclass(frozen=True)
+class PrintLoggerConfig: ...
+
+
+@dataclass(frozen=True)
 class GodConfig:
     clearml_run: bool
     data_root_dir: str
@@ -189,5 +193,5 @@ class GodConfig:
     data: dict[int, DataConfig]
     ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
     readout_uses_input_data: bool
-    logger_config: Union[HDF5LoggerConfig, ClearMLLoggerConfig]
+    logger_config: Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig]
     treat_inference_state_as_online: bool  # if true, influence tensors will be computed for inference state

@@ -1,9 +1,13 @@
+from typing import Union
+import clearml
 import random
 import string
+from cattrs import unstructure, Converter
+from cattrs.strategies import configure_tagged_union
 import random
 from lib import app
 from lib.config import *
-from lib.logger import HDF5Logger, PrintLogger
+from lib.logger import ClearMLLogger, HDF5Logger, PrintLogger
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -13,6 +17,33 @@ from lib.logger import HDF5Logger, PrintLogger
 
 
 def main():
+    _jitter_rng = random.Random()
+    # time.sleep(_jitter_rng.uniform(1, 60))
+
+    # names don't matter, can change in UI
+    # clearml.Task.set_offline(True)
+    task: clearml.Task = clearml.Task.init(
+        project_name="temp",
+        task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
+        task_type=clearml.TaskTypes.training,
+    )
+
+    # Values dont matter because can change in UI
+    slurm_params = SlurmParams(
+        memory="8GB",
+        time="01:00:00",
+        cpu=2,
+        gpu=0,
+        log_dir="/vast/wlp9800/logs",
+        singularity_overlay="",
+        singularity_binds="/scratch/wlp9800/clearml:/scratch",
+        container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
+        use_singularity=True,
+        setup_commands="module load python/intel/3.8.6",
+        skip_python_env_install=True,
+    )
+    task.connect(unstructure(slurm_params), name="slurm")
+
     config = GodConfig(
         clearml_run=True,
         data_root_dir="/tmp",
@@ -127,11 +158,34 @@ def main():
         },
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
-        logger_config=PrintLoggerConfig(),
+        logger_config=ClearMLLoggerConfig(),
         treat_inference_state_as_online=True,
     )
 
+    converter = Converter()
+    configure_tagged_union(Union[NNLayer, GRULayer, LSTMLayer], converter)
+    configure_tagged_union(
+        Union[
+            RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
+        ],
+        converter,
+    )
+    configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
+    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
+    configure_tagged_union(Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig], converter)
+
+    # Need two connects in order to change config in UI as well as make it HPO-able since HPO can't add new hyperparameter fields
+    _config = task.connect_configuration(converter.unstructure(config), name="config")
+    config = converter.structure(_config, GodConfig)
+
+    _config = task.connect(converter.unstructure(config), name="config")
+    config = converter.structure(_config, GodConfig)
+
     match config.logger_config:
+        case HDF5LoggerConfig():
+            logger = HDF5Logger(config.log_dir, task.task_id)
+        case ClearMLLoggerConfig():
+            logger = ClearMLLogger(task)
         case PrintLoggerConfig():
             logger = PrintLogger()
         case _:

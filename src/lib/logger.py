@@ -3,6 +3,15 @@ import h5py
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+from typing import Protocol
+
+
+class Logger(Protocol):
+    def get_context(self): ...
+
+    def close_context(self, context): ...
+
+    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int): ...
 
 
 class HDF5Logger:
@@ -57,3 +66,20 @@ class ClearMLLogger:
     def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
         """Log a scalar metric to ClearML"""
         self.task.get_logger().report_scalar(title=title, series=series, value=value, iteration=iteration)
+
+
+class PrintLogger:
+    def __init__(self):
+        pass
+
+    def get_context(self):
+        """No context needed for PrintLogger"""
+        return None
+
+    def close_context(self, context):
+        """No context to close for PrintLogger"""
+        pass
+
+    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
+        """Print the scalar metric to console"""
+        print(f"[{title}] {series} @ {iteration}/{max_count}: {value}")

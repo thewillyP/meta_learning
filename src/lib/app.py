@@ -1,21 +1,12 @@
 import copy
-from typing import Union
-import clearml
-import boto3
-import random
-import string
-from cattrs import unstructure, Converter
-from cattrs.strategies import configure_tagged_union
 import random
 import os
 import jax
 import jax.numpy as jnp
-from mypy_boto3_ssm import SSMClient
 import torch
 import numpy as np
 import toolz
 import math
-import time
 
 from lib.config import *
 from lib.create_axes import create_axes
@@ -33,189 +24,12 @@ from lib.interface import ClassificationInterface
 from lib.learning import create_meta_learner, identity
 from lib.lib_types import *
 from lib.log import get_logs
-from lib.logger import ClearMLLogger, HDF5Logger
+from lib.logger import Logger
 from lib.loss_function import make_statistics_fns
 from lib.util import create_fractional_list
 
 
-def get_parameter_with_backoff(ssm: SSMClient, name, decrypt=False, max_retries=5, base_delay=1.0):
-    delay = base_delay
-    for attempt in range(max_retries):
-        try:
-            return ssm.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
-        except ssm.exceptions.ThrottlingException:
-            sleep_time = delay + random.uniform(0, 1)
-            time.sleep(sleep_time)
-            delay *= 2
-    raise RuntimeError(f"Failed to get parameter {name} after {max_retries} retries")
-
-
-def runApp() -> None:
-    _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 60))
-
-    ssm = boto3.client("ssm")
-    clearml.Task.set_credentials(
-        api_host=get_parameter_with_backoff(ssm, "/dev/research/clearml_api_host"),
-        web_host=get_parameter_with_backoff(ssm, "/dev/research/clearml_web_host"),
-        files_host=get_parameter_with_backoff(ssm, "/dev/research/clearml_files_host"),
-        key=get_parameter_with_backoff(ssm, "/dev/research/clearml_api_access_key", decrypt=True),
-        secret=get_parameter_with_backoff(ssm, "/dev/research/clearml_api_secret_key", decrypt=True),
-    )
-    # names don't matter, can change in UI
-    # clearml.Task.set_offline(True)
-    task: clearml.Task = clearml.Task.init(
-        project_name="temp",
-        task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
-        task_type=clearml.TaskTypes.training,
-    )
-
-    # Values dont matter because can change in UI
-    slurm_params = SlurmParams(
-        memory="8GB",
-        time="01:00:00",
-        cpu=2,
-        gpu=0,
-        log_dir="/vast/wlp9800/logs",
-        singularity_overlay="",
-        singularity_binds="/scratch/wlp9800/clearml:/scratch",
-        container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
-        use_singularity=True,
-        setup_commands="module load python/intel/3.8.6",
-        skip_python_env_install=True,
-    )
-    task.connect(unstructure(slurm_params), name="slurm")
-
-    config = GodConfig(
-        clearml_run=False,
-        data_root_dir="/tmp",
-        log_dir="/scratch/offline_logs",
-        dataset=MnistConfig(28),
-        # dataset=DelayAddOnlineConfig(3, 4, 1, 20, 20),
-        num_base_epochs=1,
-        checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=1, data_seed=1, parameter_seed=1, test_seed=1),
-        loss_fn="cross_entropy_with_integer_labels",
-        # loss_fn="mse",
-        transition_function={
-            # 0: GRULayer(
-            #     n=128,
-            #     # activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-            # 0: LSTMLayer(
-            #     n=128,
-            #     use_bias=True,
-            # ),
-            0: NNLayer(
-                n=32,
-                activation_fn="tanh",
-                use_bias=True,
-            ),
-            # 1: NNLayer(
-            #     n=128,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-            # 0: LSTMLayer(
-            #     n=64,
-            #     use_bias=True,
-            # ),
-            # 1: NNLayer(
-            #     n=64,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-        },
-        # readout_function=FeedForwardConfig(
-        #     ffw_layers={
-        #         0: NNLayer(n=10, activation_fn="identity", use_bias=True),
-        #     }
-        # ),
-        readout_function=FeedForwardConfig(
-            ffw_layers={
-                # 0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                0: NNLayer(n=10, activation_fn="identity", use_bias=True),
-            }
-        ),
-        learners={
-            0: LearnConfig(  # normal feedforward backprop
-                learner=BPTTConfig(),
-                # optimizer=SGDNormalizedConfig(
-                #     learning_rate=0.1,
-                #     momentum=0.0,
-                # ),
-                # optimizer=SGDConfig(
-                #     learning_rate=0.1,
-                #     momentum=0.0,
-                # ),
-                optimizer=SGDClipConfig(
-                    learning_rate=0.1,
-                    momentum=0.0,
-                    clip_threshold=1.0,
-                    clip_sharpness=100.0,
-                ),
-                hyperparameter_parametrization="softplus",
-                lanczos_iterations=0,
-                track_logs=True,
-                track_special_logs=False,
-                num_virtual_minibatches_per_turn=10,
-            ),
-            1: LearnConfig(
-                learner=IdentityConfig(),
-                # learner=RTRLFiniteHvpConfig(epsilon=1e-4),
-                optimizer=AdamConfig(
-                    learning_rate=1.0e-2,
-                    # momentum=0.0,
-                ),
-                hyperparameter_parametrization="softplus",
-                lanczos_iterations=0,
-                track_logs=True,
-                track_special_logs=False,
-                num_virtual_minibatches_per_turn=50,
-            ),
-        },
-        data={
-            0: DataConfig(
-                train_percent=83.33,
-                num_examples_in_minibatch=100,
-                num_steps_in_timeseries=28,
-                num_times_to_avg_in_timeseries=1,
-            ),
-            1: DataConfig(
-                train_percent=16.67,
-                num_examples_in_minibatch=100,
-                num_steps_in_timeseries=28,
-                num_times_to_avg_in_timeseries=1,
-            ),
-        },
-        ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=False,
-        logger_config=ClearMLLoggerConfig(),
-        treat_inference_state_as_online=True,
-    )
-
-    converter = Converter()
-    configure_tagged_union(Union[NNLayer, GRULayer, LSTMLayer], converter)
-    configure_tagged_union(
-        Union[
-            RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
-        ],
-        converter,
-    )
-    configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
-    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
-    configure_tagged_union(Union[HDF5LoggerConfig, ClearMLLoggerConfig], converter)
-
-    # Need two connects in order to change config in UI as well as make it HPO-able since HPO can't add new hyperparameter fields
-    _config = task.connect_configuration(converter.unstructure(config), name="config")
-    config = converter.structure(_config, GodConfig)
-
-    _config = task.connect(converter.unstructure(config), name="config")
-    config = converter.structure(_config, GodConfig)
-
+def runApp(config: GodConfig, logger: Logger) -> None:
     if not config.clearml_run:
         return
 
@@ -332,14 +146,6 @@ def runApp() -> None:
     )
 
     total_iterations = iterations_per_epoch * config.num_base_epochs
-
-    match config.logger_config:
-        case HDF5LoggerConfig():
-            logger = HDF5Logger(config.log_dir, task.task_id)
-        case ClearMLLoggerConfig():
-            logger = ClearMLLogger(task)
-        case _:
-            raise ValueError("Invalid logger configuration.")
 
     for k, (
         ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
@@ -465,9 +271,19 @@ def runApp() -> None:
 
     context = logger.get_context()
     logger.log_scalar(
-        context, "final_test/loss", "final_test_loss", final_te_loss / num_te_batches, total_iterations, 1
+        context,
+        "final_test/loss",
+        "final_test_loss",
+        final_te_loss / num_te_batches,
+        total_tr_vb * config.num_base_epochs,
+        1,
     )
     logger.log_scalar(
-        context, "final_test/accuracy", "final_test_accuracy", final_te_acc / num_te_batches, total_iterations, 1
+        context,
+        "final_test/accuracy",
+        "final_test_accuracy",
+        final_te_acc / num_te_batches,
+        total_tr_vb * config.num_base_epochs,
+        1,
     )
     logger.close_context(context)

@@ -7,7 +7,7 @@ from cattrs.strategies import configure_tagged_union
 import random
 from lib import app
 from lib.config import *
-from lib.logger import ClearMLLogger, HDF5Logger, PrintLogger
+from lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, PrintLogger
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -172,7 +172,9 @@ def main():
     )
     configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
     configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
-    configure_tagged_union(Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig], converter)
+    configure_tagged_union(
+        Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig], converter
+    )
 
     # Need two connects in order to change config in UI as well as make it HPO-able since HPO can't add new hyperparameter fields
     _config = task.connect_configuration(converter.unstructure(config), name="config")
@@ -188,6 +190,8 @@ def main():
             logger = ClearMLLogger(task)
         case PrintLoggerConfig():
             logger = PrintLogger()
+        case MatplotlibLoggerConfig(save_dir):
+            logger = MatplotlibLogger(save_dir)
         case _:
             raise ValueError("Invalid logger configuration.")
 

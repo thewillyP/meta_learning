@@ -4,6 +4,8 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 from typing import Protocol
+import matplotlib.pyplot as plt
+from collections import defaultdict
 
 
 class Logger(Protocol):
@@ -83,3 +85,34 @@ class PrintLogger:
     def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
         """Print the scalar metric to console"""
         print(f"[{title}] {series} @ {iteration}/{max_count}: {value}")
+
+
+class MatplotlibLogger:
+    def __init__(self, save_dir: str):
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.data = defaultdict(lambda: {"iterations": [], "values": [], "title": None})
+
+    def get_context(self):
+        return None
+
+    def close_context(self, context):
+        pass
+
+    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
+        self.data[series]["iterations"].append(iteration)
+        self.data[series]["values"].append(value)
+        self.data[series]["title"] = title
+
+    def generate_figures(self):
+        for series, data in self.data.items():
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.plot(data["iterations"], data["values"], marker="o", markersize=3)
+            ax.set_xlabel("Iteration")
+            ax.set_ylabel("Value")
+            ax.set_title(f"{data['title']} - {series}")
+            ax.grid(True, alpha=0.3)
+
+            save_path = self.save_dir / f"{series}.png"
+            fig.savefig(save_path, dpi=150, bbox_inches="tight")
+            plt.close(fig)

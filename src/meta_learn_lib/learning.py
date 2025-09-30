@@ -273,7 +273,8 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
                 __env = learn_interface.put_param(_env, param)
                 __env, stat = transition(__env, get_tr(data))
                 state = learn_interface.get_state(__env)
-                return state
+                __arr, _ = eqx.partition(__env, eqx.is_array)
+                return state, (__arr, stat)
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
 
@@ -282,10 +283,10 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
 
             hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor)
 
-            dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
+            dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
+            _env = eqx.combine(_arr, static)
             new_influence_tensor = hmp + dhdp
             new_influence_tensor = JACOBIAN(new_influence_tensor)
-            _env, tr_stat = transition(_env, get_tr(data))
 
             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
             credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)

@@ -3,7 +3,7 @@ import string
 import random
 from lib import app
 from lib.config import *
-from lib.logger import HDF5Logger, MatplotlibLogger, PrintLogger
+from lib.logger import HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -127,23 +127,29 @@ def main():
         },
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
-        logger_config=MatplotlibLoggerConfig("./figures"),
+        logger_config=(MatplotlibLoggerConfig("./figures"), PrintLoggerConfig()),
         treat_inference_state_as_online=True,
     )
 
-    match config.logger_config:
-        case PrintLoggerConfig():
-            logger = PrintLogger()
-        case MatplotlibLoggerConfig(save_dir):
-            logger = MatplotlibLogger(save_dir)
-        case _:
-            raise ValueError("Invalid logger configuration.")
+    loggers = []
+    for log_config in config.logger_config:
+        match log_config:
+            case PrintLoggerConfig():
+                logger = PrintLogger()
+            case MatplotlibLoggerConfig(save_dir):
+                logger = MatplotlibLogger(save_dir)
+            case _:
+                raise ValueError("Invalid logger configuration.")
+        loggers.append(logger)
+
+    logger = MultiLogger(loggers)
 
     app.runApp(config, logger)
 
-    match logger:
-        case MatplotlibLogger():
-            logger.generate_figures()
+    for logger in loggers:
+        match logger:
+            case MatplotlibLogger():
+                logger.generate_figures()
 
 
 if __name__ == "__main__":

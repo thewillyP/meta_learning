@@ -7,7 +7,7 @@ from cattrs.strategies import configure_tagged_union
 import random
 from lib import app
 from lib.config import *
-from lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, PrintLogger
+from lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -158,7 +158,7 @@ def main():
         },
         ignore_validation_inference_recurrence=True,
         readout_uses_input_data=False,
-        logger_config=ClearMLLoggerConfig(),
+        logger_config=(ClearMLLoggerConfig(),),
         treat_inference_state_as_online=True,
     )
 
@@ -183,17 +183,22 @@ def main():
     _config = task.connect(converter.unstructure(config), name="config")
     config = converter.structure(_config, GodConfig)
 
-    match config.logger_config:
-        case HDF5LoggerConfig():
-            logger = HDF5Logger(config.log_dir, task.task_id)
-        case ClearMLLoggerConfig():
-            logger = ClearMLLogger(task)
-        case PrintLoggerConfig():
-            logger = PrintLogger()
-        case MatplotlibLoggerConfig(save_dir):
-            logger = MatplotlibLogger(save_dir)
-        case _:
-            raise ValueError("Invalid logger configuration.")
+    loggers = []
+    for log_config in config.logger_config:
+        match log_config:
+            case HDF5LoggerConfig():
+                logger = HDF5Logger(config.log_dir, task.task_id)
+            case ClearMLLoggerConfig():
+                logger = ClearMLLogger(task)
+            case PrintLoggerConfig():
+                logger = PrintLogger()
+            case MatplotlibLoggerConfig(save_dir):
+                logger = MatplotlibLogger(save_dir)
+            case _:
+                raise ValueError("Invalid logger configuration.")
+        loggers.append(logger)
+
+    logger = MultiLogger(loggers)
 
     app.runApp(config, logger)
 

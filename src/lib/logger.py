@@ -116,3 +116,19 @@ class MatplotlibLogger:
             save_path = self.save_dir / f"{series}.png"
             fig.savefig(save_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
+
+
+class MultiLogger:
+    def __init__(self, loggers: list[Logger]):
+        self.loggers = loggers
+
+    def get_context(self):
+        return [logger.get_context() for logger in self.loggers]
+
+    def close_context(self, contexts):
+        for logger, context in zip(self.loggers, contexts):
+            logger.close_context(context)
+
+    def log_scalar(self, contexts, title: str, series: str, value: float, iteration: int, max_count: int):
+        for logger, context in zip(self.loggers, contexts):
+            logger.log_scalar(context, title, series, value, iteration, max_count)

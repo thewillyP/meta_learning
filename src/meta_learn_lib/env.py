@@ -2,6 +2,7 @@ from typing import Callable, Literal, Optional
 import equinox as eqx
 import jax
 import optax
+import jax.numpy as jnp
 from pyrsistent import PClass, field, pmap, thaw
 from pyrsistent.typing import PMap
 from pyrsistent._pmap import PMap as PMapClass
@@ -86,7 +87,12 @@ class CustomSequential(eqx.Module):
         layer_keys = jax.random.split(key, len(layer_defs))
 
         for (out_size, use_bias, activation), k in zip(layer_defs, layer_keys):
-            layers.append(eqx.nn.Linear(in_size, out_size, use_bias=use_bias, key=k))
+            linear = eqx.nn.Linear(in_size, out_size, use_bias=use_bias, key=k)
+            new_weight = jax.random.normal(k, (out_size, in_size)) * jnp.sqrt(1 / in_size)
+            new_bias = jnp.zeros((out_size,)) if use_bias else None
+            where = lambda l: (l.weight, l.bias)
+            new_linear = eqx.tree_at(where, linear, (new_weight, new_bias))
+            layers.append(new_linear)
             layers.append(eqx.nn.Lambda(activation))
             in_size = out_size
 

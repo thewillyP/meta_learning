@@ -51,6 +51,13 @@ def runApp(config: GodConfig, logger: Logger) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
+    # metric function
+    match config.dataset:
+        case MnistConfig() | FashionMnistConfig():
+            metric_fn = jnp.sum
+        case DelayAddOnlineConfig():
+            metric_fn = jnp.mean
+
     # Dataset
     percentages = create_fractional_list([x.train_percent / 100 for x in config.data.values()])
     if percentages is None:
@@ -163,13 +170,13 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         te_loss, te_acc, _, __, ___ = te_stats
         _, __, lrs, ___, meta_grs = tr_stats
 
-        tr_loss = jnp.sum(tr_loss, axis=2)
-        tr_acc = jnp.sum(tr_acc, axis=2)
+        tr_loss = metric_fn(tr_loss, axis=2)
+        tr_acc = metric_fn(tr_acc, axis=2)
         tr_grs = tr_grs[:, :, -1]
-        vl_loss = jnp.sum(vl_loss, axis=2)
-        vl_acc = jnp.sum(vl_acc, axis=2)
-        te_loss = jnp.sum(te_loss, axis=1)
-        te_acc = jnp.sum(te_acc, axis=1)
+        vl_loss = metric_fn(vl_loss, axis=2)
+        vl_acc = metric_fn(vl_acc, axis=2)
+        te_loss = metric_fn(te_loss, axis=1)
+        te_acc = metric_fn(te_acc, axis=1)
         lrs = lrs[:, :, -1]
         meta_grs = meta_grs[:, :, -1]
 
@@ -259,12 +266,13 @@ def runApp(config: GodConfig, logger: Logger) -> None:
     final_te_loss = 0
     final_te_acc = 0
     num_te_batches = 0
+    test_env = general_interfaces[0].put_current_virtual_minibatch(env, jnp.nan)
     for te_x, te_y, te_seqs, te_mask in dataloader_te:
         ds = traverse(batched((te_x, te_y, te_seqs)))
-        stats = te_inf(env, ds, te_mask)
+        stats = te_inf(test_env, ds, te_mask)
         te_loss, te_acc, _, __, ___ = stats[0]
-        te_loss = jnp.sum(te_loss)
-        te_acc = jnp.sum(te_acc)
+        te_loss = metric_fn(te_loss)
+        te_acc = metric_fn(te_acc)
         final_te_loss += te_loss
         final_te_acc += te_acc
         num_te_batches += 1

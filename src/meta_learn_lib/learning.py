@@ -619,7 +619,8 @@ def create_meta_learner[ENV, DATA](
             tr_data, vl_data = d
             _env = eqx.combine(_arr, static)
             _env, stats = learner0(_env, tr_data)
-            readout_stat, loss = readouts[0](test_reset(_env), vl_data)
+            temp_env = general_interfaces[0].put_current_virtual_minibatch(_env, jnp.nan)
+            readout_stat, loss = readouts[0](test_reset(temp_env), vl_data)
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (stats + readout_stat, loss)
 

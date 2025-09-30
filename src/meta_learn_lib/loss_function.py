@@ -42,7 +42,9 @@ def make_statistics_fns[ENV, DATA, OUT](
             get_logs,
         )
 
-        def model_loss_fn(env: ENV, ds: tuple[DATA, jax.Array], j=i) -> tuple[tuple[STAT, ...], LOSS]:
+        def model_loss_fn(
+            env: ENV, ds: tuple[DATA, jax.Array], j=i, loss_fn=loss_fn, statistics_fn=statistics_fn
+        ) -> tuple[tuple[STAT, ...], LOSS]:
             data, mask = ds
             preds = get_out(readouts[j](env, data))
             targets = data_interface.get_target(data)

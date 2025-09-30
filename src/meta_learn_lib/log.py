@@ -1,8 +1,8 @@
 import jax
 
-from lib.config import GodConfig
-from lib.env import GodState
-from lib.util import hyperparameter_reparametrization
+from meta_learn_lib.config import GodConfig
+from meta_learn_lib.env import GodState
+from meta_learn_lib.util import hyperparameter_reparametrization
 
 
 def get_logs(config: GodConfig, env: GodState) -> tuple[jax.Array, ...]:

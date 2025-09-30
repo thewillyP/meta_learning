@@ -5,9 +5,9 @@ import string
 from cattrs import unstructure, Converter
 from cattrs.strategies import configure_tagged_union
 import random
-from lib import app
-from lib.config import *
-from lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
+from meta_learn_lib import app
+from meta_learn_lib.config import *
+from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")

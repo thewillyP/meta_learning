@@ -3,9 +3,9 @@ from itertools import islice
 import jax
 from jaxtyping import PyTree
 
-from lib.config import GodConfig, RFLOConfig
-from lib.env import GodState
-from lib.interface import (
+from meta_learn_lib.config import GodConfig, RFLOConfig
+from meta_learn_lib.env import GodState
+from meta_learn_lib.interface import (
     GeneralInterface,
     InferenceInterface,
     LearnInterface,
@@ -13,9 +13,9 @@ from lib.interface import (
     get_default_inference_interface,
     get_default_learn_interface,
 )
-from lib.lib_types import batched
-from lib.util import to_vector
-from lib.util_lib import get_optimizer
+from meta_learn_lib.lib_types import batched
+from meta_learn_lib.util import to_vector
+from meta_learn_lib.util_lib import get_optimizer
 
 
 def get_inference_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:

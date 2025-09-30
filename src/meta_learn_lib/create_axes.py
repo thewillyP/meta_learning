@@ -2,7 +2,7 @@ from typing import Any
 import jax
 import equinox as eqx
 
-from lib.interface import InferenceInterface
+from meta_learn_lib.interface import InferenceInterface
 
 
 def get_batched[ENV](env: ENV, interfaces: dict[int, InferenceInterface[ENV]]) -> tuple[Any, ...]:

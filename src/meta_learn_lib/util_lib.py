@@ -3,9 +3,9 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 import optax
-from lib.config import AdamConfig, LearnConfig, SGDClipConfig, SGDConfig, SGDNormalizedConfig
-from lib.env import Parameter
-from lib.util import hyperparameter_reparametrization
+from meta_learn_lib.config import AdamConfig, LearnConfig, SGDClipConfig, SGDConfig, SGDNormalizedConfig
+from meta_learn_lib.env import Parameter
+from meta_learn_lib.util import hyperparameter_reparametrization
 
 
 def get_optimizer(learn_config: LearnConfig) -> Callable[[Parameter], optax.GradientTransformation]:

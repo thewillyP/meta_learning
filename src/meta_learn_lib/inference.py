@@ -3,10 +3,10 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from lib.config import GRULayer, GodConfig, LSTMLayer, NNLayer
-from lib.interface import ClassificationInterface, GeneralInterface, InferenceInterface, LearnInterface
-from lib.lib_types import PRNG, batched, traverse
-from lib.util import filter_cond, get_activation_fn
+from meta_learn_lib.config import GRULayer, GodConfig, LSTMLayer, NNLayer
+from meta_learn_lib.interface import ClassificationInterface, GeneralInterface, InferenceInterface, LearnInterface
+from meta_learn_lib.lib_types import PRNG, batched, traverse
+from meta_learn_lib.util import filter_cond, get_activation_fn
 
 
 def create_inferences[ENV, DATA](

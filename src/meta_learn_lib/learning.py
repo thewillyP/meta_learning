@@ -7,7 +7,7 @@ import optax
 import equinox as eqx
 import toolz
 
-from lib.config import (
+from meta_learn_lib.config import (
     BPTTConfig,
     GodConfig,
     IdentityConfig,
@@ -17,10 +17,10 @@ from lib.config import (
     RTRLHessianDecompConfig,
     UOROConfig,
 )
-from lib.env import Logs
-from lib.interface import GeneralInterface, LearnInterface
-from lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, batched, traverse
-from lib.util import filter_cond, jacobian_matrix_product, to_vector
+from meta_learn_lib.env import Logs
+from meta_learn_lib.interface import GeneralInterface, LearnInterface
+from meta_learn_lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, batched, traverse
+from meta_learn_lib.util import filter_cond, jacobian_matrix_product, to_vector
 
 
 def do_optimizer[ENV](env: ENV, gr: GRADIENT, learn_interface: LearnInterface[ENV]) -> ENV:

@@ -3,10 +3,10 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from lib.config import DelayAddOnlineConfig, FashionMnistConfig, GodConfig, MnistConfig
-from lib.interface import ClassificationInterface, GeneralInterface
-from lib.lib_types import LOSS, STAT
-from lib.util import accuracy_hard, filter_cond, get_loss_fn
+from meta_learn_lib.config import DelayAddOnlineConfig, FashionMnistConfig, GodConfig, MnistConfig
+from meta_learn_lib.interface import ClassificationInterface, GeneralInterface
+from meta_learn_lib.lib_types import LOSS, STAT
+from meta_learn_lib.util import accuracy_hard, filter_cond, get_loss_fn
 
 
 def make_statistics_fns[ENV, DATA, OUT](

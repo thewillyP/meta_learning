@@ -6,7 +6,7 @@ from pyrsistent import PClass, field, pmap, thaw
 from pyrsistent.typing import PMap
 from pyrsistent._pmap import PMap as PMapClass
 
-from lib.lib_types import *
+from meta_learn_lib.lib_types import *
 
 
 def deep_serialize(_, obj):

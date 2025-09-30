@@ -6,9 +6,9 @@ import torchvision
 from toolz import mapcat
 import math
 
-from lib.config import *
-from lib.lib_types import PRNG, FractionalList
-from lib.util import infinite_keys, reshape_timeseries, subset_n
+from meta_learn_lib.config import *
+from meta_learn_lib.lib_types import PRNG, FractionalList
+from meta_learn_lib.util import infinite_keys, reshape_timeseries, subset_n
 
 
 class PyTreeDataset(Dataset):

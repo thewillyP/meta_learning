@@ -8,25 +8,25 @@ import numpy as np
 import toolz
 import math
 
-from lib.config import *
-from lib.create_axes import create_axes
-from lib.create_env import create_env
-from lib.create_interface import (
+from meta_learn_lib.config import *
+from meta_learn_lib.create_axes import create_axes
+from meta_learn_lib.create_env import create_env
+from meta_learn_lib.create_interface import (
     create_general_interfaces,
     create_learn_interfaces,
     create_transition_interfaces,
     create_validation_learn_interfaces,
 )
-from lib.datasets import create_dataloader
-from lib.env import GodState
-from lib.inference import create_inferences, hard_reset_inference, make_resets
-from lib.interface import ClassificationInterface
-from lib.learning import create_meta_learner, identity
-from lib.lib_types import *
-from lib.log import get_logs
-from lib.logger import Logger
-from lib.loss_function import make_statistics_fns
-from lib.util import create_fractional_list
+from meta_learn_lib.datasets import create_dataloader
+from meta_learn_lib.env import GodState
+from meta_learn_lib.inference import create_inferences, hard_reset_inference, make_resets
+from meta_learn_lib.interface import ClassificationInterface
+from meta_learn_lib.learning import create_meta_learner, identity
+from meta_learn_lib.lib_types import *
+from meta_learn_lib.log import get_logs
+from meta_learn_lib.logger import Logger
+from meta_learn_lib.loss_function import make_statistics_fns
+from meta_learn_lib.util import create_fractional_list
 
 
 def runApp(config: GodConfig, logger: Logger) -> None:

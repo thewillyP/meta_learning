@@ -7,7 +7,7 @@ import equinox as eqx
 import equinox.internal as eqxi
 import optax
 import jax.lax as lax
-from lib.lib_types import LOSS, PRNG, FractionalList
+from meta_learn_lib.lib_types import LOSS, PRNG, FractionalList
 
 
 def jvp(f, primal, tangent):

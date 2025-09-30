@@ -5,8 +5,8 @@ from itertools import islice
 from pyrsistent import pmap
 from pyrsistent.typing import PMap
 
-from lib.config import *
-from lib.env import (
+from meta_learn_lib.config import *
+from meta_learn_lib.env import (
     RNN,
     CustomSequential,
     General,
@@ -22,9 +22,9 @@ from lib.env import (
     SpecialLogs,
     UOROState,
 )
-from lib.interface import LearnInterface
-from lib.lib_types import *
-from lib.util import (
+from meta_learn_lib.interface import LearnInterface
+from meta_learn_lib.lib_types import *
+from meta_learn_lib.util import (
     get_activation_fn,
     hyperparameter_reparametrization,
     to_vector,

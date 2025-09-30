@@ -1,9 +1,9 @@
 import random
 import string
 import random
-from lib import app
-from lib.config import *
-from lib.logger import HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
+from meta_learn_lib import app
+from meta_learn_lib.config import *
+from meta_learn_lib.logger import HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -79,7 +79,7 @@ def main():
                 #     momentum=0.0,
                 # ),
                 optimizer=SGDClipConfig(
-                    learning_rate=0.1,
+                    learning_rate=0.5,
                     # learning_rate=0.029240177382128668,
                     momentum=0.0,
                     clip_threshold=1.0,

@@ -5,9 +5,9 @@ from jaxtyping import PyTree
 import optax
 import equinox as eqx
 
-from lib.config import LearnConfig
-from lib.env import RNN, CustomSequential, LSTMState, Logs, RNNState, SpecialLogs, UOROState
-from lib.lib_types import JACOBIAN, PRNG, batched
+from meta_learn_lib.config import LearnConfig
+from meta_learn_lib.env import RNN, CustomSequential, LSTMState, Logs, RNNState, SpecialLogs, UOROState
+from meta_learn_lib.lib_types import JACOBIAN, PRNG, batched
 
 
 @dataclass(frozen=True)

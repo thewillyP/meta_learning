@@ -107,7 +107,7 @@ class MatplotlibLogger:
     def generate_figures(self):
         for series, data in self.data.items():
             fig, ax = plt.subplots(figsize=(10, 6))
-            ax.plot(data["iterations"], data["values"], marker="o", markersize=3)
+            ax.plot(data["iterations"], data["values"], linewidth=1)
             ax.set_xlabel("Iteration")
             ax.set_ylabel("Value")
             ax.set_title(f"{data['title']} - {series}")

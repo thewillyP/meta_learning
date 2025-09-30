@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from meta_learn_lib.config import DelayAddOnlineConfig, FashionMnistConfig, GodConfig, MnistConfig
+from meta_learn_lib.config import CIFAR10Config, DelayAddOnlineConfig, FashionMnistConfig, GodConfig, MnistConfig
 from meta_learn_lib.interface import ClassificationInterface, GeneralInterface
 from meta_learn_lib.lib_types import LOSS, STAT
 from meta_learn_lib.util import accuracy_hard, filter_cond, get_loss_fn
@@ -83,6 +83,21 @@ def make_loss_fn[ENV](
 
             _loss_fn = eqx.filter_vmap(loss_sequence_length)
 
+        case CIFAR10Config(n_in):
+            seq_len = 3072 // n_in - 1
+            __loss_fn = get_loss_fn(config.loss_fn)
+
+            def loss_sequence_length(pred: jax.Array, target: jax.Array) -> jax.Array:
+                label, idx = target
+                return jax.lax.cond(
+                    idx == seq_len,
+                    lambda p: __loss_fn(p[None, :], jnp.array([label])).sum(),
+                    lambda _: 0.0,
+                    pred,
+                )
+
+            _loss_fn = eqx.filter_vmap(loss_sequence_length)
+
     def loss_fn(env: ENV, pred: jax.Array, target: jax.Array, seq_num: jax.Array, batch_mask: jax.Array) -> LOSS:
         current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
         loss = _loss_fn(pred, target)
@@ -117,6 +132,10 @@ def make_statistics_fn[ENV](
             seq_len = 784 // n_in - 1
             _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
             # premptively multiply by series length so averaging cancels out the factor
+
+        case CIFAR10Config(n_in):
+            seq_len = 3072 // n_in - 1
+            _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
 
     def statistics_fn(
         env: ENV, pred: jax.Array, target: jax.Array, seq_num: jax.Array, batch_mask: jax.Array, loss: jax.Array

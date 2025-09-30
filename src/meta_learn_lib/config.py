@@ -55,6 +55,11 @@ class FashionMnistConfig:
 
 
 @dataclass(frozen=True)
+class CIFAR10Config:
+    n_in: int
+
+
+@dataclass(frozen=True)
 class DelayAddOnlineConfig:
     t1: int
     t2: int
@@ -187,7 +192,7 @@ class GodConfig:
     clearml_run: bool
     data_root_dir: str
     log_dir: str
-    dataset: Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig]
+    dataset: Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config]
     num_base_epochs: int
     checkpoint_every_n_minibatches: int
     seed: SeedConfig

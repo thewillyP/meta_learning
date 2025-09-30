@@ -171,7 +171,7 @@ def main():
         converter,
     )
     configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
-    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig], converter)
+    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config], converter)
     configure_tagged_union(
         Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig], converter
     )

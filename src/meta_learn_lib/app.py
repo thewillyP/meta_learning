@@ -53,7 +53,7 @@ def runApp(config: GodConfig, logger: Logger) -> None:
 
     # metric function
     match config.dataset:
-        case MnistConfig() | FashionMnistConfig():
+        case MnistConfig() | FashionMnistConfig() | CIFAR10Config():
             metric_fn = jnp.sum
         case DelayAddOnlineConfig():
             metric_fn = jnp.mean

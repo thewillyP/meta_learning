@@ -2,9 +2,10 @@ import copy
 from itertools import islice
 import jax
 from jaxtyping import PyTree
+import equinox as eqx
 
 from meta_learn_lib.config import GodConfig, RFLOConfig
-from meta_learn_lib.env import GodState
+from meta_learn_lib.env import GodState, Hyperparameter, Parameter
 from meta_learn_lib.interface import (
     GeneralInterface,
     InferenceInterface,
@@ -29,65 +30,106 @@ def get_learning_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
     return prng, env.transform(["prng_learning", i], lambda _: new_prng)
 
 
+def filter_hyperparam(pytree: PyTree) -> jax.Array:
+    learnable, static = eqx.partition(
+        pytree,
+        lambda x: x.learnable if isinstance(x, Hyperparameter) else True,
+        is_leaf=lambda x: x is None or isinstance(x, Hyperparameter),
+    )
+    return to_vector(learnable).vector
+
+
+def obtain_param(env: GodState, i: int) -> jax.Array:
+    return filter_hyperparam(env.parameters[i])
+
+
+def vector_to_param(env: GodState, param: jax.Array, i: int) -> Parameter:
+    learnable, static = eqx.partition(
+        env.parameters[i],
+        lambda x: x.learnable if isinstance(x, Hyperparameter) else True,
+        is_leaf=lambda x: x is None or isinstance(x, Hyperparameter),
+    )
+    _learnable = to_vector(learnable).to_param(param)
+    return eqx.combine(_learnable, static, is_leaf=lambda x: x is None or isinstance(x, Hyperparameter))
+
+
+def place_param(env: GodState, param: jax.Array, i: int) -> GodState:
+    new_param = vector_to_param(env, param, i)
+    return env.transform(["parameters", i], lambda _: new_param)
+
+
 def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodState]]:
     default_interpreter: LearnInterface[GodState] = get_default_learn_interface()
     interpreters: dict[int, LearnInterface[GodState]] = {}
 
-    for j, (_, learn_config) in enumerate(sorted(config.learners.items())):
-
-        def get_state_pytree(env: GodState, i) -> PyTree:
-            if i == 0 or config.treat_inference_state_as_online:
-                inference_part = (
-                    dict(islice(env.inference_states.items(), i + 1))
-                    if not config.ignore_validation_inference_recurrence
-                    else {0: env.inference_states[0]}
-                )
-            else:
-                inference_part = {}
-
-            return (
-                inference_part,
-                dict(islice(env.learning_states.items(), i)),
-                dict(islice(env.parameters.items(), i)),
+    def get_state_pytree(env: GodState, i) -> PyTree:
+        if i == 0 or config.treat_inference_state_as_online:
+            inference_part = (
+                dict(islice(env.inference_states.items(), i + 1))
+                if not config.ignore_validation_inference_recurrence
+                else {0: env.inference_states[0]}
             )
+        else:
+            inference_part = {}
 
-        def get_state(env: GodState, i) -> jax.Array:
-            return to_vector(get_state_pytree(env, i)).vector
+        state = (
+            inference_part,
+            dict(islice(env.learning_states.items(), i)),
+            dict(islice(env.parameters.items(), i)),
+        )
+        learnable, static = eqx.partition(
+            state,
+            lambda x: x.learnable if isinstance(x, Hyperparameter) else True,
+            is_leaf=lambda x: x is None or isinstance(x, Hyperparameter),
+        )
+        return learnable
 
-        def put_state(env: GodState, state: jax.Array, i) -> GodState:
-            if i == 0 or config.treat_inference_state_as_online:
-                inference_part = (
-                    dict(islice(env.inference_states.items(), i + 1))
-                    if not config.ignore_validation_inference_recurrence
-                    else {0: env.inference_states[0]}
-                )
-            else:
-                inference_part = {}
+    def get_state(env: GodState, i) -> jax.Array:
+        return to_vector(get_state_pytree(env, i)).vector
 
-            _inference_states, _learning_states, _params = to_vector(
-                (
-                    inference_part,
-                    dict(islice(env.learning_states.items(), i)),
-                    dict(islice(env.parameters.items(), i)),
-                )
-            ).to_param(state)
-            inference_states = env.inference_states.update(_inference_states)
-            learning_states = env.learning_states.update(_learning_states)
-            params = env.parameters.update(_params)
+    def put_state(env: GodState, state: jax.Array, i) -> GodState:
+        if i == 0 or config.treat_inference_state_as_online:
+            inference_part = (
+                dict(islice(env.inference_states.items(), i + 1))
+                if not config.ignore_validation_inference_recurrence
+                else {0: env.inference_states[0]}
+            )
+        else:
+            inference_part = {}
 
-            return env.set(inference_states=inference_states, learning_states=learning_states, parameters=params)
+        temp = (
+            inference_part,
+            dict(islice(env.learning_states.items(), i)),
+            dict(islice(env.parameters.items(), i)),
+        )
+        learnable, static = eqx.partition(
+            temp,
+            lambda x: x.learnable if isinstance(x, Hyperparameter) else True,
+            is_leaf=lambda x: x is None or isinstance(x, Hyperparameter),
+        )
+        _learnable = to_vector(learnable).to_param(state)
+        _inference_states, _learning_states, _params = eqx.combine(
+            _learnable, static, is_leaf=lambda x: x is None or isinstance(x, Hyperparameter)
+        )
 
+        inference_states = env.inference_states.update(_inference_states)
+        learning_states = env.learning_states.update(_learning_states)
+        params = env.parameters.update(_params)
+
+        return env.set(inference_states=inference_states, learning_states=learning_states, parameters=params)
+
+    for j, (_, learn_config) in enumerate(sorted(config.learners.items())):
         interpreter = copy.replace(
             default_interpreter,
             get_state_pytree=lambda env, i=j: get_state_pytree(env, i),
             get_state=lambda env, i=j: get_state(env, i),
             put_state=lambda env, state, i=j: put_state(env, state, i),
-            get_param=lambda env, i=j: to_vector(env.parameters[i]).vector,
-            put_param=lambda env, param, i=j: env.transform(
-                ["parameters", i], lambda _: to_vector(env.parameters[i]).to_param(param)
-            ),
+            get_param=lambda env, i=j: obtain_param(env, i),
+            put_param=lambda env, param, i=j: place_param(env, param, i),
             get_sgd_param=lambda env, i=j: env.parameters[i + 1].learning_parameter.learning_rate,
-            get_optimizer=lambda env, i=j, _lc=learn_config: get_optimizer(_lc)(env.parameters[i + 1]),
+            get_optimizer=lambda env, i=j, _lc=learn_config: get_optimizer(_lc, lambda p: vector_to_param(env, p, i))(
+                env.parameters[i + 1]
+            ),
             get_opt_state=lambda env, i=j: env.learning_states[i].opt_state,
             put_opt_state=lambda env, opt_state, i=j: env.transform(
                 ["learning_states", i, "opt_state"], lambda _: opt_state

@@ -12,7 +12,7 @@ def get_logs(config: GodConfig, env: GodState) -> tuple[jax.Array, ...]:
     meta_gr = env.general[1].logs.gradient
     meta_gr_norm = jax.numpy.linalg.norm(meta_gr) if meta_gr is not None else jax.numpy.array(0.0)
     return (
-        forward(env.parameters[1].learning_parameter.learning_rate),
+        forward(env.parameters[1].learning_parameter.learning_rate.value),
         tr_gr_norm,
         meta_gr_norm,
     )

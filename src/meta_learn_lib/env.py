@@ -126,8 +126,14 @@ class UOROState(PClass):
     B: jax.Array = field()
 
 
+class Hyperparameter(PClass):
+    value: jax.Array = field()
+    learnable: bool = field()
+
+
 class LearningParameter(PClass):
-    learning_rate: Optional[jax.Array] = field()
+    learning_rate: Optional[Hyperparameter] = field()
+    weight_decay: Optional[Hyperparameter] = field()
     rflo_timeconstant: Optional[float] = field()
 
 
@@ -176,6 +182,7 @@ class GodState(PClass):
 # ============================================================================
 
 # Register leaf types first
+register_pytree(Hyperparameter, {"learnable"})
 register_pytree(Logs, set())
 register_pytree(SpecialLogs, set())
 register_pytree(RNNState, {"n_h", "n_in", "activation_fn"})

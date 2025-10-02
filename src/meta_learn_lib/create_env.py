@@ -6,11 +6,13 @@ from pyrsistent import pmap
 from pyrsistent.typing import PMap
 
 from meta_learn_lib.config import *
+from meta_learn_lib.create_interface import filter_hyperparam
 from meta_learn_lib.env import (
     RNN,
     CustomSequential,
     General,
     GodState,
+    Hyperparameter,
     InferenceParameter,
     InferenceState,
     LSTMState,
@@ -27,7 +29,6 @@ from meta_learn_lib.lib_types import *
 from meta_learn_lib.util import (
     get_activation_fn,
     hyperparameter_reparametrization,
-    to_vector,
 )
 
 
@@ -147,16 +148,19 @@ def create_learning_parameter(
 ) -> LearningParameter:
     _, backward = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
 
-    parameter = LearningParameter(learning_rate=None, rflo_timeconstant=None)
+    parameter = LearningParameter(learning_rate=None, weight_decay=None, rflo_timeconstant=None)
     match learn_config.optimizer:
-        case SGDConfig(learning_rate, momentum):
-            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
-        case SGDNormalizedConfig(learning_rate, momentum):
-            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
-        case SGDClipConfig(learning_rate, momentum, threshold, sharpness):
-            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
-        case AdamConfig(learning_rate):
-            parameter = parameter.set(learning_rate=backward(jnp.array([learning_rate])))
+        case SGDConfig() | SGDNormalizedConfig() | SGDClipConfig() | AdamConfig() as opt:
+            parameter = parameter.set(
+                learning_rate=Hyperparameter(
+                    value=backward(jnp.array([opt.learning_rate.value])),
+                    learnable=opt.learning_rate.learnable,
+                ),
+                weight_decay=Hyperparameter(
+                    value=backward(jnp.array([opt.weight_decay.value])),
+                    learnable=opt.weight_decay.learnable,
+                ),
+            )
 
     match learn_config.learner:
         case RFLOConfig(time_constant):
@@ -174,11 +178,11 @@ def create_learning_state(
 ) -> LearningState:
     state = LearningState(influence_tensor=None, uoro=None, opt_state=None)
     flat_state = learn_interface.get_state(env)
-    flat_param = to_vector(parameter)
+    flat_param = filter_hyperparam(parameter)
     match learn_config.learner:
         case RTRLConfig() | RFLOConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
             # prng1, prng = jax.random.split(prng, 2)
-            influence_tensor = jnp.zeros((flat_state.size, flat_param.vector.size))
+            influence_tensor = jnp.zeros((flat_state.size, flat_param.size))
             state = state.set(influence_tensor=JACOBIAN(influence_tensor))
         case UOROConfig():
             prng1, prng2, prng = jax.random.split(prng, 3)
@@ -201,7 +205,7 @@ def create_learning_state(
             _parameter = jax.tree.map(edit_fn, parameter, keys_tree, is_leaf=lambda x: isinstance(x, CustomSequential))
 
             a = jax.random.normal(prng2, (flat_state.size,))
-            b = to_vector(_parameter).vector
+            b = filter_hyperparam(_parameter)
             uoro = UOROState(A=a, B=b)
             state = state.set(uoro=uoro)
         case BPTTConfig():
@@ -211,7 +215,7 @@ def create_learning_state(
 
     _opt = learn_interface.get_optimizer(env)
     if _opt is not None:
-        opt_state = _opt.init(flat_param.vector)
+        opt_state = _opt.init(flat_param)
         state = state.set(opt_state=opt_state)
 
     return state
@@ -264,7 +268,7 @@ def create_env(
 
         if learn_config.track_logs:
             logs = Logs(
-                gradient=jnp.zeros_like(to_vector(prev_parameter).vector),
+                gradient=jnp.zeros_like(filter_hyperparam(prev_parameter)),
                 hessian_contains_nans=jnp.array(False),
                 immediate_influence_contains_nans=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
             )
@@ -280,7 +284,7 @@ def create_env(
                     jnp.zeros_like(it) if (it := learning_state_vl.influence_tensor) is not None else None
                 ),
                 largest_jac_eigenvalue=jnp.array(0.0),
-                jacobian=jnp.zeros((to_vector(env).vector.size, to_vector(prev_parameter).vector.size)),
+                jacobian=jnp.zeros((filter_hyperparam(env).size, filter_hyperparam(prev_parameter).size)),
             )
         else:
             special_logs = None

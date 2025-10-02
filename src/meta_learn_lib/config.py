@@ -101,20 +101,29 @@ class UOROConfig:
 
 
 @dataclass(frozen=True)
+class HyperparameterConfig:
+    value: float
+    learnable: bool
+
+
+@dataclass(frozen=True)
 class SGDConfig:
-    learning_rate: float
+    learning_rate: HyperparameterConfig
+    weight_decay: HyperparameterConfig
     momentum: float
 
 
 @dataclass(frozen=True)
 class SGDNormalizedConfig:
-    learning_rate: float
+    learning_rate: HyperparameterConfig
+    weight_decay: HyperparameterConfig
     momentum: float
 
 
 @dataclass(frozen=True)
 class SGDClipConfig:
-    learning_rate: float
+    learning_rate: HyperparameterConfig
+    weight_decay: HyperparameterConfig
     momentum: float
     clip_threshold: float
     clip_sharpness: float
@@ -122,7 +131,8 @@ class SGDClipConfig:
 
 @dataclass(frozen=True)
 class AdamConfig:
-    learning_rate: float
+    learning_rate: HyperparameterConfig
+    weight_decay: HyperparameterConfig
 
 
 @dataclass(frozen=True)

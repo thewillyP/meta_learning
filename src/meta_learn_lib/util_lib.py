@@ -8,18 +8,24 @@ from meta_learn_lib.env import Parameter
 from meta_learn_lib.util import hyperparameter_reparametrization
 
 
-def get_optimizer(learn_config: LearnConfig) -> Callable[[Parameter], optax.GradientTransformation]:
+def get_optimizer(
+    learn_config: LearnConfig, format_to_param: Callable[[jax.Array], Parameter]
+) -> Callable[[Parameter], optax.GradientTransformation]:
     forward, _ = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
 
     match learn_config.optimizer:
-        case SGDConfig(learning_rate, momentum):
-            return lambda pr: optax.sgd(forward(pr.learning_parameter.learning_rate), momentum=momentum)
-        case SGDNormalizedConfig(learning_rate, momentum):
+        case SGDConfig(learning_rate, weight_decay, momentum):
+            return lambda pr: optax.chain(
+                optax.add_decayed_weights(forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
+            )
+        case SGDNormalizedConfig(learning_rate, weight_decay, momentum):
             return lambda pr: optax.chain(
                 optax.normalize_by_update_norm(scale_factor=1.0),
-                optax.sgd(forward(pr.learning_parameter.learning_rate), momentum=momentum),
+                optax.add_decayed_weights(forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
-        case SGDClipConfig(learning_rate, momentum, threshold, sharpness):
+        case SGDClipConfig(learning_rate, weight_decay, momentum, threshold, sharpness):
 
             def update_fn(updates, state, _):
                 grads_flat, _ = jax.flatten_util.ravel_pytree(updates)
@@ -31,7 +37,11 @@ def get_optimizer(learn_config: LearnConfig) -> Callable[[Parameter], optax.Grad
 
             return lambda pr: optax.chain(
                 optax.GradientTransformation(lambda _: (), update_fn),
-                optax.sgd(forward(pr.learning_parameter.learning_rate), momentum=momentum),
+                optax.add_decayed_weights(forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
-        case AdamConfig(learning_rate):
-            return lambda pr: optax.adam(forward(pr.learning_parameter.learning_rate))
+        case AdamConfig():
+            return lambda pr: optax.adamw(
+                forward(pr.learning_parameter.learning_rate.value),
+                weight_decay=forward(pr.learning_parameter.weight_decay.value),
+            )

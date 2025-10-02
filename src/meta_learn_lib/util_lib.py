@@ -11,21 +11,27 @@ from meta_learn_lib.util import hyperparameter_reparametrization
 def get_optimizer(
     learn_config: LearnConfig, format_to_param: Callable[[jax.Array], Parameter]
 ) -> Callable[[Parameter], optax.GradientTransformation]:
-    forward, _ = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
+    # forward, _ = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
 
     match learn_config.optimizer:
         case SGDConfig(learning_rate, weight_decay, momentum):
+            lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
+            wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
             return lambda pr: optax.chain(
-                optax.add_decayed_weights(forward(pr.learning_parameter.weight_decay.value)),
-                optax.sgd(forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
+                optax.add_decayed_weights(lr_forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(wd_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
         case SGDNormalizedConfig(learning_rate, weight_decay, momentum):
+            lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
+            wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
             return lambda pr: optax.chain(
                 optax.normalize_by_update_norm(scale_factor=1.0),
-                optax.add_decayed_weights(forward(pr.learning_parameter.weight_decay.value)),
-                optax.sgd(forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
+                optax.add_decayed_weights(lr_forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(wd_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
         case SGDClipConfig(learning_rate, weight_decay, momentum, threshold, sharpness):
+            lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
+            wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
 
             def update_fn(updates, state, _):
                 grads_flat, _ = jax.flatten_util.ravel_pytree(updates)
@@ -37,11 +43,13 @@ def get_optimizer(
 
             return lambda pr: optax.chain(
                 optax.GradientTransformation(lambda _: (), update_fn),
-                optax.add_decayed_weights(forward(pr.learning_parameter.weight_decay.value)),
-                optax.sgd(forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
+                optax.add_decayed_weights(lr_forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(wd_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
-        case AdamConfig():
+        case AdamConfig(learning_rate, weight_decay):
+            lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
+            wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
             return lambda pr: optax.adamw(
-                forward(pr.learning_parameter.learning_rate.value),
-                weight_decay=forward(pr.learning_parameter.weight_decay.value),
+                lr_forward(pr.learning_parameter.learning_rate.value),
+                weight_decay=wd_forward(pr.learning_parameter.weight_decay.value),
             )

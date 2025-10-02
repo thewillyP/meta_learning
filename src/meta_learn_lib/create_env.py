@@ -146,18 +146,18 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
 def create_learning_parameter(
     learn_config: LearnConfig,
 ) -> LearningParameter:
-    _, backward = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
-
     parameter = LearningParameter(learning_rate=None, weight_decay=None, rflo_timeconstant=None)
     match learn_config.optimizer:
         case SGDConfig() | SGDNormalizedConfig() | SGDClipConfig() | AdamConfig() as opt:
+            _, lr_backward = hyperparameter_reparametrization(opt.learning_rate.hyperparameter_parametrization)
+            _, wd_backward = hyperparameter_reparametrization(opt.weight_decay.hyperparameter_parametrization)
             parameter = parameter.set(
                 learning_rate=Hyperparameter(
-                    value=backward(jnp.array([opt.learning_rate.value])),
+                    value=lr_backward(jnp.array([opt.learning_rate.value])),
                     learnable=opt.learning_rate.learnable,
                 ),
                 weight_decay=Hyperparameter(
-                    value=backward(jnp.array([opt.weight_decay.value])),
+                    value=wd_backward(jnp.array([opt.weight_decay.value])),
                     learnable=opt.weight_decay.learnable,
                 ),
             )

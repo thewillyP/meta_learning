@@ -104,6 +104,7 @@ class UOROConfig:
 class HyperparameterConfig:
     value: float
     learnable: bool
+    hyperparameter_parametrization: Literal["identity", "softplus", "relu"]
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,6 @@ class LearnConfig:
         RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
     ]
     optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
-    hyperparameter_parametrization: Literal["identity", "softplus", "relu"]
     lanczos_iterations: int
     track_logs: bool
     track_special_logs: bool

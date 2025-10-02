@@ -87,8 +87,12 @@ def main():
                 # ),
                 optimizer=SGDClipConfig(
                     # learning_rate=HyperparameterConfig(value=0.1, learnable=True),
-                    learning_rate=HyperparameterConfig(value=0.029240177382128668, learnable=True),
-                    weight_decay=HyperparameterConfig(value=0.0, learnable=False),
+                    learning_rate=HyperparameterConfig(
+                        value=0.029240177382128668, learnable=True, hyperparameter_parametrization="softplus"
+                    ),
+                    weight_decay=HyperparameterConfig(
+                        value=0.001, learnable=True, hyperparameter_parametrization="softplus"
+                    ),
                     momentum=0.0,
                     clip_threshold=5.0,
                     clip_sharpness=100.0,
@@ -97,7 +101,6 @@ def main():
                 #     learning_rate=HyperparameterConfig(value=0.001, learnable=True),
                 #     weight_decay=HyperparameterConfig(value=0.0, learnable=False),
                 # ),
-                hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
@@ -105,17 +108,20 @@ def main():
             ),
             1: LearnConfig(
                 # learner=IdentityConfig(),
-                learner=RTRLFiniteHvpConfig(epsilon=1e-4),
+                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
                 optimizer=AdamConfig(
-                    learning_rate=HyperparameterConfig(value=0.02, learnable=True),
-                    weight_decay=HyperparameterConfig(value=0.0, learnable=False),
+                    learning_rate=HyperparameterConfig(
+                        value=0.02, learnable=False, hyperparameter_parametrization="identity"
+                    ),
+                    weight_decay=HyperparameterConfig(
+                        value=0.0, learnable=False, hyperparameter_parametrization="identity"
+                    ),
                 ),
                 # optimizer=SGDConfig(
                 #     learning_rate=HyperparameterConfig(value=0.001, learnable=True),
                 #     weight_decay=HyperparameterConfig(value=0.0, learnable=False),
                 #     momentum=0.0,
                 # ),
-                hyperparameter_parametrization="softplus",
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,

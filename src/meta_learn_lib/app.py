@@ -165,10 +165,10 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         env, stats, te_losses = update_fn(data, env)
         tr_stats, vl_stats, te_stats = stats
 
-        tr_loss, tr_acc, _, tr_grs, __ = tr_stats
-        (vl_loss, vl_acc, _, __, ___) = vl_stats
-        te_loss, te_acc, _, __, ___ = te_stats
-        _, __, lrs, ___, meta_grs = tr_stats
+        tr_loss, tr_acc, _, _wds, tr_grs, __ = tr_stats
+        (vl_loss, vl_acc, _, _wds, __, ___) = vl_stats
+        te_loss, te_acc, _, _wds, __, ___ = te_stats
+        _, __, lrs, wds, ___, meta_grs = tr_stats
 
         tr_loss = metric_fn(tr_loss, axis=2)
         tr_acc = metric_fn(tr_acc, axis=2)
@@ -178,6 +178,7 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         te_loss = metric_fn(te_loss, axis=1)
         te_acc = metric_fn(te_acc, axis=1)
         lrs = lrs[:, :, -1]
+        wds = wds[:, :, -1]
         meta_grs = meta_grs[:, :, -1]
 
         jax.block_until_ready(env)
@@ -208,6 +209,14 @@ def runApp(config: GodConfig, logger: Logger) -> None:
                         "train/learning_rate",
                         "train_learning_rate",
                         lrs[i, j][0],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "train/weight_decay",
+                        "train_weight_decay",
+                        wds[i, j][0],
                         iteration,
                         total_tr_vb * config.num_base_epochs,
                     )
@@ -270,7 +279,7 @@ def runApp(config: GodConfig, logger: Logger) -> None:
     for te_x, te_y, te_seqs, te_mask in dataloader_te:
         ds = traverse(batched((te_x, te_y, te_seqs)))
         stats = te_inf(test_env, ds, te_mask)
-        te_loss, te_acc, _, __, ___ = stats[0]
+        te_loss, te_acc, _, _wds, __, ___ = stats[0]
         te_loss = metric_fn(te_loss)
         te_acc = metric_fn(te_acc)
         final_te_loss += te_loss

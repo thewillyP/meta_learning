@@ -47,7 +47,7 @@ def main():
 
     config = GodConfig(
         clearml_run=False,
-        data_root_dir="/tmp",
+        data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         dataset=CIFAR10Config(96),
         num_base_epochs=150,

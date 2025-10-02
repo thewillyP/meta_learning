@@ -84,7 +84,7 @@ optimizer = HyperParameterOptimizer(
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["01:30:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
-        DiscreteParameterRange("slurm/memory", values=["12GB"]),
+        DiscreteParameterRange("slurm/memory", values=["14GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),
     ],

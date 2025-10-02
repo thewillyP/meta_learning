@@ -50,7 +50,7 @@ def main():
         log_dir="/scratch/offline_logs",
         dataset=CIFAR10Config(96),
         # dataset=DelayAddOnlineConfig(t1=10, t2=12, tau_task=1, n=100_000, nTest=1_000),
-        num_base_epochs=200,
+        num_base_epochs=100,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=4352, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -66,7 +66,7 @@ def main():
             #     use_bias=True,
             # ),
             0: NNLayer(
-                n=256,
+                n=128,
                 activation_fn="tanh",
                 use_bias=True,
             ),
@@ -122,10 +122,10 @@ def main():
                         value=0.029240177382128668, learnable=True, hyperparameter_parametrization="softplus"
                     ),
                     weight_decay=HyperparameterConfig(
-                        value=0.001, learnable=True, hyperparameter_parametrization="softplus"
+                        value=0.0, learnable=False, hyperparameter_parametrization="identity"
                     ),
                     momentum=0.0,
-                    clip_threshold=5.0,
+                    clip_threshold=1.0,
                     clip_sharpness=100.0,
                 ),
                 # optimizer=AdamConfig(
@@ -139,18 +139,22 @@ def main():
             ),
             1: LearnConfig(
                 # learner=IdentityConfig(),
-                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
+                learner=RTRLFiniteHvpConfig(epsilon=2e-4),
                 optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
-                        value=0.02, learnable=False, hyperparameter_parametrization="identity"
+                        value=0.01, learnable=False, hyperparameter_parametrization="identity"
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.0, learnable=False, hyperparameter_parametrization="identity"
                     ),
                 ),
                 # optimizer=SGDConfig(
-                #     learning_rate=HyperparameterConfig(value=0.001, learnable=True),
-                #     weight_decay=HyperparameterConfig(value=0.0, learnable=False),
+                #     learning_rate=HyperparameterConfig(
+                #         value=0.01, learnable=False, hyperparameter_parametrization="identity"
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0, learnable=False, hyperparameter_parametrization="identity"
+                #     ),
                 #     momentum=0.0,
                 # ),
                 lanczos_iterations=0,

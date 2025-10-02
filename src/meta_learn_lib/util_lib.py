@@ -18,16 +18,16 @@ def get_optimizer(
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
             return lambda pr: optax.chain(
-                optax.add_decayed_weights(lr_forward(pr.learning_parameter.weight_decay.value)),
-                optax.sgd(wd_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
+                optax.add_decayed_weights(wd_forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(lr_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
         case SGDNormalizedConfig(learning_rate, weight_decay, momentum):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
             return lambda pr: optax.chain(
                 optax.normalize_by_update_norm(scale_factor=1.0),
-                optax.add_decayed_weights(lr_forward(pr.learning_parameter.weight_decay.value)),
-                optax.sgd(wd_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
+                optax.add_decayed_weights(wd_forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(lr_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
         case SGDClipConfig(learning_rate, weight_decay, momentum, threshold, sharpness):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
@@ -43,8 +43,8 @@ def get_optimizer(
 
             return lambda pr: optax.chain(
                 optax.GradientTransformation(lambda _: (), update_fn),
-                optax.add_decayed_weights(lr_forward(pr.learning_parameter.weight_decay.value)),
-                optax.sgd(wd_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
+                optax.add_decayed_weights(wd_forward(pr.learning_parameter.weight_decay.value)),
+                optax.sgd(lr_forward(pr.learning_parameter.learning_rate.value), momentum=momentum),
             )
         case AdamConfig(learning_rate, weight_decay):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)

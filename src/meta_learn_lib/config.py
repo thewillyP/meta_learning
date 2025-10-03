@@ -102,9 +102,22 @@ class UOROConfig:
 
 @dataclass(frozen=True)
 class HyperparameterConfig:
+    @dataclass(frozen=True)
+    class identity: ...
+
+    @dataclass(frozen=True)
+    class softplus: ...
+
+    @dataclass(frozen=True)
+    class relu: ...
+
+    @dataclass(frozen=True)
+    class softrelu:
+        clip: float
+
     value: float
     learnable: bool
-    hyperparameter_parametrization: Literal["identity", "softplus", "relu"]
+    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu]
 
 
 @dataclass(frozen=True)

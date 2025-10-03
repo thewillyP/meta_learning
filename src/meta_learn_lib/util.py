@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Union
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
@@ -7,6 +7,7 @@ import equinox as eqx
 import equinox.internal as eqxi
 import optax
 import jax.lax as lax
+from meta_learn_lib.config import HyperparameterConfig
 from meta_learn_lib.lib_types import LOSS, PRNG, FractionalList
 
 
@@ -157,16 +158,33 @@ def to_vector[T](tree: T) -> Vector[T]:
 
 
 def hyperparameter_reparametrization(
-    reparametrization: str,
+    reparametrization: Union[
+        HyperparameterConfig.identity,
+        HyperparameterConfig.softplus,
+        HyperparameterConfig.relu,
+        HyperparameterConfig.softrelu,
+    ],
 ) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
     match reparametrization:
-        case "identity":
+        case HyperparameterConfig.identity():
             reparam_fn = lambda lr: lr
             reparam_inverse = lambda lr: lr
-        case "softplus":
+        case HyperparameterConfig.softplus():
             reparam_fn = jax.nn.softplus
             reparam_inverse = lambda y: jnp.log(jnp.expm1(y))
-        case "relu":
+        case HyperparameterConfig.softrelu(clip):
+
+            def softrelu(x, c):
+                def softminus(x):
+                    return -jax.nn.softplus(-x)
+
+                v = x - softminus(c * x) / c
+                return v
+
+            reparam_fn = lambda x: softrelu(x, clip)
+            reparam_inverse = lambda y: y  # Note: not strictly correct, as softrelu is not invertible
+
+        case HyperparameterConfig.relu():
             reparam_fn = lambda x: jnp.maximum(x, 0.0)
             reparam_inverse = lambda y: y  # Note: not strictly correct, as relu is not invertible
         case _:

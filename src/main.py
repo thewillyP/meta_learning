@@ -88,10 +88,14 @@ def main():
                 optimizer=SGDClipConfig(
                     # learning_rate=HyperparameterConfig(value=0.1, learnable=True),
                     learning_rate=HyperparameterConfig(
-                        value=0.029240177382128668, learnable=True, hyperparameter_parametrization="softplus"
+                        value=0.029240177382128668,
+                        learnable=True,
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
                     ),
                     weight_decay=HyperparameterConfig(
-                        value=0.001, learnable=True, hyperparameter_parametrization="softplus"
+                        value=0.001,
+                        learnable=True,
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
                     ),
                     momentum=0.0,
                     clip_threshold=5.0,
@@ -111,10 +115,14 @@ def main():
                 learner=RTRLFiniteHvpConfig(epsilon=1e-3),
                 optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
-                        value=0.02, learnable=False, hyperparameter_parametrization="identity"
+                        value=0.02,
+                        learnable=False,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     weight_decay=HyperparameterConfig(
-                        value=0.0, learnable=False, hyperparameter_parametrization="identity"
+                        value=0.0,
+                        learnable=False,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                 ),
                 # optimizer=SGDConfig(

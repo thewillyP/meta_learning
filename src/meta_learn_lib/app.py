@@ -276,6 +276,7 @@ def runApp(config: GodConfig, logger: Logger) -> None:
     final_te_acc = 0
     num_te_batches = 0
     test_env = general_interfaces[0].put_current_virtual_minibatch(env, jnp.nan)
+    test_env = test_reset(test_env)
     for te_x, te_y, te_seqs, te_mask in dataloader_te:
         ds = traverse(batched((te_x, te_y, te_seqs)))
         stats = te_inf(test_env, ds, te_mask)

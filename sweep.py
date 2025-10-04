@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Fixed Seed+ILR Sweep: Batch-1000,Epochs-150,CIFAR10,RNN-128,SGD-Adam,BPTT-ID",
+    task_name="OHO Seed+ILR Sweep: Batch-100,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="eb718c35e9494a31ac4fbc5b7a031dfc",  # Use the actual task ID
+    base_task_id="fd04700812c94825a287d7a4866ff87a",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -20,64 +20,57 @@ optimizer = HyperParameterOptimizer(
             values=[760, 202, 747, 995, 972, 579, 274, 283, 201, 480, 14, 530, 842, 774, 32, 471, 102, 104, 479, 789],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
-        DiscreteParameterRange(
-            "config/learners/0/optimizer/learning_rate/value",
-            values=[
-                0.0001,
-                0.00020286934558567696,
-                0.00041155971378360783,
-                0.0008349284980470904,
-                0.0016938139800964523,
-                0.003436229336860381,
-                0.006971055968511703,
-                0.01414213562373095,
-                0.028690057991701875,
-                0.05820333289591681,
-                0.11807672055499935,
-                0.2395414702789557,
-                0.4859562131612263,
-                0.9858561894731162,
-                2.0,
-            ],
-        ),
-        # dataset
-        DiscreteParameterRange("config/dataset/_type", values=["CIFAR10Config"]),
-        DiscreteParameterRange("config/dataset/n_in", values=[96]),
-        # OHO
-        # DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        # DiscreteParameterRange("config/learners/1/learner/epsilon", values=[2.0e-4]),
-        # DiscreteParameterRange(
-        #     "config/learners/1/optimizer/learning_rate/value",
-        #     values=[
-        #         0.0001,
-        #         0.00025119,
-        #         0.00063096,
-        #         0.00158489,
-        #         0.00398107,
-        #         0.01,
-        #     ],
-        # ),
         # DiscreteParameterRange(
         #     "config/learners/0/optimizer/learning_rate/value",
         #     values=[
-        #         1.00000000e-04,
-        #         1.35720881e-03,
-        #         1.84201575e-02,
-        #         2.50000000e-01,
+        #         0.0001,
+        #         0.00020286934558567696,
+        #         0.00041155971378360783,
+        #         0.0008349284980470904,
+        #         0.0016938139800964523,
+        #         0.003436229336860381,
+        #         0.006971055968511703,
+        #         0.01414213562373095,
+        #         0.028690057991701875,
+        #         0.05820333289591681,
+        #         0.11807672055499935,
+        #         0.2395414702789557,
+        #         0.4859562131612263,
+        #         0.9858561894731162,
+        #         2.0,
         #     ],
         # ),
+        # dataset
+        DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
+        DiscreteParameterRange("config/dataset/n_in", values=[784]),
+        # OHO
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
+        DiscreteParameterRange(
+            "config/learners/1/optimizer/learning_rate/value",
+            values=[0.01],
+        ),
+        DiscreteParameterRange(
+            "config/learners/0/optimizer/learning_rate/value",
+            values=[
+                0.1,
+                0.01,
+                0.001,
+                0.0001,
+            ],
+        ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[150]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[1000]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[1000]),
-        DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
-        DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
-        DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[32]),
-        DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[32]),
+        DiscreteParameterRange("config/num_base_epochs", values=[20]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
+        # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
+        # DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
+        DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[1]),
+        DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[1]),
         DiscreteParameterRange("config/learners/0/num_virtual_minibatches_per_turn", values=[1]),
-        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[40]),
-        DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
+        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[500]),
+        DiscreteParameterRange("config/readout_uses_input_data", values=[True]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
         DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),

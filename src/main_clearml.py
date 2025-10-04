@@ -51,7 +51,7 @@ def main():
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(3072),
         dataset=FashionMnistConfig(784),
-        num_base_epochs=100,
+        num_base_epochs=20,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=6, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -85,29 +85,31 @@ def main():
                 optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
                         # value=0.15,
-                        value=0.1,
+                        value=0.01,
                         learnable=True,
                         hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.0,
-                        learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
+                        learnable=False,
+                        # hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
                 ),
                 # optimizer=SGDClipConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         # value=0.15,
                 #         value=0.029240177382128668,
                 #         learnable=True,
-                #         hyperparameter_parametrization="softplus",
+                #         hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
                 #     ),
                 #     weight_decay=HyperparameterConfig(
-                #         value=0.0, learnable=False, hyperparameter_parametrization="identity"
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
                 #     momentum=0.0,
-                #     clip_threshold=1.0,
+                #     clip_threshold=2.0,
                 #     clip_sharpness=100.0,
                 # ),
                 lanczos_iterations=0,
@@ -119,9 +121,9 @@ def main():
                 # learner=IdentityConfig(),
                 learner=RTRLFiniteHvpConfig(epsilon=1e-3),
                 # learner=RTRLConfig(),
-                optimizer=SGDConfig(
+                optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-5,
+                        value=1e-2,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -130,7 +132,6 @@ def main():
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
-                    momentum=0.0,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,

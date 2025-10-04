@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="OHO Seed+ILR Sweep: Batch-100,Epochs-30,FashionMNIST,MLP,SGD-Adam,BPTT-ID",
+    task_name="Fixed Seed+ILR Sweep: Batch-100,Epochs-30,FashionMNIST,MLP,SGD-Adam,BPTT-ID",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -20,45 +20,45 @@ optimizer = HyperParameterOptimizer(
             values=[760, 202, 747, 995, 972, 579, 274, 283, 201, 480, 14, 530, 842, 774, 32, 471, 102, 104, 479, 789],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
-        # DiscreteParameterRange(
-        #     "config/learners/0/optimizer/learning_rate/value",
-        #     values=[
-        #         0.0001,
-        #         0.00020286934558567696,
-        #         0.00041155971378360783,
-        #         0.0008349284980470904,
-        #         0.0016938139800964523,
-        #         0.003436229336860381,
-        #         0.006971055968511703,
-        #         0.01414213562373095,
-        #         0.028690057991701875,
-        #         0.05820333289591681,
-        #         0.11807672055499935,
-        #         0.2395414702789557,
-        #         0.4859562131612263,
-        #         0.9858561894731162,
-        #         2.0,
-        #     ],
-        # ),
+        DiscreteParameterRange(
+            "config/learners/0/optimizer/learning_rate/value",
+            values=[
+                0.0001,
+                0.000188213105,
+                0.00035424173,
+                0.00066672936,
+                0.00125487203,
+                0.00236183362,
+                0.00444528039,
+                0.00836660027,
+                0.0157470382,
+                0.0296379895,
+                0.0557825804,
+                0.104990127,
+                0.197605178,
+                0.371918841,
+                0.7,
+            ],
+        ),
         # dataset
         DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         DiscreteParameterRange("config/dataset/n_in", values=[784]),
         # OHO
-        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
-        DiscreteParameterRange(
-            "config/learners/1/optimizer/learning_rate/value",
-            values=[0.001],
-        ),
-        DiscreteParameterRange(
-            "config/learners/0/optimizer/learning_rate/value",
-            values=[
-                0.1,
-                0.01,
-                0.001,
-                0.0001,
-            ],
-        ),
+        # DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
+        # DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
+        # DiscreteParameterRange(
+        #     "config/learners/1/optimizer/learning_rate/value",
+        #     values=[0.001],
+        # ),
+        # DiscreteParameterRange(
+        #     "config/learners/0/optimizer/learning_rate/value",
+        #     values=[
+        #         0.1,
+        #         0.01,
+        #         0.001,
+        #         0.0001,
+        #     ],
+        # ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[30]),

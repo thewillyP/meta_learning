@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="OHO Seed+ILR Sweep: Batch-100,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID",
+    task_name="OHO Seed+ILR Sweep: Batch-100,Epochs-30,FashionMNIST,MLP,SGD-Adam,BPTT-ID",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="fd04700812c94825a287d7a4866ff87a",  # Use the actual task ID
+    base_task_id="89ff910a52a94f7eb4bf23ff9a0f087f",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -48,7 +48,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
         DiscreteParameterRange(
             "config/learners/1/optimizer/learning_rate/value",
-            values=[0.01],
+            values=[0.001],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
@@ -61,7 +61,7 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[20]),
+        DiscreteParameterRange("config/num_base_epochs", values=[30]),
         DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
         DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),

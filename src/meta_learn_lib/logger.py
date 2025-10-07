@@ -22,7 +22,8 @@ class HDF5Logger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         self.task_id = task_id
-        self.log_file = self.log_dir / f"metrics_{task_id}.h5"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = self.log_dir / f"metrics_{task_id}_{timestamp}.h5"
         self.metric_indices = {}
 
         # Initialize HDF5 file with task metadata

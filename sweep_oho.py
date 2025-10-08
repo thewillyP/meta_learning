@@ -28,7 +28,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
         DiscreteParameterRange(
             "config/learners/1/optimizer/learning_rate/value",
-            values=[0.00001],
+            values=[0.00005],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",

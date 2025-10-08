@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,FashionMNIST,MLP,SGD-Adam,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,FashionMNIST,MLP,SGD-SGD,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="8b223a0938c84116bbc9858851f98b76",  # Use the actual task ID
+    base_task_id="dcd1960a7ba049bf85b73aa68e5fa547",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -28,11 +28,12 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
         DiscreteParameterRange(
             "config/learners/1/optimizer/learning_rate/value",
-            values=[0.00005],
+            values=[0.00001],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
+                0.1,
                 0.01,
                 0.001,
                 0.0001,

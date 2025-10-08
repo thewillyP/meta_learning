@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="89ff910a52a94f7eb4bf23ff9a0f087f",  # Use the actual task ID
+    base_task_id="8b223a0938c84116bbc9858851f98b76",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -20,26 +20,6 @@ optimizer = HyperParameterOptimizer(
             values=[760, 202, 747, 995, 972, 579, 274, 283, 201, 480, 14, 530, 842, 774, 32, 471, 102, 104, 479, 789],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
-        # DiscreteParameterRange(
-        #     "config/learners/0/optimizer/learning_rate/value",
-        #     [
-        #         0.7,
-        #         0.3,
-        #         0.268787538,
-        #         0.240822469,
-        #         0.215766928,
-        #         0.193318204,
-        #         0.173205081,
-        #         0.155184557,
-        #         0.139038917,
-        #         0.124573094,
-        #         0.111612317,
-        #         0.1,
-        #         0.01,
-        #         0.001,
-        #         0.0001,
-        #     ],
-        # ),
         # dataset
         # DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
@@ -48,12 +28,11 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
         DiscreteParameterRange(
             "config/learners/1/optimizer/learning_rate/value",
-            values=[0.0001],
+            values=[0.00001],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
-                0.1,
                 0.01,
                 0.001,
                 0.0001,

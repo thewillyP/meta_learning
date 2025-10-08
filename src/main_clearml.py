@@ -9,6 +9,7 @@ import time
 from meta_learn_lib import app
 from meta_learn_lib.config import *
 from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
+from meta_learn_lib.util import setup_flattened_union
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -160,26 +161,27 @@ def main():
     )
 
     converter = Converter()
-    configure_tagged_union(
+    setup_flattened_union(
+        converter,
         Union[
             HyperparameterConfig.identity,
             HyperparameterConfig.softplus,
             HyperparameterConfig.relu,
             HyperparameterConfig.softrelu,
         ],
-        converter,
     )
-    configure_tagged_union(Union[NNLayer, GRULayer, LSTMLayer], converter)
-    configure_tagged_union(
+    setup_flattened_union(converter, Union[NNLayer, GRULayer, LSTMLayer])
+    setup_flattened_union(
+        converter,
         Union[
             RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
         ],
-        converter,
     )
-    configure_tagged_union(Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig], converter)
-    configure_tagged_union(Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config], converter)
-    configure_tagged_union(
-        Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig], converter
+    setup_flattened_union(converter, Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig])
+    setup_flattened_union(converter, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config])
+    setup_flattened_union(
+        converter,
+        Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig],
     )
 
     # Need two connects in order to change config in UI as well as make it HPO-able since HPO can't add new hyperparameter fields

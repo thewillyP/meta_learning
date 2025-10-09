@@ -39,7 +39,8 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
         match transition_fn:
             case NNLayer(n_h, activation_fn, use_bias):
                 prng1, prng = jax.random.split(prng, 2)
-                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                activation = ACTIVATION(jnp.zeros((n_h,)))
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -55,7 +56,8 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                 n_in = n_h  # Update n_in for the next layer
             case GRULayer(n_h, use_bias):
                 prng1, prng = jax.random.split(prng, 2)
-                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                activation = ACTIVATION(jnp.zeros((n_h,)))
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -71,8 +73,10 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                 n_in = n_h
             case LSTMLayer(n_h, use_bias):
                 prng1, prng2, prng = jax.random.split(prng, 3)
-                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
+                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                # cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
+                activation = ACTIVATION(jnp.zeros((n_h,)))
+                cell = ACTIVATION(jnp.zeros((n_h,)))
                 transition_state = transition_state.set(
                     i,
                     InferenceState(

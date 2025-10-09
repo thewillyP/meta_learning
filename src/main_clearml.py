@@ -52,7 +52,7 @@ def main():
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(3072),
         dataset=FashionMnistConfig(784),
-        num_base_epochs=50,
+        num_base_epochs=100,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=842, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -77,7 +77,7 @@ def main():
                 0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
                 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
                 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                0: NNLayer(n=10, activation_fn="identity", use_bias=True),
+                3: NNLayer(n=10, activation_fn="identity", use_bias=True),
             }
         ),
         learners={

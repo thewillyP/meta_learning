@@ -215,6 +215,43 @@ def hyperparameter_reparametrization(
         case HyperparameterConfig.relu():
             reparam_fn = lambda x: jnp.maximum(x, 0.0)
             reparam_inverse = lambda y: y  # Note: not strictly correct, as relu is not invertible
+        case HyperparameterConfig.silu_positive(scale):
+
+            @jax.jit
+            def lambertw_jax(x, max_iters=20):
+                """JAX-compatible Lambert W approximation (principal branch)."""
+                # Initial guess: good heuristic for principal branch
+                w = jnp.log1p(x)
+                for _ in range(max_iters):
+                    ew = jnp.exp(w)
+                    wew = w * ew
+                    w -= (wew - x) / (ew * (w + 1) - (w + 2) * (wew - x) / (2 * w + 2))
+                return w
+
+            bias = jnp.real(lambertw_jax(1 / jnp.e))  # ≈ 0.2784645
+
+            def silu_positive(x):
+                return x * jax.nn.sigmoid(x) + bias
+
+            def silu_positive_inverse(y, scale):
+                z = y - bias
+                w = lambertw_jax(z * jnp.exp(-z))
+                return (z + w) / scale
+
+            # # Compute exact bias constant (W(1/e))
+            # bias_value = float(lambertw(1 / jnp.e).real)  # ≈ 0.2784645427610738
+            # bias = jnp.array(bias_value)  # convert to JAX array
+
+            # def silu_positive(x):
+            #     return x * jax.nn.sigmoid(x) + bias
+
+            # def silu_positive_inverse(y, scale):
+            #     z = y - bias
+            #     return (z + jnp.real(lambertw(z * jnp.exp(-z)))) / scale
+
+            reparam_fn = lambda x: silu_positive(x * scale)
+            reparam_inverse = lambda y: silu_positive_inverse(y, scale)
+
         case _:
             raise ValueError("Invalid hyperparameter reparametrization")
 

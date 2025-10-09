@@ -115,9 +115,13 @@ class HyperparameterConfig:
     class softrelu:
         clip: float
 
+    @dataclass(frozen=True)
+    class silu_positive:
+        scale: float
+
     value: float
     learnable: bool
-    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu]
+    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu, silu_positive]
 
 
 @dataclass(frozen=True)

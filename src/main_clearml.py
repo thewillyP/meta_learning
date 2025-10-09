@@ -20,7 +20,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 60))
+    # time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -47,14 +47,14 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(3072),
         dataset=FashionMnistConfig(784),
         num_base_epochs=100,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=842, data_seed=1, parameter_seed=1, test_seed=12345),
+        seed=SeedConfig(global_seed=480, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
         transition_function={
             # 0: GRULayer(
@@ -88,12 +88,12 @@ def main():
                         # value=0.15,
                         value=0.1,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
+                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=1e-5,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
+                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
                         # hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
@@ -120,9 +120,9 @@ def main():
             ),
             1: LearnConfig(
                 # learner=IdentityConfig(),
-                learner=RTRLFiniteHvpConfig(epsilon=1e-4),
+                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
                 # learner=RTRLConfig(),
-                optimizer=SGDConfig(
+                optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
                         value=1e-5,
                         learnable=False,
@@ -133,7 +133,7 @@ def main():
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
-                    momentum=0.0,
+                    # momentum=0.0,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,
@@ -169,6 +169,7 @@ def main():
             HyperparameterConfig.softplus,
             HyperparameterConfig.relu,
             HyperparameterConfig.softrelu,
+            HyperparameterConfig.silu_positive,
         ],
     )
     setup_flattened_union(converter, Union[NNLayer, GRULayer, LSTMLayer])

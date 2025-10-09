@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,FashionMNIST,MLP,SGD-SGD,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,FashionMNIST,MLP,SGD-Adam,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="dcd1960a7ba049bf85b73aa68e5fa547",  # Use the actual task ID
+    base_task_id="2db9b98397384bccbb9b71ce7c035f05",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -55,7 +55,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["01:30:00"]),
+        DiscreteParameterRange("slurm/time", values=["02:30:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["14GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

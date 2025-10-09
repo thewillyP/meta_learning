@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="a7e169cbbcf3464391ab31e118a5e815",  # Use the actual task ID
+    base_task_id="2db9b98397384bccbb9b71ce7c035f05",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -23,26 +23,38 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             [
-                0.7,
-                0.3,
-                0.268787538,
-                0.240822469,
-                0.215766928,
-                0.193318204,
-                0.173205081,
-                0.155184557,
-                0.139038917,
-                0.124573094,
-                0.111612317,
-                0.1,
                 0.01,
-                0.001,
-                0.0001,
+                0.01459232802961085,
+                0.021293603732376647,
+                0.03107232505953858,
+                0.045341755991148446,
+                0.06616417768614112,
+                0.09654893846056294,
+                0.14088737809272456,
+                0.20558748363608462,
+                0.29999999999999993,
+            ],
+        ),
+        DiscreteParameterRange(
+            "config/learners/0/optimizer/weight_decay/value",
+            [
+                1.00000000e-06,
+                2.32691817e-06,
+                5.41454816e-06,
+                1.25992105e-05,
+                2.93173318e-05,
+                6.82190321e-05,
+                1.58740105e-04,
+                3.69375235e-04,
+                8.59505945e-04,
+                2.00000000e-03,
             ],
         ),
         # dataset
         # DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[100]),

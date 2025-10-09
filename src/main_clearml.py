@@ -20,7 +20,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    # time.sleep(_jitter_rng.uniform(1, 60))
+    time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -47,7 +47,7 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=True,
+        clearml_run=False,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(3072),
@@ -102,12 +102,12 @@ def main():
                 #     learning_rate=HyperparameterConfig(
                 #         value=0.01,
                 #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
+                #         hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
                 #     ),
                 #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #         value=1e-5,
+                #         learnable=True,
+                #         hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
                 #     ),
                 #     momentum=0.0,
                 #     clip_threshold=2.0,

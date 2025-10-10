@@ -252,6 +252,10 @@ def hyperparameter_reparametrization(
             reparam_fn = lambda x: silu_positive(x * scale)
             reparam_inverse = lambda y: silu_positive_inverse(y, scale)
 
+        case HyperparameterConfig.squared(scale):
+            reparam_fn = lambda x: (scale * x) ** 2
+            reparam_inverse = lambda y: jnp.sqrt(y) / scale
+
         case _:
             raise ValueError("Invalid hyperparameter reparametrization")
 

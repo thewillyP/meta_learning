@@ -119,9 +119,13 @@ class HyperparameterConfig:
     class silu_positive:
         scale: float
 
+    @dataclass(frozen=True)
+    class squared:
+        scale: float
+
     value: float
     learnable: bool
-    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu, silu_positive]
+    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu, silu_positive, squared]
 
 
 @dataclass(frozen=True)

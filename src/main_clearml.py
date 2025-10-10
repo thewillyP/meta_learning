@@ -3,7 +3,6 @@ import clearml
 import random
 import string
 from cattrs import unstructure, Converter
-from cattrs.strategies import configure_tagged_union
 import random
 import time
 from meta_learn_lib import app
@@ -74,10 +73,10 @@ def main():
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
-                # 0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                0: NNLayer(n=10, activation_fn="identity", use_bias=True),
+                0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                3: NNLayer(n=10, activation_fn="identity", use_bias=True),
             }
         ),
         learners={
@@ -155,7 +154,7 @@ def main():
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=False,
+        readout_uses_input_data=True,
         logger_config=(ClearMLLoggerConfig(),),
         treat_inference_state_as_online=False,
     )

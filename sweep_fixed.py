@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,FashionMNIST,MLP,SGD-Adam,BPTT-ID",
+    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,FashionMNIST,RNN-128,SGD-Adam,BPTT-ID",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="2db9b98397384bccbb9b71ce7c035f05",  # Use the actual task ID
+    base_task_id="00733c864264482eabebbe2d62e09fa1",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -23,31 +23,31 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             [
+                0.04,
+                0.03031433,
+                0.02297397,
+                0.01741101,
+                0.01319508,
                 0.01,
-                0.01459232802961085,
-                0.021293603732376647,
-                0.03107232505953858,
-                0.045341755991148446,
-                0.06616417768614112,
-                0.09654893846056294,
-                0.14088737809272456,
-                0.20558748363608462,
-                0.29999999999999993,
+                0.00316228,
+                0.001,
+                0.00031623,
+                0.0001,
             ],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
             [
-                1.00000000e-06,
-                2.32691817e-06,
-                5.41454816e-06,
-                1.25992105e-05,
-                2.93173318e-05,
-                6.82190321e-05,
-                1.58740105e-04,
-                3.69375235e-04,
-                8.59505945e-04,
-                2.00000000e-03,
+                1.0e-6,
+                2.32691817e-6,
+                5.41454816e-6,
+                1.25992105e-5,
+                2.93173318e-5,
+                6.82190321e-5,
+                1.58740105e-4,
+                3.69375235e-4,
+                8.59505945e-4,
+                2.0e-3,
             ],
         ),
         # dataset

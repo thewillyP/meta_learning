@@ -38,7 +38,7 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[1500]),
+        DiscreteParameterRange("config/num_base_epochs", values=[1200]),
         DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[5000]),
         DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[5000]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
@@ -52,8 +52,9 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["06:00:00"]),
-        DiscreteParameterRange("slurm/cpu", values=[2]),
+        DiscreteParameterRange("slurm/time", values=["02:00:00"]),
+        DiscreteParameterRange("slurm/cpu", values=[1]),
+        DiscreteParameterRange("slurm/gpu", values=[1]),
         DiscreteParameterRange("slurm/memory", values=["14GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),

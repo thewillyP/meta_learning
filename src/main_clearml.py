@@ -46,12 +46,12 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
-        dataset=MnistConfig(28),
-        num_base_epochs=500,
+        dataset=FashionMnistConfig(28),
+        num_base_epochs=1500,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=12324, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -61,15 +61,15 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            # 0: LSTMLayer(
-            #     n=128,
-            #     use_bias=True,
-            # ),
-            0: NNLayer(
-                n=256,
-                activation_fn="tanh",
+            0: LSTMLayer(
+                n=128,
                 use_bias=True,
             ),
+            # 0: NNLayer(
+            #     n=256,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            # ),
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
@@ -82,35 +82,35 @@ def main():
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
-                # optimizer=SGDNormalizedConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         # value=0.15,
-                #         value=0.01,
-                #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.silu_positive(1),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=1e-5,
-                #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.silu_positive(1),
-                #     ),
-                #     momentum=0.0,
-                # ),
-                optimizer=SGDClipConfig(
+                optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
+                        # value=0.15,
                         value=0.01,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1),
+                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=1e-5,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1),
+                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
                     ),
                     momentum=0.0,
-                    clip_threshold=3.0,
-                    clip_sharpness=100.0,
                 ),
+                # optimizer=SGDClipConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=0.2,
+                #         learnable=True,
+                #         hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=1e-3,
+                #         learnable=True,
+                #         hyperparameter_parametrization=HyperparameterConfig.silu_positive(1e1),
+                #     ),
+                #     momentum=0.0,
+                #     clip_threshold=3.0,
+                #     clip_sharpness=100.0,
+                # ),
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
@@ -122,7 +122,7 @@ def main():
                 # learner=RTRLConfig(),
                 optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-3,
+                        value=1e-5,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),

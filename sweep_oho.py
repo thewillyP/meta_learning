@@ -26,11 +26,11 @@ optimizer = HyperParameterOptimizer(
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
-        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-4]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-5]),
+        DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.3, 0.5, 0.7, 0.8, 0.9]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
-                0.1,
                 0.01,
                 0.001,
                 0.0001,
@@ -38,7 +38,7 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[300]),
+        DiscreteParameterRange("config/num_base_epochs", values=[400]),
         DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[500]),
         DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[500]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
@@ -52,7 +52,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["04:00:00"]),
+        DiscreteParameterRange("slurm/time", values=["03:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["14GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

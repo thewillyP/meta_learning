@@ -28,7 +28,7 @@ def do_optimizer[ENV](env: ENV, gr: GRADIENT, learn_interface: LearnInterface[EN
     optimizer = learn_interface.get_optimizer(env)
     opt_state = learn_interface.get_opt_state(env)
     updates, new_opt_state = optimizer.update(gr, opt_state, param)
-    new_param = optax.apply_updates(param, updates)
+    new_param = learn_interface.get_updater(param, updates)
     env = learn_interface.put_opt_state(env, new_opt_state)
     env = learn_interface.put_param(env, new_param)
 

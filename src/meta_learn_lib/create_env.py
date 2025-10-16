@@ -152,7 +152,9 @@ def create_learning_parameter(
 ) -> LearningParameter:
     parameter = LearningParameter(learning_rate=None, weight_decay=None, rflo_timeconstant=None)
     match learn_config.optimizer:
-        case SGDConfig() | SGDNormalizedConfig() | SGDClipConfig() | AdamConfig() as opt:
+        case (
+            SGDConfig() | SGDNormalizedConfig() | SGDClipConfig() | AdamConfig() | ExponentiatedGradientConfig() as opt
+        ):
             _, lr_backward = hyperparameter_reparametrization(opt.learning_rate.hyperparameter_parametrization)
             _, wd_backward = hyperparameter_reparametrization(opt.weight_decay.hyperparameter_parametrization)
             parameter = parameter.set(

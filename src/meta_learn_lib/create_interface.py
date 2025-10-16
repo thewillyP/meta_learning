@@ -16,7 +16,7 @@ from meta_learn_lib.interface import (
 )
 from meta_learn_lib.lib_types import batched
 from meta_learn_lib.util import to_vector
-from meta_learn_lib.util_lib import get_optimizer
+from meta_learn_lib.util_lib import get_optimizer, get_updater
 
 
 def get_inference_prng(env: GodState, i: int) -> tuple[jax.Array, GodState]:
@@ -130,6 +130,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
             get_optimizer=lambda env, i=j, _lc=learn_config: get_optimizer(_lc, lambda p: vector_to_param(env, p, i))(
                 env.parameters[i + 1]
             ),
+            get_updater=get_updater(learn_config),
             get_opt_state=lambda env, i=j: env.learning_states[i].opt_state,
             put_opt_state=lambda env, opt_state, i=j: env.transform(
                 ["learning_states", i, "opt_state"], lambda _: opt_state

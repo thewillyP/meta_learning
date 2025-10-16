@@ -49,6 +49,7 @@ class LearnInterface[ENV]:
     put_param: Callable[[ENV, jax.Array], ENV]
     get_sgd_param: Callable[[ENV], jax.Array]
     get_optimizer: Callable[[ENV], optax.GradientTransformation]
+    get_updater: Callable[[optax.Params, optax.Updates], optax.Params]
     get_opt_state: Callable[[ENV], optax.OptState]
     put_opt_state: Callable[[ENV, optax.OptState], ENV]
     get_rflo_timeconstant: Callable[[ENV], float]
@@ -88,6 +89,7 @@ def get_default_learn_interface[ENV]() -> LearnInterface[ENV]:
         put_state=lambda env, _: env,
         get_sgd_param=lambda env: None,
         get_optimizer=lambda env: None,
+        get_updater=lambda opt_params, updates: None,
         get_opt_state=lambda env: None,
         put_opt_state=lambda env, _: env,
         get_rflo_timeconstant=lambda env: None,

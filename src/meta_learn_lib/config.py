@@ -158,6 +158,13 @@ class AdamConfig:
 
 
 @dataclass(frozen=True)
+class ExponentiatedGradientConfig:
+    learning_rate: HyperparameterConfig
+    weight_decay: HyperparameterConfig
+    momentum: float
+
+
+@dataclass(frozen=True)
 class DataConfig:
     train_percent: float  # % data devote to learn, meta 1 validation, meta 2 validation, etc
     num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
@@ -170,7 +177,7 @@ class LearnConfig:
     learner: Union[
         RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
     ]
-    optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig]
+    optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig, ExponentiatedGradientConfig]
     lanczos_iterations: int
     track_logs: bool
     track_special_logs: bool

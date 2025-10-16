@@ -3,7 +3,14 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 import optax
-from meta_learn_lib.config import AdamConfig, LearnConfig, SGDClipConfig, SGDConfig, SGDNormalizedConfig
+from meta_learn_lib.config import (
+    AdamConfig,
+    ExponentiatedGradientConfig,
+    LearnConfig,
+    SGDClipConfig,
+    SGDConfig,
+    SGDNormalizedConfig,
+)
 from meta_learn_lib.env import Parameter
 from meta_learn_lib.util import hyperparameter_reparametrization
 
@@ -53,3 +60,30 @@ def get_optimizer(
                 lr_forward(pr.learning_parameter.learning_rate.value),
                 weight_decay=wd_forward(pr.learning_parameter.weight_decay.value),
             )
+        case ExponentiatedGradientConfig(learning_rate, weight_decay, momentum):
+            lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
+            wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
+
+            def update_rule(pr: Parameter) -> optax.GradientTransformation:
+                def init_fn(params):
+                    return jnp.zeros_like(params)
+
+                def update_fn(grad, prev_g, param):
+                    new_g = (
+                        momentum * prev_g
+                        + grad * jnp.sign(param)
+                        + wd_forward(pr.learning_parameter.weight_decay.value)
+                    )
+                    return jnp.exp(-lr_forward(pr.learning_parameter.learning_rate.value) * new_g), new_g
+
+                return optax.GradientTransformation(init_fn, update_fn)
+
+            return update_rule
+
+
+def get_updater(learn_config: LearnConfig) -> Callable[[optax.Params, optax.Updates], optax.Params]:
+    match learn_config.optimizer:
+        case ExponentiatedGradientConfig():
+            return lambda p, u: p * u
+        case _:
+            return optax.apply_updates

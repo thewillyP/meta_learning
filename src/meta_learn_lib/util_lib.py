@@ -12,7 +12,7 @@ from meta_learn_lib.config import (
     SGDNormalizedConfig,
 )
 from meta_learn_lib.env import Parameter
-from meta_learn_lib.util import hyperparameter_reparametrization
+from meta_learn_lib.util import filter_cond, hyperparameter_reparametrization
 
 
 def get_optimizer(
@@ -66,15 +66,15 @@ def get_optimizer(
 
             def update_rule(pr: Parameter) -> optax.GradientTransformation:
                 def init_fn(params):
-                    return jnp.zeros_like(params)
+                    return (jnp.zeros_like(params), 0)
 
-                def update_fn(grad, prev_g, param):
+                def update_fn(grad, prev_g__count, param):
+                    prev_g, count = prev_g__count
+                    g = filter_cond(count == 0, lambda g: g, lambda g: (1 - momentum) * g, grad)
                     new_g = (
-                        momentum * prev_g
-                        + grad * jnp.sign(param)
-                        + wd_forward(pr.learning_parameter.weight_decay.value)
+                        momentum * prev_g + g * jnp.sign(param) + wd_forward(pr.learning_parameter.weight_decay.value)
                     )
-                    return jnp.exp(-lr_forward(pr.learning_parameter.learning_rate.value) * new_g), new_g
+                    return jnp.exp(-lr_forward(pr.learning_parameter.learning_rate.value) * new_g), (new_g, count + 1)
 
                 return optax.GradientTransformation(init_fn, update_fn)
 

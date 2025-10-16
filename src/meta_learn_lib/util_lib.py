@@ -66,15 +66,26 @@ def get_optimizer(
 
             def update_rule(pr: Parameter) -> optax.GradientTransformation:
                 def init_fn(params):
-                    return (jnp.zeros_like(params), 0)
+                    return (jnp.zeros_like(params), jnp.zeros_like(params), 1)
 
-                def update_fn(grad, prev_g__count, param):
-                    prev_g, count = prev_g__count
-                    g = filter_cond(count == 0, lambda g: g, lambda g: (1 - momentum) * g, grad)
-                    new_g = (
-                        momentum * prev_g + g * jnp.sign(param) + wd_forward(pr.learning_parameter.weight_decay.value)
+                def update_fn(grad, prev_m__prev_v__count, param):
+                    prev_m, prev_v, count = prev_m__prev_v__count
+                    # g = filter_cond(count == 0, lambda g: g, lambda g: (1 - momentum) * g, grad)
+                    new_m = (
+                        momentum * prev_m
+                        + (1 - momentum) * grad * jnp.sign(param)
+                        + wd_forward(pr.learning_parameter.weight_decay.value)
                     )
-                    return jnp.exp(-lr_forward(pr.learning_parameter.learning_rate.value) * new_g), (new_g, count + 1)
+                    new_m_unbiased = new_m / (1 - momentum**count)
+                    new_v = 0.999 * prev_v + 0.001 * ((grad * jnp.sign(param)) ** 2)
+                    new_v_unbiased = new_v / (1 - 0.999**count)
+                    power = (
+                        -lr_forward(pr.learning_parameter.learning_rate.value)
+                        * new_m_unbiased
+                        / (jnp.sqrt(new_v_unbiased) + 1e-8)
+                    )
+
+                    return jnp.exp(power), (new_m, new_v, count + 1)
 
                 return optax.GradientTransformation(init_fn, update_fn)
 

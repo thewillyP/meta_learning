@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-5000,Epochs-1500,FashionMNIST,LSTM-128,SGD-Adam,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,FashionMNIST,MLP,SGD-EXP,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="98d0fa1aaea344ae8c9e842f415e27b0",  # Use the actual task ID
+    base_task_id="1457530c9f904449aa741ff28191629f",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -26,7 +26,7 @@ optimizer = HyperParameterOptimizer(
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
-        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-4, 1e-5]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-4]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
@@ -38,28 +38,28 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[1200]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[5000]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[5000]),
+        DiscreteParameterRange("config/num_base_epochs", values=[100]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
         # DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
         # DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
         # DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[28]),
         DiscreteParameterRange("config/learners/0/num_virtual_minibatches_per_turn", values=[1]),
-        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
+        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[500]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
         DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["02:00:00"]),
-        DiscreteParameterRange("slurm/cpu", values=[1]),
+        DiscreteParameterRange("slurm/time", values=["02:30:00"]),
+        DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["14GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),
         # gpu
-        DiscreteParameterRange("slurm/gpu", values=[1]),
-        DiscreteParameterRange("slurm/container_source/sif_path", values=["/scratch/wlp9800/images/devenv-gpu.sif"]),
+        # DiscreteParameterRange("slurm/gpu", values=[1]),
+        # DiscreteParameterRange("slurm/container_source/sif_path", values=["/scratch/wlp9800/images/devenv-gpu.sif"]),
     ],
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",

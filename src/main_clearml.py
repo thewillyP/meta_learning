@@ -117,8 +117,8 @@ def main():
                 num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(
-                learner=IdentityConfig(),
-                # learner=RTRLFiniteHvpConfig(epsilon=1e-3),
+                # learner=IdentityConfig(),
+                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
                 # learner=RTRLConfig(),
                 # optimizer=AdamConfig(
                 #     learning_rate=HyperparameterConfig(
@@ -135,7 +135,7 @@ def main():
                 # ),
                 optimizer=ExponentiatedGradientConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-4,
+                        value=5e-6,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -144,7 +144,7 @@ def main():
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
-                    momentum=0.6,
+                    momentum=0.9,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,

@@ -134,7 +134,7 @@ def main():
                 # ),
                 optimizer=ExponentiatedGradientConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-5,
+                        value=1e-4,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -143,7 +143,7 @@ def main():
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
-                    momentum=0.8,
+                    momentum=0.6,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,

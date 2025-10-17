@@ -52,9 +52,9 @@ def main():
         # dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
         dataset=MnistConfig(28),
-        num_base_epochs=300,
+        num_base_epochs=600,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=12324, data_seed=1, parameter_seed=1, test_seed=12345),
+        seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
         transition_function={
             # 0: GRULayer(
@@ -63,7 +63,7 @@ def main():
             #     use_bias=True,
             # ),
             # 0: LSTMLayer(
-            #     n=128,
+            #     n=32,
             #     use_bias=True,
             # ),
             0: NNLayer(
@@ -100,12 +100,12 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=0.01,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=1e-5,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
                     clip_threshold=1.0,
@@ -135,7 +135,7 @@ def main():
                 # ),
                 optimizer=ExponentiatedGradientConfig(
                     learning_rate=HyperparameterConfig(
-                        value=5e-6,
+                        value=1e-3,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),

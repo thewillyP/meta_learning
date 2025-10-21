@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-500,Epochs-600,MNIST,RNN-32,SGD-EXP,BPTT-ID",
+    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,MNIST,RNN-128-128,SGD-EXP,BPTT-ID",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="3edc739225de4ac1b00b8b1e0e03f229",  # Use the actual task ID
+    base_task_id="067608d9aad147a7b1035ecd47ff93d3",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -23,31 +23,31 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             [
-                0.001,
-                0.00316228,
-                0.01,
-                0.01772587,
-                0.03142065,
-                0.05569585,
-                0.09872575,
-                0.175,
-                0.22912878,
-                0.3,
+                0.0001,
+                0.00024341470225193326,
+                0.0005925071727239733,
+                0.001442249570307409,
+                0.0035106474972935666,
+                0.008545432152652082,
+                0.02080083823051906,
+                0.05063229844472428,
+                0.12324645850253584,
+                0.29999999999999993,
             ],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
             [
-                9.999999999999999e-06,
-                2.13166311653384e-05,
-                4.543987642390772e-05,
-                9.686250859269969e-05,
-                0.00020647823694200048,
-                0.00044014204205619737,
-                0.000938234557087083,
-                0.0020000000000000005,
-                0.00447213595499958,
-                0.01,
+                1e-06,
+                3.7594234926789444e-06,
+                1.4133264997306354e-05,
+                5.313292845913063e-05,
+                0.00019974917948408516,
+                0.0007509417579958128,
+                0.002823108086643088,
+                0.010613258863297928,
+                0.039899734704565266,
+                0.15,
             ],
         ),
         # dataset
@@ -57,23 +57,23 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[600]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[500]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[500]),
+        DiscreteParameterRange("config/num_base_epochs", values=[100]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
         # DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
         # DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
         # DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[28]),
         DiscreteParameterRange("config/learners/0/num_virtual_minibatches_per_turn", values=[1]),
-        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[100]),
+        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[500]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
         DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["03:30:00"]),
+        DiscreteParameterRange("slurm/time", values=["06:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
-        DiscreteParameterRange("slurm/memory", values=["14GB"]),
+        DiscreteParameterRange("slurm/memory", values=["12GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),
         # gpu
@@ -86,7 +86,7 @@ optimizer = HyperParameterOptimizer(
     max_number_of_concurrent_tasks=1950,
     optimizer_class=GridSearch,
     execution_queue="willyp",
-    total_max_jobs=100_000,
+    total_max_jobs=1,  # 100_000
 )
 
 # Start optimization

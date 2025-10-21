@@ -35,6 +35,10 @@ optimizer = HyperParameterOptimizer(
                 0.0001,
             ],
         ),
+        DiscreteParameterRange(
+            "config/learners/0/optimizer/weight_decay/value",
+            values=[1.0e-5],
+        ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[200]),

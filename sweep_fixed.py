@@ -71,7 +71,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["06:00:00"]),
+        DiscreteParameterRange("slurm/time", values=["01:30:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["12GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

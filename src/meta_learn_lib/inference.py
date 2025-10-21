@@ -104,7 +104,7 @@ def create_inference[ENV, DATA](
             x_history.append(readout_fn(env))
 
         readout_param = inference_interfaces[0].get_readout_param(env)
-        y = readout_param(jnp.concatenate(x_history, axis=-1))
+        y = readout_param((jnp.concatenate(x_history, axis=-1), data_interface.get_target(data)))
         return y
 
     transition_inference = eqx.filter_vmap(
@@ -178,3 +178,27 @@ def make_resets[ENV](
 
         _inferences[j] = reset_inference
     return _inferences
+
+
+"""
+recurrent VAEs
+
+the encoder will be part of teh transition. same as for sequential mnist I will output a mean and variance at each timestep,
+even if the latent variable is not used at each timestep. 
+
+but to support teacher forcing, I will also collect the input data as a list in addition to the hidden state. 
+so I need a new layer that just stores the input data at each timestep.
+
+the decoder will be part of readout. 
+
+
+honestly the encoder stays normal. 
+the decoder then first takes all the activations and the most recent data, at each timestep,
+and then samples the gaussian z. then it will run a readout rnn which is an unfoldr.
+tehnically it should be a fold but if over special data, assume its unfoldr. 
+
+now I just need to modify the readout to also accept the label as input, and then assume structure on label to be a tuple 
+that checks if you should use teacher forcing or not.
+
+
+"""

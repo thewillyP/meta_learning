@@ -52,7 +52,7 @@ def main():
         # dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
         dataset=MnistConfig(28),
-        num_base_epochs=600,
+        num_base_epochs=100,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -67,7 +67,12 @@ def main():
             #     use_bias=True,
             # ),
             0: NNLayer(
-                n=32,
+                n=128,
+                activation_fn="tanh",
+                use_bias=True,
+            ),
+            1: NNLayer(
+                n=128,
                 activation_fn="tanh",
                 use_bias=True,
             ),
@@ -83,6 +88,18 @@ def main():
         learners={
             0: LearnConfig(  # normal feedforward backprop
                 learner=BPTTConfig(),
+                # optimizer=AdamConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=1e-3,
+                #         learnable=True,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=1e-5,
+                #         learnable=True,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                # ),
                 # optimizer=SGDConfig(
                 #     learning_rate=HyperparameterConfig(
                 #         value=0.01,
@@ -98,18 +115,18 @@ def main():
                 # ),
                 optimizer=SGDClipConfig(
                     learning_rate=HyperparameterConfig(
-                        value=0.01,
+                        value=0.12,
                         learnable=True,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     weight_decay=HyperparameterConfig(
-                        value=1e-5,
+                        value=1e-8,
                         learnable=True,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
                     clip_threshold=1.0,
-                    clip_sharpness=1000.0,
+                    clip_sharpness=100.0,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,
@@ -135,7 +152,7 @@ def main():
                 # ),
                 optimizer=ExponentiatedGradientConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-3,
+                        value=1e-2,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -149,19 +166,19 @@ def main():
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=100,
+                num_virtual_minibatches_per_turn=500,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=83.333,
-                num_examples_in_minibatch=500,
+                num_examples_in_minibatch=100,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.667,
-                num_examples_in_minibatch=500,
+                num_examples_in_minibatch=100,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),

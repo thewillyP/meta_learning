@@ -243,3 +243,22 @@ class GodConfig:
     readout_uses_input_data: bool
     logger_config: tuple[Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig], ...]
     treat_inference_state_as_online: bool  # if true, influence tensors will be computed for inference state
+
+
+"""
+RL
+1. add FeedForwardConfig to transition function
+    - basically n_in is now whatever previous n_h was along with output size of final layer
+2. add option for transition functions to not output a hidden state. so zeros gets passed around
+3. add an identity readout where nontrainable just returns the n_h
+3.5. add an option to determine whether readout will use a transition's n_h or if it will just be ()
+4. add two new transition functions
+    - RL Get State --- will ignore previous n_h and output the state as n_h+. Then the next transition function is the policy that acts on the state.
+    - RL Step Env --- will take env state, previous policy's output, and output the next state and update it. 
+    so an example looks like
+    transition: (RL Get State, NNLayer, NNLayer, FeedForwardConfig (nonrecurrent), RL Step Env)
+    readout: should concatenate (t, (), (), (), (), reward) to be (t, reward) which then it can be identity operation on or gamma^t*reward or something
+    where t comes from actual data stream of integers that are timesteps. 
+
+
+"""

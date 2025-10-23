@@ -25,7 +25,7 @@ optimizer = HyperParameterOptimizer(
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-2]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-2]),
         # DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.9]),
         DiscreteParameterRange(

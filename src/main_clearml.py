@@ -51,31 +51,31 @@ def main():
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
-        dataset=MnistConfig(28),
-        num_base_epochs=100,
+        dataset=FashionMnistConfig(28),
+        num_base_epochs=500,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
         transition_function={
             # 0: GRULayer(
-            #     n=256,
+            #     n=128,
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            # 0: LSTMLayer(
-            #     n=32,
+            0: LSTMLayer(
+                n=128,
+                use_bias=True,
+            ),
+            # 0: NNLayer(
+            #     n=128,
+            #     activation_fn="tanh",
             #     use_bias=True,
             # ),
-            0: NNLayer(
-                n=128,
-                activation_fn="tanh",
-                use_bias=True,
-            ),
-            1: NNLayer(
-                n=128,
-                activation_fn="tanh",
-                use_bias=True,
-            ),
+            # 1: NNLayer(
+            #     n=128,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            # ),
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
@@ -100,34 +100,34 @@ def main():
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
                 # ),
-                # optimizer=SGDConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=0.01,
-                #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=1e-5,
-                #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     momentum=0.0,
-                # ),
-                optimizer=SGDClipConfig(
+                optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
-                        value=0.12,
+                        value=0.01,
                         learnable=True,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     weight_decay=HyperparameterConfig(
-                        value=1e-8,
+                        value=1e-3,
                         learnable=True,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
-                    clip_threshold=1.0,
-                    clip_sharpness=100.0,
                 ),
+                # optimizer=SGDClipConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=0.2,
+                #         learnable=True,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     momentum=0.0,
+                #     clip_threshold=1.0,
+                #     clip_sharpness=100.0,
+                # ),
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
@@ -135,7 +135,7 @@ def main():
             ),
             1: LearnConfig(
                 # learner=IdentityConfig(),
-                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
+                learner=RTRLFiniteHvpConfig(epsilon=1e-2),
                 # learner=RTRLConfig(),
                 # optimizer=AdamConfig(
                 #     learning_rate=HyperparameterConfig(
@@ -152,7 +152,7 @@ def main():
                 # ),
                 optimizer=ExponentiatedGradientConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-2,
+                        value=1e-3,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -166,19 +166,19 @@ def main():
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=500,
+                num_virtual_minibatches_per_turn=100,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=83.333,
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=500,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.667,
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=500,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),

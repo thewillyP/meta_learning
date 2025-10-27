@@ -50,8 +50,8 @@ def main():
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
-        # dataset=FashionMnistConfig(784),
-        dataset=FashionMnistConfig(28),
+        dataset=FashionMnistConfig(784),
+        # dataset=FashionMnistConfig(28),
         num_base_epochs=500,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=12345),
@@ -62,15 +62,15 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            0: LSTMLayer(
-                n=128,
-                use_bias=True,
-            ),
-            # 0: NNLayer(
+            # 0: LSTMLayer(
             #     n=128,
-            #     activation_fn="tanh",
             #     use_bias=True,
             # ),
+            0: NNLayer(
+                n=0,
+                activation_fn="tanh",
+                use_bias=True,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="tanh",
@@ -79,10 +79,10 @@ def main():
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
-                # 0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                0: NNLayer(n=10, activation_fn="identity", use_bias=True),
+                0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
+                3: NNLayer(n=10, activation_fn="identity", use_bias=True),
             }
         ),
         learners={
@@ -173,18 +173,18 @@ def main():
             0: DataConfig(
                 train_percent=83.333,
                 num_examples_in_minibatch=500,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.667,
                 num_examples_in_minibatch=500,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=False,
+        readout_uses_input_data=True,
         logger_config=(ClearMLLoggerConfig(),),
         treat_inference_state_as_online=False,
     )

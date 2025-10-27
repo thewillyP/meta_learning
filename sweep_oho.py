@@ -64,8 +64,8 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),
         # gpu
-        DiscreteParameterRange("slurm/gpu", values=[1]),
-        DiscreteParameterRange("slurm/container_source/sif_path", values=["/scratch/wlp9800/images/devenv-gpu.sif"]),
+        # DiscreteParameterRange("slurm/gpu", values=[1]),
+        # DiscreteParameterRange("slurm/container_source/sif_path", values=["/scratch/wlp9800/images/devenv-gpu.sif"]),
     ],
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",

@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-500,Epochs-500,FashionMNIST,LSTM-128,SGD-EXP,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-500,Epochs-500,FashionMNIST,MLP,SGD-EXP,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,12 +12,12 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="d49385180da442fc89754ba84d25e81f",  # Use the actual task ID
+    base_task_id="a7e8271344ff46c3a2a71bfd8d3e9e76",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
             "config/seed/global_seed",
-            values=[760, 202, 747, 995, 972, 579, 274, 283, 201, 480, 14, 530, 842, 774, 32, 471, 102, 104, 479, 789],
+            values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         # dataset

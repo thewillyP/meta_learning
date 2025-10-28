@@ -52,7 +52,7 @@ def main():
         # dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
         dataset=FashionMnistConfig(28),
-        num_base_epochs=500,
+        num_base_epochs=64,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -63,17 +63,18 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            # 0: LSTMLayer(
-            #     n=128,
-            #     use_bias=True,
-            # ),
-            0: NNLayer(
+            0: LSTMLayer(
                 n=128,
-                activation_fn="tanh",
                 use_bias=True,
                 use_in_readout=True,
-                layer_norm=LayerNorm(epsilon=1e-5, use_weight=True, use_bias=True),
             ),
+            # 0: NNLayer(
+            #     n=128,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            #     use_in_readout=True,
+            #     layer_norm=LayerNorm(epsilon=1e-5, use_weight=False, use_bias=False),
+            # ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="tanh",
@@ -162,7 +163,7 @@ def main():
             ),
             1: LearnConfig(
                 # learner=IdentityConfig(),
-                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
+                learner=RTRLFiniteHvpConfig(epsilon=1e-2),
                 # learner=RTRLConfig(),
                 # optimizer=AdamConfig(
                 #     learning_rate=HyperparameterConfig(
@@ -193,19 +194,19 @@ def main():
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=100,
+                num_virtual_minibatches_per_turn=375,
             ),
         },
         data={
             0: DataConfig(
-                train_percent=83.333,
-                num_examples_in_minibatch=500,
+                train_percent=80.0,
+                num_examples_in_minibatch=64,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=16.667,
-                num_examples_in_minibatch=500,
+                train_percent=20.0,
+                num_examples_in_minibatch=64,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),

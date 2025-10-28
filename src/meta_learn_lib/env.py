@@ -80,19 +80,24 @@ class CustomSequential(eqx.Module):
     model: eqx.nn.Sequential
 
     def __init__(
-        self, layer_defs: list[tuple[int, bool, Callable[[jax.Array], jax.Array]]], input_size: int, key: PRNG
+        self,
+        layer_defs: list[tuple[int, bool, Callable[[jax.Array], jax.Array], Optional[eqx.nn.LayerNorm]]],
+        input_size: int,
+        key: PRNG,
     ):
         layers = []
         in_size = input_size
         layer_keys = jax.random.split(key, len(layer_defs))
 
-        for (out_size, use_bias, activation), k in zip(layer_defs, layer_keys):
+        for (out_size, use_bias, activation, layer_norm), k in zip(layer_defs, layer_keys):
             linear = eqx.nn.Linear(in_size, out_size, use_bias=use_bias, key=k)
             new_weight = jax.random.normal(k, (out_size, in_size)) * jnp.sqrt(1 / in_size)
             new_bias = jnp.zeros((out_size,)) if use_bias else None
             where = lambda l: (l.weight, l.bias)
             new_linear = eqx.tree_at(where, linear, (new_weight, new_bias))
             layers.append(new_linear)
+            if layer_norm is not None:
+                layers.append(layer_norm)
             layers.append(eqx.nn.Lambda(activation))
             in_size = out_size
 
@@ -119,6 +124,7 @@ class LSTMState(PClass):
 class RNN(PClass):
     w_rec: jax.Array = field()
     b_rec: Optional[jax.Array] = field()
+    layer_norm: Optional[eqx.nn.LayerNorm] = field()
 
 
 class UOROState(PClass):
@@ -144,9 +150,9 @@ class LearningState(PClass):
 
 
 class InferenceParameter(PClass):
-    rnn: Optional[RNN] = field(serializer=deep_serialize)
-    gru: Optional[eqx.nn.GRUCell] = field()
-    lstm: Optional[eqx.nn.LSTMCell] = field()
+    rnn: Optional[RNN] = field(serializer=deep_serialize, initial=None)
+    gru: Optional[eqx.nn.GRUCell] = field(initial=None)
+    lstm: Optional[eqx.nn.LSTMCell] = field(initial=None)
 
 
 class InferenceState(PClass):

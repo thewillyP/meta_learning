@@ -37,10 +37,10 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
     n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
-            case NNLayer(n_h, activation_fn, use_bias):
+            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm):
                 prng1, prng = jax.random.split(prng, 2)
-                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                activation = ACTIVATION(jnp.zeros((n_h,)))
+                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                # activation = ACTIVATION(jnp.zeros((n_h,)))
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -54,10 +54,10 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                     ),
                 )
                 n_in = n_h  # Update n_in for the next layer
-            case GRULayer(n_h, use_bias):
+            case GRULayer(n_h, use_bias, use_in_readout):
                 prng1, prng = jax.random.split(prng, 2)
-                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                activation = ACTIVATION(jnp.zeros((n_h,)))
+                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                # activation = ACTIVATION(jnp.zeros((n_h,)))
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -71,12 +71,12 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                     ),
                 )
                 n_in = n_h
-            case LSTMLayer(n_h, use_bias):
+            case LSTMLayer(n_h, use_bias, use_in_readout):
                 prng1, prng2, prng = jax.random.split(prng, 3)
-                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                # cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
-                activation = ACTIVATION(jnp.zeros((n_h,)))
-                cell = ACTIVATION(jnp.zeros((n_h,)))
+                activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
+                # activation = ACTIVATION(jnp.zeros((n_h,)))
+                # cell = ACTIVATION(jnp.zeros((n_h,)))
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -85,6 +85,14 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                     ),
                 )
                 n_in = n_h
+            case IdentityLayer():
+                transition_state = transition_state.set(
+                    i,
+                    InferenceState(
+                        rnn=None,
+                        lstm=None,
+                    ),
+                )
             case _:
                 raise ValueError("Unsupported transition function")
     return transition_state
@@ -96,37 +104,49 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
     n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
-            case NNLayer(n_h, activation_fn, use_bias):
+            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm):
                 prgn1, prng2, prng = jax.random.split(prng, 3)
                 W_in = jax.random.normal(prgn1, (n_h, n_in)) * jnp.sqrt(1 / n_in)
                 W_rec = jnp.linalg.qr(jax.random.normal(prng2, (n_h, n_h)))[0]
                 w_rec = jnp.hstack([W_rec, W_in])
                 b_rec: jax.Array | None = jnp.zeros((n_h,)) if use_bias else None
+                match layer_norm:
+                    case LayerNorm(epsilon, use_weight, use_bias):
+                        layer = eqx.nn.LayerNorm(n_h, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
+                    case None:
+                        layer = None
+
                 transition_parameter = transition_parameter.set(
                     i,
                     InferenceParameter(
                         rnn=RNN(
                             w_rec=w_rec,
                             b_rec=b_rec,
+                            layer_norm=layer,
                         ),
                         gru=None,
                         lstm=None,
                     ),
                 )
-                n_in_size += n_h
+                if use_in_readout:
+                    n_in_size += n_h
                 n_in = n_h  # Update n_in for the next layer
-            case GRULayer(n_h, use_bias):
+            case GRULayer(n_h, use_bias, use_in_readout):
                 prng1, prng = jax.random.split(prng, 2)
                 gru = eqx.nn.GRUCell(n_in, n_h, use_bias=use_bias, key=prng1)
                 transition_parameter = transition_parameter.set(i, InferenceParameter(gru=gru, rnn=None, lstm=None))
-                n_in_size += n_h
+                if use_in_readout:
+                    n_in_size += n_h
                 n_in = n_h
-            case LSTMLayer(n_h, use_bias):
+            case LSTMLayer(n_h, use_bias, use_in_readout):
                 prng1, prng = jax.random.split(prng, 2)
                 lstm = eqx.nn.LSTMCell(n_in, n_h, use_bias=use_bias, key=prng1)
                 transition_parameter = transition_parameter.set(i, InferenceParameter(lstm=lstm, rnn=None, gru=None))
-                n_in_size += n_h
+                if use_in_readout:
+                    n_in_size += n_h
                 n_in = n_h
+            case IdentityLayer():
+                pass
             case _:
                 raise ValueError("Unsupported transition function")
 
@@ -137,8 +157,14 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
             n_in_size += data_in
             for i, layer in ffw_layers.items():
                 match layer:  # purely for pattern matching, no other case should actually exist
-                    case NNLayer(n, activation_fn, use_bias):
-                        layers.append((n, use_bias, get_activation_fn(activation_fn)))
+                    case NNLayer(n, activation_fn, use_bias, use_in_readout, layer_norm):
+                        match layer_norm:
+                            case LayerNorm(epsilon, use_weight, use_bias):
+                                layer = eqx.nn.LayerNorm(n, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
+                            case None:
+                                layer = None
+
+                        layers.append((n, use_bias, get_activation_fn(activation_fn), layer))
             prng1, prng = jax.random.split(prng, 2)
             readout_fn = CustomSequential(layers, n_in_size, prng1)
         case _:

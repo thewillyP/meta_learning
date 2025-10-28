@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal, Union
+from typing import Literal, Optional, Union
 
 
 @dataclass(frozen=True)
@@ -185,22 +185,39 @@ class LearnConfig:
 
 
 @dataclass(frozen=True)
+class LayerNorm:
+    epsilon: float
+    use_weight: bool
+    use_bias: bool
+
+
+@dataclass(frozen=True)
 class NNLayer:
     n: int
     activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
     use_bias: bool
+    use_in_readout: bool
+    layer_norm: Optional[LayerNorm]
 
 
 @dataclass(frozen=True)
 class GRULayer:
     n: int
     use_bias: bool
+    use_in_readout: bool
 
 
 @dataclass(frozen=True)
 class LSTMLayer:
     n: int
     use_bias: bool
+    use_in_readout: bool
+
+
+@dataclass(frozen=True)
+class IdentityLayer:
+    # no learnable parameters, just applies the activation function
+    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
 
 
 @dataclass(frozen=True)
@@ -235,7 +252,7 @@ class GodConfig:
     checkpoint_every_n_minibatches: int
     seed: SeedConfig
     loss_fn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
-    transition_function: dict[int, Union[NNLayer, GRULayer, LSTMLayer]]  # if len()>1 creates stacked recurrence.
+    transition_function: dict[int, Union[NNLayer, GRULayer, LSTMLayer, IdentityLayer]]
     readout_function: Union[FeedForwardConfig]
     learners: dict[int, LearnConfig]
     data: dict[int, DataConfig]

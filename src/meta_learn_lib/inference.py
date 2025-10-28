@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from meta_learn_lib.config import GRULayer, GodConfig, LSTMLayer, NNLayer
+from meta_learn_lib.config import GRULayer, GodConfig, IdentityLayer, LSTMLayer, NNLayer
 from meta_learn_lib.interface import ClassificationInterface, GeneralInterface, InferenceInterface, LearnInterface
 from meta_learn_lib.lib_types import PRNG, batched, traverse
 from meta_learn_lib.util import filter_cond, get_activation_fn
@@ -34,7 +34,7 @@ def create_inference[ENV, DATA](
     readout_functions: list[Callable[[ENV], jax.Array]] = []
     for i, (_, fn) in enumerate(sorted(config.transition_function.items())):
         match fn:
-            case NNLayer():
+            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm):
                 # If I really wanted to, I would separate this with a agnostic interface as input
                 def rnn_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
                     rnn = inference_interfaces[i].get_rnn_param(env)
@@ -42,17 +42,25 @@ def create_inference[ENV, DATA](
                     alpha = inference_interfaces[i].get_rflo_timeconstant(env)
                     a = rnn_state.activation
                     a_rec = rnn.w_rec @ jnp.concat((a, data)) + (rnn.b_rec if rnn.b_rec is not None else 0)
+                    if rnn.layer_norm is not None:
+                        a_rec = rnn.layer_norm(a_rec)
                     a_new = (1 - alpha) * a + alpha * get_activation_fn(rnn_state.activation_fn)(a_rec)
                     new_env = inference_interfaces[i].put_rnn_state(env, rnn_state.set(activation=a_new))
                     return new_env, a_new
 
-                def rnn_readout(env: ENV, i=i) -> jax.Array:
-                    rnn_state = inference_interfaces[i].get_rnn_state(env)
-                    return rnn_state.activation
+                if use_in_readout:
+
+                    def rnn_readout(env: ENV, i=i) -> jax.Array:
+                        rnn_state = inference_interfaces[i].get_rnn_state(env)
+                        return rnn_state.activation
+                else:
+
+                    def rnn_readout(env: ENV, i=i) -> jax.Array:
+                        return jnp.array([])
 
                 transition_functions.append(rnn_transition)
                 readout_functions.append(rnn_readout)
-            case GRULayer():
+            case GRULayer(n_h, use_bias, use_in_readout):
 
                 def gru_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
                     gru = inference_interfaces[i].get_gru_param(env)
@@ -64,14 +72,20 @@ def create_inference[ENV, DATA](
                     new_env = inference_interfaces[i].put_rnn_state(env, rnn_state.set(activation=a_new))
                     return new_env, a_new
 
-                def gru_readout(env: ENV, i=i) -> jax.Array:
-                    rnn_state = inference_interfaces[i].get_rnn_state(env)
-                    return rnn_state.activation
+                if use_in_readout:
+
+                    def gru_readout(env: ENV, i=i) -> jax.Array:
+                        rnn_state = inference_interfaces[i].get_rnn_state(env)
+                        return rnn_state.activation
+                else:
+
+                    def gru_readout(env: ENV, i=i) -> jax.Array:
+                        return jnp.array([])
 
                 transition_functions.append(gru_transition)
                 readout_functions.append(gru_readout)
 
-            case LSTMLayer():
+            case LSTMLayer(n_h, use_bias, use_in_readout):
 
                 def lstm_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
                     lstm = inference_interfaces[i].get_lstm_param(env)
@@ -84,12 +98,33 @@ def create_inference[ENV, DATA](
                     new_env = inference_interfaces[i].put_lstm_state(env, lstm_state.set(h=h_new, c=c_new))
                     return new_env, h_new
 
-                def lstm_readout(env: ENV, i=i) -> jax.Array:
-                    lstm_state = inference_interfaces[i].get_lstm_state(env)
-                    return lstm_state.h
+                if use_in_readout:
+
+                    def lstm_readout(env: ENV, i=i) -> jax.Array:
+                        lstm_state = inference_interfaces[i].get_lstm_state(env)
+                        return lstm_state.h
+
+                else:
+
+                    def lstm_readout(env: ENV, i=i) -> jax.Array:
+                        return jnp.array([])
 
                 transition_functions.append(lstm_transition)
                 readout_functions.append(lstm_readout)
+
+            case IdentityLayer(activation_fn):
+
+                def identity_transition(
+                    env: ENV, data: jax.Array, activation_fn=activation_fn, i=i
+                ) -> tuple[ENV, jax.Array]:
+                    x = get_activation_fn(activation_fn)(data)
+                    return env, x
+
+                def identity_readout(env: ENV, i=i) -> jax.Array:
+                    return jnp.array([])
+
+                transition_functions.append(identity_transition)
+                readout_functions.append(identity_readout)
 
     def transition_inference_step(env: ENV, data: DATA) -> ENV:
         x = data_interface.get_input(data)

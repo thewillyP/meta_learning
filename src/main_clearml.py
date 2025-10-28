@@ -50,13 +50,14 @@ def main():
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
-        dataset=FashionMnistConfig(784),
-        # dataset=FashionMnistConfig(28),
+        # dataset=FashionMnistConfig(784),
+        dataset=FashionMnistConfig(28),
         num_base_epochs=500,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
         transition_function={
+            # 0: IdentityLayer(activation_fn="identity"),
             # 0: GRULayer(
             #     n=128,
             #     # activation_fn="tanh",
@@ -67,9 +68,11 @@ def main():
             #     use_bias=True,
             # ),
             0: NNLayer(
-                n=0,
+                n=128,
                 activation_fn="tanh",
                 use_bias=True,
+                use_in_readout=True,
+                layer_norm=LayerNorm(epsilon=1e-5, use_weight=True, use_bias=True),
             ),
             # 1: NNLayer(
             #     n=128,
@@ -79,10 +82,34 @@ def main():
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
-                0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                3: NNLayer(n=10, activation_fn="identity", use_bias=True),
+                # 0: NNLayer(
+                #     n=128,
+                #     activation_fn="tanh",
+                #     use_bias=True,
+                #     use_in_readout=False,
+                #     layer_norm=LayerNorm(epsilon=1e-5, use_weight=True, use_bias=True),
+                # ),
+                # 1: NNLayer(
+                #     n=128,
+                #     activation_fn="tanh",
+                #     use_bias=True,
+                #     use_in_readout=False,
+                #     layer_norm=LayerNorm(epsilon=1e-5, use_weight=True, use_bias=True),
+                # ),
+                # 2: NNLayer(
+                #     n=128,
+                #     activation_fn="tanh",
+                #     use_bias=True,
+                #     use_in_readout=False,
+                #     layer_norm=LayerNorm(epsilon=1e-5, use_weight=True, use_bias=True),
+                # ),
+                0: NNLayer(
+                    n=10,
+                    activation_fn="identity",
+                    use_bias=True,
+                    use_in_readout=False,
+                    layer_norm=None,
+                ),
             }
         ),
         learners={
@@ -135,7 +162,7 @@ def main():
             ),
             1: LearnConfig(
                 # learner=IdentityConfig(),
-                learner=RTRLFiniteHvpConfig(epsilon=1e-2),
+                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
                 # learner=RTRLConfig(),
                 # optimizer=AdamConfig(
                 #     learning_rate=HyperparameterConfig(
@@ -173,18 +200,18 @@ def main():
             0: DataConfig(
                 train_percent=83.333,
                 num_examples_in_minibatch=500,
-                num_steps_in_timeseries=1,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.667,
                 num_examples_in_minibatch=500,
-                num_steps_in_timeseries=1,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=True,
+        readout_uses_input_data=False,
         logger_config=(ClearMLLoggerConfig(),),
         treat_inference_state_as_online=False,
     )
@@ -201,7 +228,7 @@ def main():
             HyperparameterConfig.squared,
         ],
     )
-    setup_flattened_union(converter, Union[NNLayer, GRULayer, LSTMLayer])
+    setup_flattened_union(converter, Union[NNLayer, GRULayer, LSTMLayer, IdentityLayer])
     setup_flattened_union(
         converter,
         Union[

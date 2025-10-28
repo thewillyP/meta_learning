@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-500,Epochs-500,FashionMNIST,MLP,SGD-EXP,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-500,Epochs-500,FashionMNIST,RNN-128,SGD-EXP,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="a7e8271344ff46c3a2a71bfd8d3e9e76",  # Use the actual task ID
+    base_task_id="4d457f8a97fe42e4928a272dca23c2cc",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -25,7 +25,7 @@ optimizer = HyperParameterOptimizer(
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-2]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1.0e-3, 1.0e-4]),
         # DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.9]),
         DiscreteParameterRange(
@@ -64,8 +64,8 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),
         # gpu
-        # DiscreteParameterRange("slurm/gpu", values=[1]),
-        # DiscreteParameterRange("slurm/container_source/sif_path", values=["/scratch/wlp9800/images/devenv-gpu.sif"]),
+        DiscreteParameterRange("slurm/gpu", values=[1]),
+        DiscreteParameterRange("slurm/container_source/sif_path", values=["/scratch/wlp9800/images/devenv-gpu.sif"]),
     ],
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",

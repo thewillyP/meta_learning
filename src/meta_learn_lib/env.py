@@ -141,6 +141,7 @@ class LearningParameter(PClass):
     learning_rate: Optional[Hyperparameter] = field()
     weight_decay: Optional[Hyperparameter] = field()
     rflo_timeconstant: Optional[float] = field()
+    multiple_parameters: Optional[tuple["LearningParameter", ...]] = field()
 
 
 class LearningState(PClass):
@@ -167,8 +168,12 @@ class General(PClass):
     special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
 
 
+class TransitionParameter(PClass):
+    param: PMap[int, InferenceParameter] = field(serializer=deep_serialize)
+
+
 class Parameter(PClass):
-    transition_parameter: Optional[PMap[int, InferenceParameter]] = field(serializer=deep_serialize)
+    transition_parameter: Optional[TransitionParameter] = field(serializer=deep_serialize)
     readout_fn: Optional[CustomSequential] = field()
     learning_parameter: Optional[LearningParameter] = field(serializer=deep_serialize)
 
@@ -197,6 +202,7 @@ register_pytree(LSTMState, {"n_h", "n_in"})
 register_pytree(RNN, set())
 register_pytree(UOROState, set())
 register_pytree(LearningParameter, {"rflo_timeconstant"})
+register_pytree(TransitionParameter, set())
 
 # Register container types that depend on leaf types
 register_pytree(InferenceParameter, set())

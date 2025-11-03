@@ -127,9 +127,9 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
             get_param=lambda env, i=j: obtain_param(env, i),
             put_param=lambda env, param, i=j: place_param(env, param, i),
             get_sgd_param=lambda env, i=j: env.parameters[i + 1].learning_parameter.learning_rate,
-            get_optimizer=lambda env, i=j, _lc=learn_config: get_optimizer(_lc, lambda p: vector_to_param(env, p, i))(
-                env.parameters[i + 1]
-            ),
+            get_optimizer=lambda env, i=j, _lc=learn_config: get_optimizer(
+                _lc.optimizer, lambda p: vector_to_param(env, p, i)
+            )(env.parameters[i + 1].learning_parameter),
             get_updater=get_updater(learn_config),
             get_opt_state=lambda env, i=j: env.learning_states[i].opt_state,
             put_opt_state=lambda env, opt_state, i=j: env.transform(
@@ -254,13 +254,13 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
                 put_rnn_state=lambda env, rnn_state, i=j, l=k: env.transform(
                     ["inference_states", i, l, "rnn"], lambda _: rnn_state
                 ),
-                get_rnn_param=lambda env, l=k: env.parameters[0].transition_parameter[l].rnn,
+                get_rnn_param=lambda env, l=k: env.parameters[0].transition_parameter.param[l].rnn,
                 get_lstm_state=lambda env, i=j, l=k: env.inference_states[i][l].lstm,
                 put_lstm_state=lambda env, lstm_state, i=j, l=k: env.transform(
                     ["inference_states", i, l, "lstm"], lambda _: lstm_state
                 ),
-                get_lstm_param=lambda env, l=k: env.parameters[0].transition_parameter[l].lstm,
-                get_gru_param=lambda env, l=k: env.parameters[0].transition_parameter[l].gru,
+                get_lstm_param=lambda env, l=k: env.parameters[0].transition_parameter.param[l].lstm,
+                get_gru_param=lambda env, l=k: env.parameters[0].transition_parameter.param[l].gru,
             )
             interpreters.setdefault(j, {})[k] = interpreter
 

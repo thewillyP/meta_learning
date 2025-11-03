@@ -22,6 +22,7 @@ from meta_learn_lib.env import (
     Parameter,
     RNNState,
     SpecialLogs,
+    TransitionParameter,
     UOROState,
 )
 from meta_learn_lib.interface import LearnInterface
@@ -170,14 +171,18 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
         case _:
             raise ValueError("Unsupported readout function")
 
-    return Parameter(transition_parameter=transition_parameter, readout_fn=readout_fn, learning_parameter=None)
+    return Parameter(
+        transition_parameter=TransitionParameter(param=transition_parameter),
+        readout_fn=readout_fn,
+        learning_parameter=None,
+    )
 
 
-def create_learning_parameter(
-    learn_config: LearnConfig,
-) -> LearningParameter:
-    parameter = LearningParameter(learning_rate=None, weight_decay=None, rflo_timeconstant=None)
-    match learn_config.optimizer:
+def create_optimizer_parameter(optimizer: Optimizer) -> LearningParameter:
+    parameter = LearningParameter(
+        learning_rate=None, weight_decay=None, rflo_timeconstant=None, multiple_parameters=None
+    )
+    match optimizer:
         case (
             SGDConfig() | SGDNormalizedConfig() | SGDClipConfig() | AdamConfig() | ExponentiatedGradientConfig() as opt
         ):
@@ -193,6 +198,16 @@ def create_learning_parameter(
                     learnable=opt.weight_decay.learnable,
                 ),
             )
+        case RecurrenceConfig(recurrence_optimizer, out_optimizer):
+            recurrence_param = create_optimizer_parameter(recurrence_optimizer)
+            out_param = create_optimizer_parameter(out_optimizer)
+            parameter = parameter.set(multiple_parameters=(recurrence_param, out_param))
+
+    return parameter
+
+
+def create_learning_parameter(learn_config: LearnConfig) -> LearningParameter:
+    parameter = create_optimizer_parameter(learn_config.optimizer)
 
     match learn_config.learner:
         case RFLOConfig(time_constant):

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional, Union
 
@@ -165,6 +166,17 @@ class ExponentiatedGradientConfig:
 
 
 @dataclass(frozen=True)
+class RecurrenceConfig:
+    recurrent_optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig, ExponentiatedGradientConfig]
+    readout_optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig, ExponentiatedGradientConfig]
+
+
+type Optimizer = Union[
+    SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig, ExponentiatedGradientConfig, RecurrenceConfig
+]
+
+
+@dataclass(frozen=True)
 class DataConfig:
     train_percent: float  # % data devote to learn, meta 1 validation, meta 2 validation, etc
     num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
@@ -177,7 +189,7 @@ class LearnConfig:
     learner: Union[
         RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
     ]
-    optimizer: Union[SGDConfig, SGDNormalizedConfig, SGDClipConfig, AdamConfig, ExponentiatedGradientConfig]
+    optimizer: Optimizer
     lanczos_iterations: int
     track_logs: bool
     track_special_logs: bool

@@ -177,8 +177,10 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         vl_acc = metric_fn(vl_acc, axis=2)
         te_loss = metric_fn(te_loss, axis=1)
         te_acc = metric_fn(te_acc, axis=1)
-        lrs = lrs[:, :, -1]
-        wds = wds[:, :, -1]
+        lrs1 = lrs[0][:, :, -1]
+        lrs2 = lrs[1][:, :, -1]
+        wds1 = wds[0][:, :, -1]
+        wds2 = wds[1][:, :, -1]
         meta_grs = meta_grs[:, :, -1]
 
         jax.block_until_ready(env)
@@ -206,17 +208,33 @@ def runApp(config: GodConfig, logger: Logger) -> None:
                     )
                     logger.log_scalar(
                         context,
-                        "train/learning_rate",
-                        "train_learning_rate",
-                        lrs[i, j][0],
+                        "train/recurrent_learning_rate",
+                        "train_recurrent_learning_rate",
+                        lrs1[i, j][0],
                         iteration,
                         total_tr_vb * config.num_base_epochs,
                     )
                     logger.log_scalar(
                         context,
-                        "train/weight_decay",
-                        "train_weight_decay",
-                        wds[i, j][0],
+                        "train/readout_learning_rate",
+                        "train_readout_learning_rate",
+                        lrs2[i, j][0],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "train/recurrent_weight_decay",
+                        "train_recurrent_weight_decay",
+                        wds1[i, j][0],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+                    logger.log_scalar(
+                        context,
+                        "train/readout_weight_decay",
+                        "train_readout_weight_decay",
+                        wds2[i, j][0],
                         iteration,
                         total_tr_vb * config.num_base_epochs,
                     )

@@ -17,9 +17,9 @@ from meta_learn_lib.config import (
     RTRLHessianDecompConfig,
     UOROConfig,
 )
-from meta_learn_lib.env import Logs
+from meta_learn_lib.env import Logs, UOROState
 from meta_learn_lib.interface import GeneralInterface, LearnInterface
-from meta_learn_lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, batched, traverse
+from meta_learn_lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, traverse
 from meta_learn_lib.util import filter_cond, jacobian_matrix_product, to_vector
 
 
@@ -123,6 +123,118 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             _, new_influence_tensor, (_env, tr_stat) = jacobian_matrix_product(
                 state_fn, s__p_vector.vector, state_jacobian
             )
+            new_influence_tensor = JACOBIAN(new_influence_tensor)
+            vl_stat, credit_gr = readout_gr(_env, get_vl(data))
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
+            grad = credit_assignment + output_gr
+
+            _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+            _arr, _ = eqx.partition(_env, eqx.is_array)
+            return _arr, (grad, tr_stat + vl_stat)
+
+        _env, (grads, stats) = jax.lax.scan(step, arr, ds.d)
+        env = eqx.combine(_env, static)
+        return env, stats, GRADIENT(jnp.sum(grads, axis=0))
+
+    return gradient_fn
+
+
+def uoro[ENV, TR_DATA, VL_DATA, DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, tuple[STAT, ...]]],
+    readout: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], LOSS]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], GRADIENT]],
+    learn_interface: LearnInterface[ENV],
+    get_tr: Callable[[DATA], TR_DATA],
+    get_vl: Callable[[DATA], VL_DATA],
+    std: float,
+) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+        arr, static = eqx.partition(env, eqx.is_array)
+        state_shape = learn_interface.get_state(env).shape
+        distribution = lambda key: jax.random.uniform(key, state_shape, minval=-std, maxval=std)
+        # distribution = lambda key: jax.random.normal(key, state_shape) * std
+
+        def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
+            _env = eqx.combine(_arr, static)
+            key, _env = learn_interface.get_prng(_env)
+            random_vector = distribution(key)
+            uoro = learn_interface.get_uoro(_env)
+
+            s = learn_interface.get_state(_env)
+            p = learn_interface.get_param(_env)
+
+            def state_fn(state: jax.Array) -> jax.Array:
+                __env = learn_interface.put_state(_env, state)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                return state
+
+            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+                __env = learn_interface.put_param(_env, param)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                return state, (__env, stat)
+
+            immediateJacobian__A_projection = eqx.filter_jvp(state_fn, (s,), (uoro.A,))[1]
+            _, vjp_func, (_env, tr_stat) = eqx.filter_vjp(param_fn, p, has_aux=True)
+            (immediateInfluence__Random_projection,) = vjp_func(random_vector)
+
+            rho0 = jnp.sqrt(jnp.linalg.norm(uoro.B) / jnp.linalg.norm(immediateJacobian__A_projection))
+            rho1 = jnp.sqrt(jnp.linalg.norm(immediateInfluence__Random_projection) / jnp.linalg.norm(random_vector))
+
+            A_new = rho0 * immediateJacobian__A_projection + rho1 * random_vector
+            B_new = uoro.B / rho0 + immediateInfluence__Random_projection / rho1
+
+            vl_stat, credit_gr = readout_gr(_env, get_vl(data))
+            credit_assignment = GRADIENT((credit_gr @ A_new) * B_new)
+            output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
+            grad = credit_assignment + output_gr
+
+            _env = learn_interface.put_uoro(_env, UOROState(A=A_new, B=B_new))
+            _arr, _ = eqx.partition(_env, eqx.is_array)
+            return _arr, (grad, tr_stat + vl_stat)
+
+        _env, (grads, stats) = jax.lax.scan(step, arr, ds.d)
+        env = eqx.combine(_env, static)
+        return env, stats, GRADIENT(jnp.sum(grads, axis=0))
+
+    return gradient_fn
+
+
+def rflo[ENV, TR_DATA, VL_DATA, DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, tuple[STAT, ...]]],
+    readout: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], LOSS]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], GRADIENT]],
+    learn_interface: LearnInterface[ENV],
+    get_tr: Callable[[DATA], TR_DATA],
+    get_vl: Callable[[DATA], VL_DATA],
+    time_constant: float,
+) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+        arr, static = eqx.partition(env, eqx.is_array)
+
+        def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
+            _env = eqx.combine(_arr, static)
+
+            p = learn_interface.get_param(_env)
+
+            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+                __env = learn_interface.put_param(_env, param)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                __arr, _ = eqx.partition(__env, eqx.is_array)
+                return state, (__arr, stat)
+
+            influence_tensor = learn_interface.get_influence_tensor(_env)
+            immediate_influence, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
+            _env = eqx.combine(_arr, static)
+            new_influence_tensor = (1 - time_constant) * influence_tensor + time_constant * immediate_influence
+
+            rflo_t = learn_interface.get_rflo_t(_env)
+            _env = learn_interface.put_rflo_t(_env, rflo_t + 1)
+            new_influence_tensor = new_influence_tensor / (1 - ((1 - time_constant) ** (rflo_t)))
+
             new_influence_tensor = JACOBIAN(new_influence_tensor)
             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
             credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
@@ -537,10 +649,48 @@ def create_meta_learner[ENV, DATA](
                         lambda x: x,
                         lambda x: (x, mask),
                     )(env, tr_data)
-            case RFLOConfig():
-                ...
-            case UOROConfig():
-                ...
+            case RFLOConfig(time_constant):
+
+                def _learner(
+                    env: ENV,
+                    data: tuple[traverse[DATA], jax.Array],
+                    transition_fn=transition_fn,
+                    statistic_fn=statistic_fn,
+                    readout_gr=readout_gr,
+                    learn_interface=learn_interface,
+                    time_constant=time_constant,
+                ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+                    tr_data, mask = data
+                    return rflo(
+                        lambda e, d: (transition_fn(e, d), ()),
+                        statistic_fn,
+                        readout_gr,
+                        learn_interface,
+                        lambda x: x,
+                        lambda x: (x, mask),
+                        time_constant,
+                    )(env, tr_data)
+            case UOROConfig(std):
+
+                def _learner(
+                    env: ENV,
+                    data: tuple[traverse[DATA], jax.Array],
+                    transition_fn=transition_fn,
+                    statistic_fn=statistic_fn,
+                    readout_gr=readout_gr,
+                    learn_interface=learn_interface,
+                    std=std,
+                ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+                    tr_data, mask = data
+                    return uoro(
+                        lambda e, d: (transition_fn(e, d), ()),
+                        statistic_fn,
+                        readout_gr,
+                        learn_interface,
+                        lambda x: x,
+                        lambda x: (x, mask),
+                        std,
+                    )(env, tr_data)
 
         learner = average_gradients(
             gr_fn=_learner,
@@ -606,10 +756,26 @@ def create_meta_learner[ENV, DATA](
                 _learner = bptt(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
             case IdentityConfig():
                 _learner = identity(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
-            case RFLOConfig():
-                ...
-            case UOROConfig():
-                ...
+            case RFLOConfig(time_constant):
+                _learner = rflo(
+                    learner0,
+                    vl_readout,
+                    vl_readout_gr,
+                    learn_interface,
+                    lambda x: x[0],
+                    lambda x: x[1],
+                    time_constant,
+                )
+            case UOROConfig(std):
+                _learner = uoro(
+                    learner0,
+                    vl_readout,
+                    vl_readout_gr,
+                    learn_interface,
+                    lambda x: x[0],
+                    lambda x: x[1],
+                    std,
+                )
 
         learner0 = optimization(_learner, learn_interface, general_interface)
 

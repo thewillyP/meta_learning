@@ -208,7 +208,7 @@ def create_learning_state(
     learn_interface: LearnInterface[GodState],
     prng: PRNG,
 ) -> LearningState:
-    state = LearningState(influence_tensor=None, uoro=None, opt_state=None)
+    state = LearningState(influence_tensor=None, uoro=None, opt_state=None, rflo_t=None)
     flat_state = learn_interface.get_state(env)
     flat_param = filter_hyperparam(parameter)
     match learn_config.learner:
@@ -244,6 +244,10 @@ def create_learning_state(
             ...
         case IdentityConfig():
             ...
+
+    match learn_config.learner:
+        case RFLOConfig():
+            state = state.set(rflo_t=jax.lax.stop_gradient(jnp.array(1)))
 
     _opt = learn_interface.get_optimizer(env)
     if _opt is not None:

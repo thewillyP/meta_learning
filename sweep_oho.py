@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-64,Epochs-64,FashionMNIST,LSTM-128,SGD-EXP,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-64,Epochs-64,FashionMNIST,LSTM-32,SGD-ADAM,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="dbc0bcdd928544c59e93358f9b1eb80b",  # Use the actual task ID
+    base_task_id="3c188f2458364c34a2ff0461a3e61036",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -25,19 +25,25 @@ optimizer = HyperParameterOptimizer(
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-2]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1.0e-3, 1.0e-4]),
         # DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.9]),
         DiscreteParameterRange(
-            "config/learners/0/optimizer/learning_rate/value",
+            "config/learners/0/optimizer/recurrent_optimizer/learning_rate/value",
             values=[
                 0.01,
             ],
         ),
         DiscreteParameterRange(
-            "config/learners/0/optimizer/weight_decay/value",
-            values=[1.0e-3],
+            "config/learners/0/optimizer/readout_optimizer/learning_rate/value",
+            values=[
+                0.01,
+            ],
         ),
+        # DiscreteParameterRange(
+        #     "config/learners/0/optimizer/weight_decay/value",
+        #     values=[1.0e-3],
+        # ),
         # DiscreteParameterRange(
         #     "config/learners/0/optimizer/weight_decay/learnable",
         #     values=[False],

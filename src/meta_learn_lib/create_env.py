@@ -38,10 +38,12 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
     n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
-            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm):
+            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm, use_random_init):
                 prng1, prng = jax.random.split(prng, 2)
-                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                activation = ACTIVATION(jnp.zeros((n_h,)))
+                if use_random_init:
+                    activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                else:
+                    activation = ACTIVATION(jnp.zeros((n_h,)))
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -55,10 +57,13 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                     ),
                 )
                 n_in = n_h  # Update n_in for the next layer
-            case GRULayer(n_h, use_bias, use_in_readout):
+            case GRULayer(n_h, use_bias, use_in_readout, use_random_init):
                 prng1, prng = jax.random.split(prng, 2)
-                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                activation = ACTIVATION(jnp.zeros((n_h,)))
+                if use_random_init:
+                    activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                else:
+                    activation = ACTIVATION(jnp.zeros((n_h,)))
+
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -72,12 +77,15 @@ def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> 
                     ),
                 )
                 n_in = n_h
-            case LSTMLayer(n_h, use_bias, use_in_readout):
+            case LSTMLayer(n_h, use_bias, use_in_readout, use_random_init):
                 prng1, prng2, prng = jax.random.split(prng, 3)
-                # activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                # cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
-                activation = ACTIVATION(jnp.zeros((n_h,)))
-                cell = ACTIVATION(jnp.zeros((n_h,)))
+                if use_random_init:
+                    activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
+                    cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
+                else:
+                    activation = ACTIVATION(jnp.zeros((n_h,)))
+                    cell = ACTIVATION(jnp.zeros((n_h,)))
+
                 transition_state = transition_state.set(
                     i,
                     InferenceState(
@@ -105,7 +113,7 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
     n_in, *_ = n_in_shape
     for i, transition_fn in config.transition_function.items():
         match transition_fn:
-            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm):
+            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm, use_random_init):
                 prgn1, prng2, prng = jax.random.split(prng, 3)
                 W_in = jax.random.normal(prgn1, (n_h, n_in)) * jnp.sqrt(1 / n_in)
                 W_rec = jnp.linalg.qr(jax.random.normal(prng2, (n_h, n_h)))[0]
@@ -132,14 +140,14 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
                 if use_in_readout:
                     n_in_size += n_h
                 n_in = n_h  # Update n_in for the next layer
-            case GRULayer(n_h, use_bias, use_in_readout):
+            case GRULayer(n_h, use_bias, use_in_readout, use_random_init):
                 prng1, prng = jax.random.split(prng, 2)
                 gru = eqx.nn.GRUCell(n_in, n_h, use_bias=use_bias, key=prng1)
                 transition_parameter = transition_parameter.set(i, InferenceParameter(gru=gru, rnn=None, lstm=None))
                 if use_in_readout:
                     n_in_size += n_h
                 n_in = n_h
-            case LSTMLayer(n_h, use_bias, use_in_readout):
+            case LSTMLayer(n_h, use_bias, use_in_readout, use_random_init):
                 prng1, prng = jax.random.split(prng, 2)
                 lstm = eqx.nn.LSTMCell(n_in, n_h, use_bias=use_bias, key=prng1)
                 transition_parameter = transition_parameter.set(i, InferenceParameter(lstm=lstm, rnn=None, gru=None))
@@ -158,7 +166,7 @@ def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], p
             n_in_size += data_in
             for i, layer in ffw_layers.items():
                 match layer:  # purely for pattern matching, no other case should actually exist
-                    case NNLayer(n, activation_fn, use_bias, use_in_readout, layer_norm):
+                    case NNLayer(n, activation_fn, use_bias, use_in_readout, layer_norm, use_random_init):
                         match layer_norm:
                             case LayerNorm(epsilon, use_weight, use_bias):
                                 layer = eqx.nn.LayerNorm(n, eps=epsilon, use_weight=use_weight, use_bias=use_bias)

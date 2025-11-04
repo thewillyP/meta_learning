@@ -19,7 +19,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 60))
+    # time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -46,7 +46,7 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
@@ -63,18 +63,19 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            0: LSTMLayer(
-                n=32,
-                use_bias=True,
-                use_in_readout=True,
-            ),
-            # 0: NNLayer(
-            #     n=128,
-            #     activation_fn="tanh",
+            # 0: LSTMLayer(
+            #     n=32,
             #     use_bias=True,
             #     use_in_readout=True,
-            #     layer_norm=None,
             # ),
+            0: NNLayer(
+                n=128,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=LayerNorm(1e-5, False, False),
+                use_random_init=True,
+            ),
             # 1: NNLayer(
             #     n=16,
             #     activation_fn="tanh",
@@ -121,7 +122,7 @@ def main():
             }
         ),
         learners={
-            0: LearnConfig(  # normal feedforward backprop
+            0: LearnConfig(
                 learner=BPTTConfig(),
                 optimizer=RecurrenceConfig(
                     recurrent_optimizer=SGDClipConfig(
@@ -136,7 +137,7 @@ def main():
                             hyperparameter_parametrization=HyperparameterConfig.squared(1),
                         ),
                         momentum=0.0,
-                        clip_threshold=1.0,
+                        clip_threshold=5.0,
                         clip_sharpness=100.0,
                     ),
                     readout_optimizer=SGDClipConfig(
@@ -151,7 +152,7 @@ def main():
                             hyperparameter_parametrization=HyperparameterConfig.squared(1),
                         ),
                         momentum=0.0,
-                        clip_threshold=1.0,
+                        clip_threshold=5.0,
                         clip_sharpness=100.0,
                     ),
                 ),
@@ -182,14 +183,14 @@ def main():
                 # ),
                 # optimizer=SGDClipConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         value=0.2,
+                #         value=0.01,
                 #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #         hyperparameter_parametrization=HyperparameterConfig.squared(1),
                 #     ),
                 #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #         value=1e-5,
+                #         learnable=True,
+                #         hyperparameter_parametrization=HyperparameterConfig.squared(1),
                 #     ),
                 #     momentum=0.0,
                 #     clip_threshold=1.0,
@@ -203,7 +204,7 @@ def main():
             1: LearnConfig(
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
-                learner=RTRLFiniteHvpConfig(1e-3),
+                learner=RTRLFiniteHvpConfig(5e-3),
                 # learner=RTRLConfig(),
                 optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
@@ -246,7 +247,7 @@ def main():
             ),
             1: DataConfig(
                 train_percent=20.0,
-                num_examples_in_minibatch=64,
+                num_examples_in_minibatch=500,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),

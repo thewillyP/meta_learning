@@ -34,7 +34,7 @@ def create_inference[ENV, DATA](
     readout_functions: list[Callable[[ENV], jax.Array]] = []
     for i, (_, fn) in enumerate(sorted(config.transition_function.items())):
         match fn:
-            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm):
+            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm, use_random_init):
                 # If I really wanted to, I would separate this with a agnostic interface as input
                 def rnn_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
                     rnn = inference_interfaces[i].get_rnn_param(env)
@@ -60,7 +60,7 @@ def create_inference[ENV, DATA](
 
                 transition_functions.append(rnn_transition)
                 readout_functions.append(rnn_readout)
-            case GRULayer(n_h, use_bias, use_in_readout):
+            case GRULayer(n_h, use_bias, use_in_readout, use_random_init):
 
                 def gru_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
                     gru = inference_interfaces[i].get_gru_param(env)
@@ -85,7 +85,7 @@ def create_inference[ENV, DATA](
                 transition_functions.append(gru_transition)
                 readout_functions.append(gru_readout)
 
-            case LSTMLayer(n_h, use_bias, use_in_readout):
+            case LSTMLayer(n_h, use_bias, use_in_readout, use_random_init):
 
                 def lstm_transition(env: ENV, data: jax.Array, i=i) -> tuple[ENV, jax.Array]:
                     lstm = inference_interfaces[i].get_lstm_param(env)

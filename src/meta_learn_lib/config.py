@@ -210,6 +210,7 @@ class NNLayer:
     use_bias: bool
     use_in_readout: bool
     layer_norm: Optional[LayerNorm]
+    use_random_init: bool
 
 
 @dataclass(frozen=True)
@@ -217,6 +218,7 @@ class GRULayer:
     n: int
     use_bias: bool
     use_in_readout: bool
+    use_random_init: bool
 
 
 @dataclass(frozen=True)
@@ -224,6 +226,7 @@ class LSTMLayer:
     n: int
     use_bias: bool
     use_in_readout: bool
+    use_random_init: bool
 
 
 @dataclass(frozen=True)

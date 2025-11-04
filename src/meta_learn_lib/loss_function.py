@@ -68,7 +68,7 @@ def make_loss_fn[ENV](
         case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
             _loss_fn = get_loss_fn(config.loss_fn)
 
-        case MnistConfig(n_in) | FashionMnistConfig(n_in):
+        case MnistConfig(n_in, add_spurious_pixel_to_train) | FashionMnistConfig(n_in, add_spurious_pixel_to_train):
             seq_len = 784 // n_in - 1
             __loss_fn = get_loss_fn(config.loss_fn)
 
@@ -128,7 +128,7 @@ def make_statistics_fn[ENV](
         case DelayAddOnlineConfig():
             _statistics_fn = lambda _, __: jnp.array([0.0])
 
-        case MnistConfig(n_in) | FashionMnistConfig(n_in):
+        case MnistConfig(n_in, add_spurious_pixel_to_train) | FashionMnistConfig(n_in, add_spurious_pixel_to_train):
             seq_len = 784 // n_in - 1
             _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
             # premptively multiply by series length so averaging cancels out the factor

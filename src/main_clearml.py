@@ -51,13 +51,16 @@ def main():
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
-        dataset=FashionMnistConfig(28),
-        num_base_epochs=64,
+        # dataset=FashionMnistConfig(28),
+        # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
+        dataset=MnistConfig(784, False),
+        num_base_epochs=20,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=12345),
+        seed=SeedConfig(global_seed=11111, data_seed=1, parameter_seed=1, test_seed=5423),
         loss_fn="cross_entropy_with_integer_labels",
+        # loss_fn="cross_entropy",
         transition_function={
-            # 0: IdentityLayer(activation_fn="identity"),
+            0: IdentityLayer(activation_fn="identity"),
             # 0: GRULayer(
             #     n=128,
             #     # activation_fn="tanh",
@@ -68,14 +71,14 @@ def main():
             #     use_bias=True,
             #     use_in_readout=True,
             # ),
-            0: NNLayer(
-                n=128,
-                activation_fn="tanh",
-                use_bias=True,
-                use_in_readout=True,
-                layer_norm=LayerNorm(1e-5, False, False),
-                use_random_init=True,
-            ),
+            # 0: NNLayer(
+            #     n=32,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            #     use_in_readout=True,
+            #     layer_norm=LayerNorm(1e-5, False, False),
+            #     use_random_init=True,
+            # ),
             # 1: NNLayer(
             #     n=16,
             #     activation_fn="tanh",
@@ -98,76 +101,83 @@ def main():
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
-                # 0: NNLayer(
-                #     n=16,
-                #     activation_fn="tanh",
-                #     use_bias=True,
-                #     use_in_readout=False,
-                #     layer_norm=None,
-                # ),
-                # 1: NNLayer(
-                #     n=16,
-                #     activation_fn="tanh",
-                #     use_bias=True,
-                #     use_in_readout=False,
-                #     layer_norm=None,
-                # ),
                 0: NNLayer(
+                    n=128,
+                    activation_fn="tanh",
+                    use_bias=True,
+                    use_in_readout=False,
+                    layer_norm=None,
+                    use_random_init=False,
+                ),
+                1: NNLayer(
+                    n=128,
+                    activation_fn="tanh",
+                    use_bias=True,
+                    use_in_readout=False,
+                    layer_norm=None,
+                    use_random_init=False,
+                ),
+                2: NNLayer(
+                    n=128,
+                    activation_fn="tanh",
+                    use_bias=True,
+                    use_in_readout=False,
+                    layer_norm=None,
+                    use_random_init=False,
+                ),
+                3: NNLayer(
                     n=10,
                     activation_fn="identity",
                     use_bias=True,
                     use_in_readout=False,
                     layer_norm=None,
+                    use_random_init=False,
                 ),
             }
         ),
         learners={
             0: LearnConfig(
                 learner=BPTTConfig(),
-                optimizer=RecurrenceConfig(
-                    recurrent_optimizer=SGDClipConfig(
-                        learning_rate=HyperparameterConfig(
-                            value=0.01,
-                            learnable=True,
-                            hyperparameter_parametrization=HyperparameterConfig.squared(1),
-                        ),
-                        weight_decay=HyperparameterConfig(
-                            value=0.0,
-                            learnable=False,
-                            hyperparameter_parametrization=HyperparameterConfig.squared(1),
-                        ),
-                        momentum=0.0,
-                        clip_threshold=5.0,
-                        clip_sharpness=100.0,
-                    ),
-                    readout_optimizer=SGDClipConfig(
-                        learning_rate=HyperparameterConfig(
-                            value=0.01,
-                            learnable=True,
-                            hyperparameter_parametrization=HyperparameterConfig.squared(1),
-                        ),
-                        weight_decay=HyperparameterConfig(
-                            value=0.0,
-                            learnable=False,
-                            hyperparameter_parametrization=HyperparameterConfig.squared(1),
-                        ),
-                        momentum=0.0,
-                        clip_threshold=5.0,
-                        clip_sharpness=100.0,
-                    ),
-                ),
-                # optimizer=AdamConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=1e-3,
-                #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                # optimizer=RecurrenceConfig(
+                #     recurrent_optimizer=SGDConfig(
+                #         learning_rate=HyperparameterConfig(
+                #             value=0.001,
+                #             learnable=True,
+                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #         ),
+                #         weight_decay=HyperparameterConfig(
+                #             value=0.0,
+                #             learnable=False,
+                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #         ),
+                #         momentum=0.0,
                 #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=1e-5,
-                #         learnable=True,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     readout_optimizer=SGDConfig(
+                #         learning_rate=HyperparameterConfig(
+                #             value=0.001,
+                #             learnable=True,
+                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #         ),
+                #         weight_decay=HyperparameterConfig(
+                #             value=0.0,
+                #             learnable=False,
+                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #         ),
+                #         momentum=0.0,
                 #     ),
                 # ),
+                optimizer=AdamConfig(
+                    learning_rate=HyperparameterConfig(
+                        value=1e-3,
+                        learnable=True,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    ),
+                    weight_decay=HyperparameterConfig(
+                        value=0.0,
+                        learnable=False,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    ),
+                ),
                 # optimizer=SGDConfig(
                 #     learning_rate=HyperparameterConfig(
                 #         value=0.01,
@@ -175,15 +185,15 @@ def main():
                 #         hyperparameter_parametrization=HyperparameterConfig.squared(1),
                 #     ),
                 #     weight_decay=HyperparameterConfig(
-                #         value=1e-5,
-                #         learnable=True,
+                #         value=0.0,
+                #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.squared(1),
                 #     ),
                 #     momentum=0.0,
                 # ),
                 # optimizer=SGDClipConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         value=0.01,
+                #         value=0.001,
                 #         learnable=True,
                 #         hyperparameter_parametrization=HyperparameterConfig.squared(1),
                 #     ),
@@ -193,7 +203,7 @@ def main():
                 #         hyperparameter_parametrization=HyperparameterConfig.squared(1),
                 #     ),
                 #     momentum=0.0,
-                #     clip_threshold=1.0,
+                #     clip_threshold=10.0,
                 #     clip_sharpness=100.0,
                 # ),
                 lanczos_iterations=0,
@@ -202,9 +212,9 @@ def main():
                 num_virtual_minibatches_per_turn=1,
             ),
             1: LearnConfig(
-                # learner=IdentityConfig(),
+                learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
-                learner=RTRLFiniteHvpConfig(5e-3),
+                # learner=RTRLFiniteHvpConfig(1e-2),
                 # learner=RTRLConfig(),
                 optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
@@ -242,18 +252,18 @@ def main():
             0: DataConfig(
                 train_percent=80.0,
                 num_examples_in_minibatch=64,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=20.0,
-                num_examples_in_minibatch=500,
-                num_steps_in_timeseries=28,
+                num_examples_in_minibatch=64,
+                num_steps_in_timeseries=1,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=False,
+        readout_uses_input_data=True,
         logger_config=(ClearMLLoggerConfig(),),
         treat_inference_state_as_online=False,
     )

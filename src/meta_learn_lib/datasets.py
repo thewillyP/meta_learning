@@ -1,7 +1,8 @@
 import jax
 import jax.numpy as jnp
 from typing import Callable, Iterator
-from torch.utils.data import Dataset, DataLoader, IterableDataset
+from torch.utils.data import Dataset, DataLoader, IterableDataset, random_split
+import torch
 import torchvision
 from toolz import mapcat
 import math
@@ -72,7 +73,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             last_unpadded_lengths[len(datasets)] = 0
             datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, 1)
 
-        case MnistConfig(n_in) | FashionMnistConfig(n_in):
+        case MnistConfig(n_in, add_spurious_pixel_to_train) | FashionMnistConfig(n_in, add_spurious_pixel_to_train):
             n_in_shape = (n_in,)
 
             match config.dataset:
@@ -81,10 +82,26 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 case FashionMnistConfig():
                     dataset_factory = torchvision.datasets.FashionMNIST
 
-            dataset = dataset_factory(root=f"{config.data_root_dir}/data", train=True, download=True)
-            dataset_te = dataset_factory(root=f"{config.data_root_dir}/data", train=False, download=True)
-            xs = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(dataset.data.numpy(), n_in, True)
-            ys = jax.vmap(target_transform, in_axes=(0, None))(dataset.targets.numpy(), xs.shape[1])
+            dataset = dataset_factory(
+                root=f"{config.data_root_dir}/data",
+                train=True,
+                download=True,
+                transform=torchvision.transforms.ToTensor(),
+            )
+            dataset_te = dataset_factory(
+                root=f"{config.data_root_dir}/data",
+                train=False,
+                download=True,
+                transform=torchvision.transforms.ToTensor(),
+            )
+
+            generator1 = torch.Generator().manual_seed(
+                jax.random.randint(dataset_gen_prng, shape=(), minval=0, maxval=2**31 - 1).item()
+            )
+            torch_datasets = random_split(dataset, subset_n(len(dataset), percentages), generator=generator1)
+            if add_spurious_pixel_to_train:
+                torch_datasets[0] = SpuriousMNISTDataset(torch_datasets[0])
+
             xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(dataset_te.data.numpy(), n_in, True)
             ys_te = jax.vmap(target_transform, in_axes=(0, None))(dataset_te.targets.numpy(), xs_te.shape[1])
 
@@ -92,17 +109,17 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             X_te, _ = reshape_timeseries(xs_te, xs_te.shape[1])
             Y_te, _ = reshape_timeseries(ys_te, ys_te.shape[1])
 
-            perm = jax.random.permutation(dataset_gen_prng, len(xs))
-            split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
-            val_indices = jnp.split(perm, split_indices)
-
             datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
             virtual_minibatches: dict[int, int] = {}
             last_unpadded_lengths: dict[int, int] = {}
             total_tr_vb: int = 0
-            for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
-                X_vl = xs[val_idx]
-                Y_vl = ys[val_idx]
+            for idx, ((i, data_config), torch_ds) in enumerate(zip(sorted(config.data.items()), torch_datasets)):
+                subset_data = torch.stack([torch_ds[i][0] for i in range(len(torch_ds))])
+                subset_targets = torch.stack([torch_ds[i][1] for i in range(len(torch_ds))])
+
+                X_vl = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(subset_data.numpy(), n_in, True)
+                Y_vl = jax.vmap(target_transform, in_axes=(0, None))(subset_targets.numpy(), X_vl.shape[1])
+
                 n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
                 X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
                 Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
@@ -344,3 +361,24 @@ def target_transform(label, sequence_length):
     labels = labels.at[:, 0].set(label)  # Repeat class label
     labels = labels.at[:, 1].set(jnp.arange(sequence_length))  # Sequence numbers
     return labels
+
+
+def add_spurious_features(image, label, k):
+    correlated_image = image.clone()
+    pixel_location = (label * 10) % 28
+    correlated_image[:, pixel_location : pixel_location + k, pixel_location : pixel_location + k] = 1.0
+    return correlated_image
+
+
+class SpuriousMNISTDataset(Dataset):
+    def __init__(self, dataset, k=1):
+        self.dataset = dataset
+        self.k = k
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        image, label = self.dataset[idx]
+        correlated_image = add_spurious_features(image, label, self.k)
+        return correlated_image, label

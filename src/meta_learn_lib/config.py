@@ -48,11 +48,13 @@ class SeedConfig:
 @dataclass(frozen=True)
 class MnistConfig:
     n_in: int
+    add_spurious_pixel_to_train: bool
 
 
 @dataclass(frozen=True)
 class FashionMnistConfig:
     n_in: int
+    add_spurious_pixel_to_train: bool
 
 
 @dataclass(frozen=True)

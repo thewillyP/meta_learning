@@ -82,17 +82,19 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
                 case FashionMnistConfig():
                     dataset_factory = torchvision.datasets.FashionMNIST
 
+            transform = torchvision.transforms.Lambda(lambda x: torch.tensor(np.array(x), dtype=torch.float32))
+
             dataset = dataset_factory(
                 root=f"{config.data_root_dir}/data",
                 train=True,
                 download=True,
-                transform=torchvision.transforms.ToTensor(),
+                transform=transform,
             )
             dataset_te = dataset_factory(
                 root=f"{config.data_root_dir}/data",
                 train=False,
                 download=True,
-                transform=torchvision.transforms.ToTensor(),
+                transform=transform,
             )
 
             generator1 = torch.Generator().manual_seed(
@@ -115,7 +117,7 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             total_tr_vb: int = 0
             for idx, ((i, data_config), torch_ds) in enumerate(zip(sorted(config.data.items()), torch_datasets)):
                 subset_data = torch.stack([torch_ds[i][0] for i in range(len(torch_ds))])
-                subset_targets = torch.stack([torch_ds[i][1] for i in range(len(torch_ds))])
+                subset_targets = torch.tensor([torch_ds[i][1] for i in range(len(torch_ds))])
 
                 X_vl = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(subset_data.numpy(), n_in, True)
                 Y_vl = jax.vmap(target_transform, in_axes=(0, None))(subset_targets.numpy(), X_vl.shape[1])
@@ -366,7 +368,7 @@ def target_transform(label, sequence_length):
 def add_spurious_features(image, label, k):
     correlated_image = image.clone()
     pixel_location = (label * 10) % 28
-    correlated_image[:, pixel_location : pixel_location + k, pixel_location : pixel_location + k] = 1.0
+    correlated_image[pixel_location : pixel_location + k, pixel_location : pixel_location + k] = 255.0
     return correlated_image
 
 

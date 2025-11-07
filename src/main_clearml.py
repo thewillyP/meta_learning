@@ -19,7 +19,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    # time.sleep(_jitter_rng.uniform(1, 60))
+    time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -46,7 +46,7 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=True,
+        clearml_run=False,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
@@ -54,7 +54,7 @@ def main():
         # dataset=FashionMnistConfig(28),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         dataset=MnistConfig(28, False),
-        num_base_epochs=4000,
+        num_base_epochs=500,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=20, data_seed=1, parameter_seed=1, test_seed=5423),
         loss_fn="cross_entropy_with_integer_labels",
@@ -72,15 +72,23 @@ def main():
             #     use_in_readout=True,
             # ),
             0: NNLayer(
-                n=128,
+                n=64,
                 activation_fn="tanh",
                 use_bias=True,
-                use_in_readout=True,
+                use_in_readout=False,
                 layer_norm=LayerNorm(1e-4, False, False),
                 use_random_init=True,
             ),
             1: NNLayer(
-                n=128,
+                n=64,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=False,
+                layer_norm=LayerNorm(1e-4, False, False),
+                use_random_init=True,
+            ),
+            2: NNLayer(
+                n=64,
                 activation_fn="tanh",
                 use_bias=True,
                 use_in_readout=True,
@@ -196,16 +204,16 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=1e-3,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1.0),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=1e-5,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.silu_positive(1.0),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
                     add_clip=Clip(
-                        threshold=2.0,
+                        threshold=3.0,
                         sharpness=100.0,
                     ),
                 ),
@@ -217,24 +225,11 @@ def main():
             1: LearnConfig(
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
-                learner=RTRLFiniteHvpConfig(1e-1),
+                learner=RTRLFiniteHvpConfig(1e-3),
                 # learner=RTRLConfig(),
-                optimizer=AdamConfig(
-                    learning_rate=HyperparameterConfig(
-                        value=1e-3,
-                        learnable=False,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    ),
-                    weight_decay=HyperparameterConfig(
-                        value=0.0,
-                        learnable=False,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    ),
-                    add_clip=None,
-                ),
-                # optimizer=ExponentiatedGradientConfig(
+                # optimizer=AdamConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         value=1e-2,
+                #         value=1e-3,
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
@@ -243,25 +238,38 @@ def main():
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
-                #     momentum=0.9,
-                #     add_clip=Clip(1.0, 100.0),
+                #     add_clip=None,
                 # ),
+                optimizer=ExponentiatedGradientConfig(
+                    learning_rate=HyperparameterConfig(
+                        value=1e-2,
+                        learnable=False,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    ),
+                    weight_decay=HyperparameterConfig(
+                        value=0.0,
+                        learnable=False,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    ),
+                    momentum=0.9,
+                    add_clip=None,
+                ),
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=10,
+                num_virtual_minibatches_per_turn=50,
             ),
         },
         data={
             0: DataConfig(
-                train_percent=80.0,
-                num_examples_in_minibatch=4800,
+                train_percent=83.333,
+                num_examples_in_minibatch=1000,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=20.0,
-                num_examples_in_minibatch=4800,
+                train_percent=16.667,
+                num_examples_in_minibatch=1000,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),

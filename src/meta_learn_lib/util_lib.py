@@ -10,7 +10,6 @@ from meta_learn_lib.config import (
     LearnConfig,
     Optimizer,
     RecurrenceConfig,
-    SGDClipConfig,
     SGDConfig,
     SGDNormalizedConfig,
 )
@@ -22,13 +21,24 @@ from meta_learn_lib.util import filter_cond, hyperparameter_reparametrization, t
 def get_optimizer(
     optimizer: Optimizer, format_to_param: Callable[[jax.Array], Parameter]
 ) -> Callable[[LearningParameter], optax.GradientTransformation]:
-    # forward, _ = hyperparameter_reparametrization(learn_config.hyperparameter_parametrization)
+    def add_clipping(threshold: float, sharpness: float) -> optax.GradientTransformation:
+        def update_fn(updates, state, _):
+            grads_flat, _ = jax.flatten_util.ravel_pytree(updates)
+            grad_norm = jnp.linalg.norm(grads_flat)
+            clipped_norm = grad_norm - jax.nn.softplus(sharpness * (grad_norm - threshold)) / sharpness
+            scale = clipped_norm / (grad_norm + 1e-6)
+            updates_scaled = jax.tree.map(lambda g: g * scale, updates)
+            return updates_scaled, state
+
+        clipping = optax.GradientTransformation(lambda _: (), update_fn)
+        return clipping
 
     match optimizer:
-        case SGDConfig(learning_rate, weight_decay, momentum):
+        case SGDConfig(learning_rate, weight_decay, momentum, add_clip):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
             return lambda pr: optax.chain(
+                add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
                 optax.add_decayed_weights(wd_forward(pr.weight_decay.value)),
                 optax.sgd(lr_forward(pr.learning_rate.value), momentum=momentum),
             )
@@ -40,31 +50,18 @@ def get_optimizer(
                 optax.add_decayed_weights(wd_forward(pr.weight_decay.value)),
                 optax.sgd(lr_forward(pr.learning_rate.value), momentum=momentum),
             )
-        case SGDClipConfig(learning_rate, weight_decay, momentum, threshold, sharpness):
+        case AdamConfig(learning_rate, weight_decay, add_clip):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
-
-            def update_fn(updates, state, _):
-                grads_flat, _ = jax.flatten_util.ravel_pytree(updates)
-                grad_norm = jnp.linalg.norm(grads_flat)
-                clipped_norm = grad_norm - jax.nn.softplus(sharpness * (grad_norm - threshold)) / sharpness
-                scale = clipped_norm / (grad_norm + 1e-6)
-                updates_scaled = jax.tree.map(lambda g: g * scale, updates)
-                return updates_scaled, state
-
             return lambda pr: optax.chain(
-                optax.GradientTransformation(lambda _: (), update_fn),
-                optax.add_decayed_weights(wd_forward(pr.weight_decay.value)),
-                optax.sgd(lr_forward(pr.learning_rate.value), momentum=momentum),
+                add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
+                optax.adamw(
+                    lr_forward(pr.learning_rate.value),
+                    weight_decay=wd_forward(pr.weight_decay.value),
+                ),
             )
-        case AdamConfig(learning_rate, weight_decay):
-            lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
-            wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
-            return lambda pr: optax.adamw(
-                lr_forward(pr.learning_rate.value),
-                weight_decay=wd_forward(pr.weight_decay.value),
-            )
-        case ExponentiatedGradientConfig(learning_rate, weight_decay, momentum):
+
+        case ExponentiatedGradientConfig(learning_rate, weight_decay, momentum, add_clip):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
 
@@ -85,9 +82,13 @@ def get_optimizer(
 
                     return jnp.exp(power), (new_m, new_v, count + 1)
 
-                return optax.GradientTransformation(init_fn, update_fn)
+                return optax.chain(
+                    add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
+                    optax.GradientTransformation(init_fn, update_fn),
+                )
 
             return update_rule
+
         case RecurrenceConfig(_recurrent_optimizer, _readout_optimizer):
             recurrent_optimizer = get_optimizer(_recurrent_optimizer, format_to_param)
             readout_optimizer = get_optimizer(_readout_optimizer, format_to_param)

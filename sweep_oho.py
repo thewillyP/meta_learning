@@ -72,7 +72,7 @@ optimizer = HyperParameterOptimizer(
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         # dataset
-        # DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
+        DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),

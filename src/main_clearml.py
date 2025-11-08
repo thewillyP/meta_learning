@@ -53,7 +53,7 @@ def main():
         # dataset=FashionMnistConfig(784),
         # dataset=FashionMnistConfig(28),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
-        dataset=MnistConfig(28, False),
+        dataset=FashionMnistConfig(28, False),
         num_base_epochs=500,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=20, data_seed=1, parameter_seed=1, test_seed=5423),

@@ -7,6 +7,7 @@ from pyrsistent.typing import PMap
 from meta_learn_lib.config import (
     AdamConfig,
     ExponentiatedGradientConfig,
+    ExponentiatedGradientAdamConfig,
     LearnConfig,
     Optimizer,
     RecurrenceConfig,
@@ -61,7 +62,7 @@ def get_optimizer(
                 ),
             )
 
-        case ExponentiatedGradientConfig(learning_rate, weight_decay, momentum, add_clip):
+        case ExponentiatedGradientAdamConfig(learning_rate, weight_decay, momentum, add_clip):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
 
@@ -85,6 +86,23 @@ def get_optimizer(
                 return optax.chain(
                     add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
                     optax.GradientTransformation(init_fn, update_fn),
+                )
+
+            return update_rule
+
+        case ExponentiatedGradientConfig(learning_rate, weight_decay, add_clip):
+            lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
+            wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
+
+            def update_rule(pr: LearningParameter) -> optax.GradientTransformation:
+                def update_fn(grad, state, param):
+                    m = grad * jnp.sign(param) + wd_forward(pr.weight_decay.value)
+                    power = -lr_forward(pr.learning_rate.value) * m
+                    return jnp.exp(power), state
+
+                return optax.chain(
+                    add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
+                    optax.GradientTransformation(lambda params: None, update_fn),
                 )
 
             return update_rule
@@ -134,7 +152,7 @@ def get_optimizer(
 
 def get_updater(learn_config: LearnConfig) -> Callable[[optax.Params, optax.Updates], optax.Params]:
     match learn_config.optimizer:
-        case ExponentiatedGradientConfig():
+        case ExponentiatedGradientConfig() | ExponentiatedGradientAdamConfig():
             return lambda p, u: p * u
         case _:
             return optax.apply_updates

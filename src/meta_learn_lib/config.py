@@ -169,7 +169,7 @@ class AdamConfig:
 
 
 @dataclass(frozen=True)
-class ExponentiatedGradientConfig:
+class ExponentiatedGradientAdamConfig:
     learning_rate: HyperparameterConfig
     weight_decay: HyperparameterConfig
     momentum: float
@@ -177,9 +177,20 @@ class ExponentiatedGradientConfig:
 
 
 @dataclass(frozen=True)
+class ExponentiatedGradientConfig:
+    learning_rate: HyperparameterConfig
+    weight_decay: HyperparameterConfig
+    add_clip: Clip | None
+
+
+@dataclass(frozen=True)
 class RecurrenceConfig:
-    recurrent_optimizer: Union[SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig]
-    readout_optimizer: Union[SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig]
+    recurrent_optimizer: Union[
+        SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig, ExponentiatedGradientAdamConfig
+    ]
+    readout_optimizer: Union[
+        SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig, ExponentiatedGradientAdamConfig
+    ]
 
 
 type Optimizer = Union[
@@ -187,6 +198,7 @@ type Optimizer = Union[
     SGDNormalizedConfig,
     AdamConfig,
     ExponentiatedGradientConfig,
+    ExponentiatedGradientAdamConfig,
     RecurrenceConfig,
 ]
 

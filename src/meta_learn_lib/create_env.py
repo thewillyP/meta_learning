@@ -191,7 +191,13 @@ def create_optimizer_parameter(optimizer: Optimizer) -> LearningParameter:
         learning_rate=None, weight_decay=None, rflo_timeconstant=None, multiple_parameters=None
     )
     match optimizer:
-        case SGDConfig() | SGDNormalizedConfig() | AdamConfig() | ExponentiatedGradientConfig() as opt:
+        case (
+            SGDConfig()
+            | SGDNormalizedConfig()
+            | AdamConfig()
+            | ExponentiatedGradientConfig()
+            | ExponentiatedGradientAdamConfig() as opt
+        ):
             _, lr_backward = hyperparameter_reparametrization(opt.learning_rate.hyperparameter_parametrization)
             _, wd_backward = hyperparameter_reparametrization(opt.weight_decay.hyperparameter_parametrization)
             parameter = parameter.set(

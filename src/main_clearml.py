@@ -54,7 +54,7 @@ def main():
         # dataset=FashionMnistConfig(28),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         dataset=MnistConfig(28, False),
-        num_base_epochs=400,
+        num_base_epochs=200,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=12, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -227,16 +227,16 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=1e-3,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=1e-5,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
                     add_clip=Clip(
-                        threshold=1.0,
+                        threshold=0.5,
                         sharpness=100.0,
                     ),
                 ),
@@ -253,7 +253,7 @@ def main():
                 # learner=UOROConfig(1.0),
                 # optimizer=SGDConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         value=0.0001,
+                #         value=0.01,
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
@@ -265,9 +265,22 @@ def main():
                 #     momentum=0.0,
                 #     add_clip=None,
                 # ),
-                optimizer=AdamConfig(
+                # optimizer=AdamConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=1e-4,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     add_clip=None,
+                # ),
+                optimizer=ExponentiatedGradientConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-4,
+                        value=1e-2,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -278,36 +291,22 @@ def main():
                     ),
                     add_clip=None,
                 ),
-                # optimizer=ExponentiatedGradientConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=1e-2,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     momentum=0.9,
-                #     add_clip=None,
-                # ),
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=50,
+                num_virtual_minibatches_per_turn=100,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=83.333,
-                num_examples_in_minibatch=1000,
+                num_examples_in_minibatch=500,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.667,
-                num_examples_in_minibatch=1000,
+                num_examples_in_minibatch=500,
                 num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
@@ -340,11 +339,18 @@ def main():
     )
     setup_flattened_union(
         converter,
-        Union[SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig],
+        Union[SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig, ExponentiatedGradientAdamConfig],
     )
     setup_flattened_union(
         converter,
-        Union[SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig, RecurrenceConfig],
+        Union[
+            SGDConfig,
+            SGDNormalizedConfig,
+            AdamConfig,
+            ExponentiatedGradientConfig,
+            RecurrenceConfig,
+            ExponentiatedGradientAdamConfig,
+        ],
     )
 
     setup_flattened_union(converter, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config])

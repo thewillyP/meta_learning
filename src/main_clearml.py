@@ -54,9 +54,9 @@ def main():
         # dataset=FashionMnistConfig(28),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         dataset=MnistConfig(28, False),
-        num_base_epochs=200,
+        num_base_epochs=600,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=12, data_seed=1, parameter_seed=1, test_seed=12345),
+        seed=SeedConfig(global_seed=274, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
         # loss_fn="cross_entropy",
         transition_function={
@@ -66,20 +66,20 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            0: LSTMLayer(
-                n=128,
-                use_bias=True,
-                use_in_readout=True,
-                use_random_init=False,
-            ),
-            # 0: NNLayer(
+            # 0: LSTMLayer(
             #     n=128,
-            #     activation_fn="identity",
             #     use_bias=True,
-            #     use_in_readout=False,
-            #     layer_norm=None,
+            #     use_in_readout=True,
             #     use_random_init=False,
             # ),
+            0: NNLayer(
+                n=32,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=None,
+                use_random_init=False,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="identity",
@@ -227,17 +227,17 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=1e-3,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=1e-5,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
                     ),
                     momentum=0.0,
                     add_clip=Clip(
-                        threshold=0.5,
-                        sharpness=100.0,
+                        threshold=1.0,
+                        sharpness=1000.0,
                     ),
                 ),
                 lanczos_iterations=0,
@@ -265,22 +265,9 @@ def main():
                 #     momentum=0.0,
                 #     add_clip=None,
                 # ),
-                # optimizer=AdamConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=1e-4,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     add_clip=None,
-                # ),
-                optimizer=ExponentiatedGradientConfig(
+                optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-2,
+                        value=1e-4,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -291,6 +278,19 @@ def main():
                     ),
                     add_clip=None,
                 ),
+                # optimizer=ExponentiatedGradientConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=1e-2,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     add_clip=None,
+                # ),
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,

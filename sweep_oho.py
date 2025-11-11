@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-1000,Epochs-500,FashionMNIST,RNN-64-64-64,SGD-EXP,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-1000,Epochs-400,MNIST,LSTM-128,SGD-ADAM,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="6e2ee4b99c054e01b1169de3ede57db6",  # Use the actual task ID
+    base_task_id="9066c780263041a0ae84f4fa05f506a4",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -72,12 +72,12 @@ optimizer = HyperParameterOptimizer(
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         # dataset
-        DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
+        DiscreteParameterRange("config/dataset/_type", values=["MnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
-        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
-        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1.0e-2]),
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
+        # DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1.0e-4]),
         # DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.9]),
         # DiscreteParameterRange(
         #     "config/learners/0/optimizer/recurrent_optimizer/learning_rate/value",
@@ -101,7 +101,7 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[500]),
+        DiscreteParameterRange("config/num_base_epochs", values=[400]),
         DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[1000]),
         DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[1000]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),

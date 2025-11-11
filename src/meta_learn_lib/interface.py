@@ -63,6 +63,8 @@ class LearnInterface[ENV]:
     get_prng: Callable[[ENV], tuple[PRNG, ENV]]
     get_rflo_t: Callable[[ENV], int]
     put_rflo_t: Callable[[ENV, int], ENV]
+    get_rtrl_t: Callable[[ENV], int]
+    put_rtrl_t: Callable[[ENV, int], ENV]
 
 
 def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
@@ -105,6 +107,8 @@ def get_default_learn_interface[ENV]() -> LearnInterface[ENV]:
         get_prng=lambda env: (None, env),
         get_rflo_t=lambda env: None,
         put_rflo_t=lambda env, _: env,
+        get_rtrl_t=lambda env: None,
+        put_rtrl_t=lambda env, _: env,
     )
 
 

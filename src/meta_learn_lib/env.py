@@ -149,6 +149,7 @@ class LearningState(PClass):
     uoro: Optional[UOROState] = field(serializer=deep_serialize)
     opt_state: Optional[optax.OptState] = field()
     rflo_t: Optional[jax.Array] = field()
+    rtrl_t: Optional[jax.Array] = field()
 
 
 class InferenceParameter(PClass):

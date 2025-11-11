@@ -102,6 +102,8 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
     get_tr: Callable[[DATA], TR_DATA],
     get_vl: Callable[[DATA], VL_DATA],
     start_at_step: int,
+    m1: float,
+    m2: float,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         arr, static = eqx.partition(env, eqx.is_array)
@@ -124,40 +126,32 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
                 return state, (__env, stat)
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
+
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            _, new_influence_tensor, (_env, tr_stat) = jacobian_matrix_product(
+            _, _new_influence_tensor, (_env, tr_stat) = jacobian_matrix_product(
                 state_fn, s__p_vector.vector, state_jacobian
             )
-            new_influence_tensor = filter_cond(
-                rtrl_t >= start_at_step, lambda _: new_influence_tensor, lambda _: influence_tensor, None
+            _new_influence_tensor = filter_cond(
+                rtrl_t >= start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
             )
-            # new_influence_tensor = new_influence_tensor / (jnp.linalg.norm(new_influence_tensor) + 1e-4)
-            # new_influence_tensor = new_influence_tensor / (jnp.max(jnp.abs(new_influence_tensor)) + 1e-4)
 
-            # s__p = learn_interface.get_state(_env), learn_interface.get_param(_env)
-            # s__p_vector = to_vector(s__p)
+            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
+            new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
 
-            # def out_fn(state__param: jax.Array) -> tuple[jax.Array, tuple[STAT, ...]]:
-            #     state, param = s__p_vector.to_param(state__param)
-            #     __env = learn_interface.put_state(_env, state)
-            #     __env = learn_interface.put_param(__env, param)
-            #     stat, loss = readout(__env, get_vl(data))
-            #     return jnp.atleast_1d(loss), stat
+            influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
+            new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
+            new_influence_tensor_squared_m = new_influence_tensor_squared / (1 - (m2**rtrl_t))
 
-            # state_jacobian = jnp.vstack([new_influence_tensor, jnp.eye(new_influence_tensor.shape[1])])
-            # (
-            #     _,
-            #     grad,
-            #     vl_stat,
-            # ) = jacobian_matrix_product(out_fn, s__p_vector.vector, state_jacobian)
-            # grad = jnp.squeeze(grad)
+            # new_influence_tensor_for_grad = new_influence_tensor_m / (jnp.sqrt(new_influence_tensor_squared_m) + 1e-6)
+            new_influence_tensor_for_grad = new_influence_tensor_m
 
             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
-            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor_for_grad)
             output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
             grad = credit_assignment + output_gr
 
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+            _env = learn_interface.put_influence_tensor_squared(_env, new_influence_tensor_squared)
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
 
@@ -289,6 +283,8 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
     get_vl: Callable[[DATA], VL_DATA],
     epsilon: float,
     start_at_step: int,
+    m1: float,
+    m2: float,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         arr, static = eqx.partition(env, eqx.is_array)
@@ -330,17 +326,29 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             # nontrivial_differences = jnp.sum(diff_matrix > threshold)
 
             dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
-            new_influence_tensor = reformed_hessian @ influence_tensor + dhdp
+            _new_influence_tensor = reformed_hessian @ influence_tensor + dhdp
 
-            new_influence_tensor = filter_cond(
-                rtrl_t >= start_at_step, lambda _: new_influence_tensor, lambda _: influence_tensor, None
+            _new_influence_tensor = filter_cond(
+                rtrl_t >= start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
             )
+
+            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
+            new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+
+            influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
+            new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
+            new_influence_tensor_squared_m = new_influence_tensor_squared / (1 - (m2**rtrl_t))
+
+            # new_influence_tensor_for_grad = new_influence_tensor_m / (jnp.sqrt(new_influence_tensor_squared_m) + 1e-6)
+            new_influence_tensor_for_grad = new_influence_tensor_m
+
             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
-            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor_for_grad)
             output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
             grad = credit_assignment + output_gr
 
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+            _env = learn_interface.put_influence_tensor_squared(_env, new_influence_tensor_squared)
 
             # # logging
             # hessian_max = jnp.max(jnp.abs(hessian))
@@ -398,6 +406,8 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
     get_vl: Callable[[DATA], VL_DATA],
     epsilon: float,
     start_at_step: int,
+    m1: float,
+    m2: float,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         arr, static = eqx.partition(env, eqx.is_array)
@@ -435,17 +445,28 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
 
             dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
             _env = eqx.combine(_arr, static)
-            new_influence_tensor = hmp + dhdp
-            new_influence_tensor = filter_cond(
-                rtrl_t >= start_at_step, lambda _: new_influence_tensor, lambda _: influence_tensor, None
+            _new_influence_tensor = hmp + dhdp
+            _new_influence_tensor = filter_cond(
+                rtrl_t >= start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
             )
 
+            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
+            new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+
+            influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
+            new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
+            new_influence_tensor_squared_m = new_influence_tensor_squared / (1 - (m2**rtrl_t))
+
+            # new_influence_tensor_for_grad = new_influence_tensor_m / (jnp.sqrt(new_influence_tensor_squared_m) + 1e-6)
+            new_influence_tensor_for_grad = new_influence_tensor_m
+
             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
-            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor_for_grad)
             output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
             grad = credit_assignment + output_gr
 
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+            _env = learn_interface.put_influence_tensor_squared(_env, new_influence_tensor_squared)
 
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
@@ -590,7 +611,7 @@ def create_meta_learner[ENV, DATA](
         readout_gr = take_jacobian(statistic_fn, learn_interface)
 
         match config.learners[0].learner:
-            case RTRLConfig(start_at_step):
+            case RTRLConfig(start_at_step, m1, m2):
 
                 def _learner(
                     env: ENV,
@@ -609,9 +630,11 @@ def create_meta_learner[ENV, DATA](
                         lambda x: x,
                         lambda x: (x, mask),
                         start_at_step,
+                        m1,
+                        m2,
                     )(env, tr_data)
 
-            case RTRLHessianDecompConfig(epsilon, start_at_step):
+            case RTRLHessianDecompConfig(epsilon, start_at_step, m1, m2):
 
                 def _learner(
                     env: ENV,
@@ -632,9 +655,11 @@ def create_meta_learner[ENV, DATA](
                         lambda x: (x, mask),
                         epsilon,
                         start_at_step,
+                        m1,
+                        m2,
                     )(env, tr_data)
 
-            case RTRLFiniteHvpConfig(epsilon, start_at_step):
+            case RTRLFiniteHvpConfig(epsilon, start_at_step, m1, m2):
 
                 def _learner(
                     env: ENV,
@@ -655,6 +680,8 @@ def create_meta_learner[ENV, DATA](
                         lambda x: (x, mask),
                         epsilon,
                         start_at_step,
+                        m1,
+                        m2,
                     )(env, tr_data)
 
             case BPTTConfig():
@@ -785,11 +812,19 @@ def create_meta_learner[ENV, DATA](
         learner0 = lambda env, data, r=vl_reset, l=learner0: l(r(env), data)
 
         match learn_config.learner:
-            case RTRLConfig(start_at_step):
+            case RTRLConfig(start_at_step, m1, m2):
                 _learner = rtrl(
-                    learner0, vl_readout, vl_readout_gr, learn_interface, lambda x: x[0], lambda x: x[1], start_at_step
+                    learner0,
+                    vl_readout,
+                    vl_readout_gr,
+                    learn_interface,
+                    lambda x: x[0],
+                    lambda x: x[1],
+                    start_at_step,
+                    m1,
+                    m2,
                 )
-            case RTRLHessianDecompConfig(epsilon, start_at_step):
+            case RTRLHessianDecompConfig(epsilon, start_at_step, m1, m2):
                 _learner = rtrl_hessian_decomp(
                     learner0,
                     vl_readout,
@@ -799,8 +834,10 @@ def create_meta_learner[ENV, DATA](
                     lambda x: x[1],
                     epsilon,
                     start_at_step,
+                    m1,
+                    m2,
                 )
-            case RTRLFiniteHvpConfig(epsilon, start_at_step):
+            case RTRLFiniteHvpConfig(epsilon, start_at_step, m1, m2):
                 _learner = rtrl_finite_hvp(
                     learner0,
                     vl_readout,
@@ -810,6 +847,8 @@ def create_meta_learner[ENV, DATA](
                     lambda x: x[1],
                     epsilon,
                     start_at_step,
+                    m1,
+                    m2,
                 )
             case BPTTConfig():
                 _learner = bptt(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])

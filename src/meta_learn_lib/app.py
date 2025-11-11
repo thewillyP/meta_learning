@@ -195,20 +195,15 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         #     b_flat = b_flat - b_flat.mean()
         #     return jnp.dot(a_flat, b_flat) / (jnp.linalg.norm(a_flat) * jnp.linalg.norm(b_flat))
 
-        def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
-            """
-            Compute per-example correlation as normalized dot product, then average across batch.
-            a_prev, a_curr: [batch, hidden]
-            """
-            # dot product between previous and current activations for each example
-            dot = jnp.sum(a_prev * a_curr, axis=1)  # [batch]
+        window_size = 100
+        aT_buffer = []  # store past activations
 
-            # norms
+        def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
+            dot = jnp.sum(a_prev * a_curr, axis=1)
             norm_prev = jnp.linalg.norm(a_prev, axis=1)
             norm_curr = jnp.linalg.norm(a_curr, axis=1)
-
-            corr_per_ex = dot / (norm_prev * norm_curr + eps)  # [batch]
-            return jnp.mean(corr_per_ex)  # scalar: average across batch
+            corr_per_ex = dot / (norm_prev * norm_curr + eps)
+            return jnp.mean(corr_per_ex)
 
         context = logger.get_context()
         for i in range(tr_loss.shape[0]):
@@ -323,24 +318,28 @@ def runApp(config: GodConfig, logger: Logger) -> None:
                     #     )
 
                     #     prev_aT = aT_curr
-                    if iteration == 1:
-                        prev_aT = aT[i, j]  # [batch, hidden]
-                    else:
-                        aT_curr = aT[i, j]  # [batch, hidden]
-                        aT_prev = prev_aT  # [batch, hidden]
 
-                        at_corr = corr_per_example_dot(aT_prev, aT_curr)
+                    aT_curr = aT[i, j]  # [batch, hidden]
+
+                    # add to buffer
+                    aT_buffer.append(aT_curr)
+                    if len(aT_buffer) > window_size:
+                        aT_buffer.pop(0)
+
+                    # only compute correlation when we have at least 2 stored activations
+                    if len(aT_buffer) > 1:
+                        # correlate current activation with each previous activation in buffer
+                        corrs = [corr_per_example_dot(prev, aT_curr) for prev in aT_buffer[:-1]]
+                        at_corr = jnp.mean(jnp.array(corrs))
 
                         logger.log_scalar(
                             context,
-                            "train/aT_correlation",
-                            "train_aT_correlation",
+                            "train/aT_correlation_window",
+                            "train_aT_correlation_window",
                             at_corr,
                             iteration,
                             total_tr_vb * config.num_base_epochs,
                         )
-
-                        prev_aT = aT_curr
 
             logger.log_scalar(
                 context, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs

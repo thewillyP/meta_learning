@@ -55,6 +55,8 @@ class LearnInterface[ENV]:
     get_rflo_timeconstant: Callable[[ENV], float]
     get_influence_tensor: Callable[[ENV], JACOBIAN]
     put_influence_tensor: Callable[[ENV, JACOBIAN], ENV]
+    get_influence_tensor_squared: Callable[[ENV], JACOBIAN]
+    put_influence_tensor_squared: Callable[[ENV, JACOBIAN], ENV]
     get_uoro: Callable[[ENV], UOROState]
     put_uoro: Callable[[ENV, UOROState], ENV]
     learn_config: LearnConfig
@@ -99,6 +101,8 @@ def get_default_learn_interface[ENV]() -> LearnInterface[ENV]:
         get_rflo_timeconstant=lambda env: None,
         get_influence_tensor=lambda env: None,
         put_influence_tensor=lambda env, _: env,
+        get_influence_tensor_squared=lambda env: None,
+        put_influence_tensor_squared=lambda env, _: env,
         get_uoro=lambda env: None,
         put_uoro=lambda env, _: env,
         put_logs=lambda env, _: env,

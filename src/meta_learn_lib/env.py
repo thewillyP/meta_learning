@@ -146,6 +146,7 @@ class LearningParameter(PClass):
 
 class LearningState(PClass):
     influence_tensor: Optional[JACOBIAN] = field()
+    influence_tensor_squared: Optional[JACOBIAN] = field()
     uoro: Optional[UOROState] = field(serializer=deep_serialize)
     opt_state: Optional[optax.OptState] = field()
     rflo_t: Optional[jax.Array] = field()

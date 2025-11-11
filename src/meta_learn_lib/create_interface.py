@@ -140,6 +140,10 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
             put_influence_tensor=lambda env, influence_tensor, i=j: env.transform(
                 ["learning_states", i, "influence_tensor"], lambda _: influence_tensor
             ),
+            get_influence_tensor_squared=lambda env, i=j: env.learning_states[i].influence_tensor_squared,
+            put_influence_tensor_squared=lambda env, influence_tensor_squared, i=j: env.transform(
+                ["learning_states", i, "influence_tensor_squared"], lambda _: influence_tensor_squared
+            ),
             get_uoro=lambda env, i=j: env.learning_states[i].uoro,
             put_uoro=lambda env, uoro, i=j: env.transform(["learning_states", i, "uoro"], lambda _: uoro),
             learn_config=learn_config,
@@ -199,6 +203,10 @@ def create_validation_learn_interfaces(
             get_influence_tensor=lambda env, i=j: env.validation_learning_states[i].influence_tensor,
             put_influence_tensor=lambda env, influence_tensor, i=j: env.transform(
                 ["validation_learning_states", i, "influence_tensor"], lambda _: influence_tensor
+            ),
+            get_influence_tensor_squared=lambda env, i=j: env.validation_learning_states[i].influence_tensor_squared,
+            put_influence_tensor_squared=lambda env, influence_tensor_squared, i=j: env.transform(
+                ["validation_learning_states", i, "influence_tensor_squared"], lambda _: influence_tensor_squared
             ),
             get_uoro=lambda env, i=j: env.validation_learning_states[i].uoro,
             put_uoro=lambda env, uoro, i=j: env.transform(["validation_learning_states", i, "uoro"], lambda _: uoro),

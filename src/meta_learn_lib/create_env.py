@@ -229,14 +229,19 @@ def create_learning_state(
     learn_interface: LearnInterface[GodState],
     prng: PRNG,
 ) -> LearningState:
-    state = LearningState(influence_tensor=None, uoro=None, opt_state=None, rflo_t=None, rtrl_t=None)
+    state = LearningState(
+        influence_tensor=None, influence_tensor_squared=None, uoro=None, opt_state=None, rflo_t=None, rtrl_t=None
+    )
     flat_state = learn_interface.get_state(env)
     flat_param = filter_hyperparam(parameter)
     match learn_config.learner:
         case RTRLConfig() | RFLOConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
             # prng1, prng = jax.random.split(prng, 2)
             influence_tensor = jnp.zeros((flat_state.size, flat_param.size))
-            state = state.set(influence_tensor=JACOBIAN(influence_tensor))
+            influence_tensor_squared = jnp.zeros((flat_state.size, flat_param.size))
+            state = state.set(
+                influence_tensor=JACOBIAN(influence_tensor), influence_tensor_squared=JACOBIAN(influence_tensor_squared)
+            )
         case UOROConfig():
             prng1, prng2, prng = jax.random.split(prng, 3)
 

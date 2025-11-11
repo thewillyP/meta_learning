@@ -74,18 +74,24 @@ class DelayAddOnlineConfig:
 @dataclass(frozen=True)
 class RTRLConfig:
     start_at_step: int
+    momentum1: float
+    momentum2: float
 
 
 @dataclass(frozen=True)
 class RTRLHessianDecompConfig:
     epsilon: float
     start_at_step: int
+    momentum1: float
+    momentum2: float
 
 
 @dataclass(frozen=True)
 class RTRLFiniteHvpConfig:
     epsilon: float
     start_at_step: int
+    momentum1: float
+    momentum2: float
 
 
 @dataclass(frozen=True)

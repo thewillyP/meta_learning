@@ -48,9 +48,15 @@ def get_logs(config: GodConfig, env: GodState) -> tuple[jax.Array, ...]:
     tr_gr = env.general[0].logs.gradient
     tr_gr_norm = jax.numpy.linalg.norm(tr_gr) if tr_gr is not None else jax.numpy.array(0.0)
     meta_gr = env.general[1].logs.gradient
-    meta_gr_norm = jax.numpy.linalg.norm(meta_gr) if meta_gr is not None else jax.numpy.array(0.0)
-    rnn_activations = env.inference_states[0][0].rnn.activation
-    rnn_activations_norm = jnp.linalg.norm(rnn_activations, axis=-1).mean()
+    meta_gr_norm = jax.numpy.linalg.norm(meta_gr) if meta_gr is not None else jnp.zeros((1, 1))
+    rnn_activations = (
+        env.inference_states[0][0].rnn.activation if env.inference_states[0][0].rnn is not None else jnp.zeros((1, 1))
+    )
+    rnn_activations_norm = (
+        jnp.linalg.norm(rnn_activations, axis=-1).mean()
+        if env.inference_states[0][0].rnn is not None
+        else jnp.array(0.0)
+    )
     return (
         lrs,
         wds,

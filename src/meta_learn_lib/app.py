@@ -165,10 +165,10 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         env, stats, te_losses = update_fn(data, env)
         tr_stats, vl_stats, te_stats = stats
 
-        tr_loss, tr_acc, _, _wds, tr_grs, __ = tr_stats
-        (vl_loss, vl_acc, _, _wds, __, ___) = vl_stats
-        te_loss, te_acc, _, _wds, __, ___ = te_stats
-        _, __, lrs, wds, ___, meta_grs = tr_stats
+        tr_loss, tr_acc, _, _wds, tr_grs, __, hT, aT = tr_stats
+        vl_loss, vl_acc, _, _wds, __, ___, _hT, _aT = vl_stats
+        te_loss, te_acc, _, _wds, __, ___, _hT, _aT = te_stats
+        _, __, lrs, wds, ___, meta_grs, _hT, _aT = tr_stats
 
         tr_loss = metric_fn(tr_loss, axis=2)
         tr_acc = metric_fn(tr_acc, axis=2)
@@ -182,8 +182,33 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         wds1 = wds[0][:, :, -1]
         wds2 = wds[1][:, :, -1]
         meta_grs = meta_grs[:, :, -1]
+        hT = hT[:, :, -1]
+        aT = aT[:, :, -1]
 
         jax.block_until_ready(env)
+
+        # def corr(a, b):
+        #     # a,b: [batch, hidden]
+        #     a_flat = a.reshape(-1)
+        #     b_flat = b.reshape(-1)
+        #     a_flat = a_flat - a_flat.mean()
+        #     b_flat = b_flat - b_flat.mean()
+        #     return jnp.dot(a_flat, b_flat) / (jnp.linalg.norm(a_flat) * jnp.linalg.norm(b_flat))
+
+        def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
+            """
+            Compute per-example correlation as normalized dot product, then average across batch.
+            a_prev, a_curr: [batch, hidden]
+            """
+            # dot product between previous and current activations for each example
+            dot = jnp.sum(a_prev * a_curr, axis=1)  # [batch]
+
+            # norms
+            norm_prev = jnp.linalg.norm(a_prev, axis=1)
+            norm_curr = jnp.linalg.norm(a_curr, axis=1)
+
+            corr_per_ex = dot / (norm_prev * norm_curr + eps)  # [batch]
+            return jnp.mean(corr_per_ex)  # scalar: average across batch
 
         context = logger.get_context()
         for i in range(tr_loss.shape[0]):
@@ -270,6 +295,52 @@ def runApp(config: GodConfig, logger: Logger) -> None:
                         iteration,
                         total_tr_vb * config.num_base_epochs,
                     )
+                    logger.log_scalar(
+                        context,
+                        "train/final_rnn_activation_norm",
+                        "train_final_rnn_activation_norm",
+                        hT[i, j],
+                        iteration,
+                        total_tr_vb * config.num_base_epochs,
+                    )
+
+                    # # store previous activations across iterations
+                    # if iteration == 1:
+                    #     prev_aT = aT[i, j]  # initialize
+                    # else:
+                    #     aT_curr = aT[i, j]  # [batch, hidden]
+                    #     aT_prev = prev_aT  # [batch, hidden]
+
+                    #     at_corr = corr(aT_prev, aT_curr)
+
+                    #     logger.log_scalar(
+                    #         context,
+                    #         "train/aT_correlation",
+                    #         "train_aT_correlation",
+                    #         at_corr,
+                    #         iteration,
+                    #         total_tr_vb * config.num_base_epochs,
+                    #     )
+
+                    #     prev_aT = aT_curr
+                    if iteration == 1:
+                        prev_aT = aT[i, j]  # [batch, hidden]
+                    else:
+                        aT_curr = aT[i, j]  # [batch, hidden]
+                        aT_prev = prev_aT  # [batch, hidden]
+
+                        at_corr = corr_per_example_dot(aT_prev, aT_curr)
+
+                        logger.log_scalar(
+                            context,
+                            "train/aT_correlation",
+                            "train_aT_correlation",
+                            at_corr,
+                            iteration,
+                            total_tr_vb * config.num_base_epochs,
+                        )
+
+                        prev_aT = aT_curr
 
             logger.log_scalar(
                 context, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs
@@ -298,7 +369,7 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         ds = traverse(batched((te_x, te_y, te_seqs)))
         test_env = test_reset(test_env)
         stats = te_inf(test_env, ds, te_mask)
-        te_loss, te_acc, _, _wds, __, ___ = stats[0]
+        te_loss, te_acc, _, _wds, __, ___, _hT, _aT = stats[0]
         te_loss = metric_fn(te_loss)
         te_acc = metric_fn(te_acc)
         final_te_loss += te_loss

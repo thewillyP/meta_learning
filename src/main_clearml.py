@@ -49,8 +49,8 @@ def main():
         clearml_run=False,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
-        # dataset=CIFAR10Config(96),
-        dataset=FashionMnistConfig(784, False),
+        dataset=CIFAR10Config(96),
+        # dataset=FashionMnistConfig(784),
         # dataset=FashionMnistConfig(28),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),
@@ -60,7 +60,7 @@ def main():
         loss_fn="cross_entropy_with_integer_labels",
         # loss_fn="cross_entropy",
         transition_function={
-            0: IdentityLayer(activation_fn="identity"),
+            # 0: IdentityLayer(activation_fn="identity"),
             # 0: GRULayer(
             #     n=128,
             #     # activation_fn="tanh",
@@ -72,14 +72,14 @@ def main():
             #     use_in_readout=True,
             #     use_random_init=False,
             # ),
-            # 0: NNLayer(
-            #     n=512,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            #     use_in_readout=True,
-            #     layer_norm=None,
-            #     use_random_init=False,
-            # ),
+            0: NNLayer(
+                n=512,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=None,
+                use_random_init=False,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="identity",
@@ -127,31 +127,31 @@ def main():
         },
         readout_function=FeedForwardConfig(
             ffw_layers={
+                # 0: NNLayer(
+                #     n=128,
+                #     activation_fn="tanh",
+                #     use_bias=True,
+                #     use_in_readout=False,
+                #     layer_norm=None,
+                #     use_random_init=False,
+                # ),
+                # 1: NNLayer(
+                #     n=128,
+                #     activation_fn="tanh",
+                #     use_bias=True,
+                #     use_in_readout=False,
+                #     layer_norm=None,
+                #     use_random_init=False,
+                # ),
+                # 2: NNLayer(
+                #     n=128,
+                #     activation_fn="tanh",
+                #     use_bias=True,
+                #     use_in_readout=False,
+                #     layer_norm=None,
+                #     use_random_init=False,
+                # ),
                 0: NNLayer(
-                    n=128,
-                    activation_fn="tanh",
-                    use_bias=True,
-                    use_in_readout=False,
-                    layer_norm=None,
-                    use_random_init=False,
-                ),
-                1: NNLayer(
-                    n=128,
-                    activation_fn="tanh",
-                    use_bias=True,
-                    use_in_readout=False,
-                    layer_norm=None,
-                    use_random_init=False,
-                ),
-                2: NNLayer(
-                    n=128,
-                    activation_fn="tanh",
-                    use_bias=True,
-                    use_in_readout=False,
-                    layer_norm=None,
-                    use_random_init=False,
-                ),
-                3: NNLayer(
                     n=10,
                     activation_fn="identity",
                     use_bias=True,
@@ -252,23 +252,9 @@ def main():
                 learner=RTRLFiniteHvpConfig(1e-3, start_at_step=0, momentum1=0.95, momentum2=0.9),
                 # learner=RTRLConfig(start_at_step=0, momentum1=0.95, momentum2=0.9),
                 # learner=UOROConfig(1.0),
-                # optimizer=SGDConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=0.01,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     momentum=0.0,
-                #     add_clip=None,
-                # ),
-                optimizer=AdamConfig(
+                optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-3,
+                        value=0.01,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -277,8 +263,22 @@ def main():
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
+                    momentum=0.0,
                     add_clip=None,
                 ),
+                # optimizer=AdamConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=1e-3,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     add_clip=None,
+                # ),
                 # optimizer=ExponentiatedGradientConfig(
                 #     learning_rate=HyperparameterConfig(
                 #         value=1e-2,
@@ -300,20 +300,20 @@ def main():
         },
         data={
             0: DataConfig(
-                train_percent=83.333,
-                num_examples_in_minibatch=5000,
-                num_steps_in_timeseries=1,
+                train_percent=80.0,
+                num_examples_in_minibatch=4000,
+                num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=16.667,
-                num_examples_in_minibatch=5000,
-                num_steps_in_timeseries=1,
+                train_percent=20.0,
+                num_examples_in_minibatch=4000,
+                num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
         },
         ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=True,
+        readout_uses_input_data=False,
         logger_config=(ClearMLLoggerConfig(),),
         # logger_config=(PrintLoggerConfig(), MatplotlibLoggerConfig("../")),
         treat_inference_state_as_online=False,

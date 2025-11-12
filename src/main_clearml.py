@@ -19,7 +19,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    # time.sleep(_jitter_rng.uniform(1, 60))
+    time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -46,7 +46,7 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=True,
+        clearml_run=False,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         dataset=CIFAR10Config(96),
@@ -54,9 +54,9 @@ def main():
         # dataset=FashionMnistConfig(28),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),
-        num_base_epochs=600,
+        num_base_epochs=1000,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=274, data_seed=1, parameter_seed=1, test_seed=12345),
+        seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
         # loss_fn="cross_entropy",
         transition_function={
@@ -66,20 +66,20 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            0: LSTMLayer(
-                n=128,
-                use_bias=True,
-                use_in_readout=True,
-                use_random_init=False,
-            ),
-            # 0: NNLayer(
-            #     n=32,
-            #     activation_fn="tanh",
+            # 0: LSTMLayer(
+            #     n=128,
             #     use_bias=True,
             #     use_in_readout=True,
-            #     layer_norm=None,
             #     use_random_init=False,
             # ),
+            0: NNLayer(
+                n=512,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=None,
+                use_random_init=False,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="identity",
@@ -225,20 +225,21 @@ def main():
                 # ),
                 optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-3,
+                        value=0.001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10_000),
                     ),
                     weight_decay=HyperparameterConfig(
-                        value=1e-5,
+                        value=0.00001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10_000),
                     ),
                     momentum=0.0,
-                    add_clip=Clip(
-                        threshold=1.0,
-                        sharpness=1000.0,
-                    ),
+                    # add_clip=Clip(
+                    #     threshold=1.0,
+                    #     sharpness=1000.0,
+                    # ),
+                    add_clip=None,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,
@@ -248,8 +249,8 @@ def main():
             1: LearnConfig(
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
-                # learner=RTRLFiniteHvpConfig(1e-3, start_at_step=0),
-                learner=RTRLConfig(start_at_step=0, momentum1=0.9, momentum2=0.9),
+                learner=RTRLFiniteHvpConfig(1e-3, start_at_step=0, momentum1=0.95, momentum2=0.9),
+                # learner=RTRLConfig(start_at_step=0, momentum1=0.95, momentum2=0.9),
                 # learner=UOROConfig(1.0),
                 # optimizer=SGDConfig(
                 #     learning_rate=HyperparameterConfig(
@@ -267,7 +268,7 @@ def main():
                 # ),
                 optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-4,
+                        value=1e-3,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -294,19 +295,19 @@ def main():
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=84,
+                num_virtual_minibatches_per_turn=10,
             ),
         },
         data={
             0: DataConfig(
-                train_percent=83.333,
-                num_examples_in_minibatch=500,
+                train_percent=80.0,
+                num_examples_in_minibatch=4000,
                 num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=16.667,
-                num_examples_in_minibatch=500,
+                train_percent=20.0,
+                num_examples_in_minibatch=4000,
                 num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
@@ -353,7 +354,9 @@ def main():
         ],
     )
 
-    setup_flattened_union(converter, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config])
+    setup_flattened_union(
+        converter, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config, CIFAR100Config]
+    )
     setup_flattened_union(
         converter,
         Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig],

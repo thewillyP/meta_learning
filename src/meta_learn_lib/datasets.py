@@ -223,6 +223,89 @@ def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG
             last_unpadded_lengths[len(datasets)] = 0
             datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.data[0].num_examples_in_minibatch)
 
+        case CIFAR100Config(n_in):
+            n_in_shape = (n_in,)
+
+            transform_train = torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.RandomCrop(32, padding=4),
+                    torchvision.transforms.RandomHorizontalFlip(),
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                ]
+            )
+
+            transform_test = torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                ]
+            )
+
+            dataset = torchvision.datasets.CIFAR100(
+                root=f"{config.data_root_dir}/data", train=True, download=True, transform=transform_train
+            )
+            dataset_te = torchvision.datasets.CIFAR100(
+                root=f"{config.data_root_dir}/data", train=False, download=True, transform=transform_test
+            )
+
+            # Collect transformed training data into numpy array
+            xs_list = []
+            ys_list = []
+            for img_tensor, label in dataset:
+                # img_tensor is (3, 32, 32) after transforms
+                xs_list.append(img_tensor.numpy())
+                ys_list.append(label)
+
+            xs_te_list = []
+            ys_te_list = []
+            for img_tensor, label in dataset_te:
+                xs_te_list.append(img_tensor.numpy())
+                ys_te_list.append(label)
+
+            transformed_data = np.array(xs_list)  # (50000, 3, 32, 32)
+            transformed_targets = np.array(ys_list)  # (50000,)
+            transformed_data_te = np.array(xs_te_list)
+            transformed_targets_te = np.array(ys_te_list)
+
+            xs = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(transformed_data, n_in, False)
+            ys = jax.vmap(target_transform, in_axes=(0, None))(transformed_targets, xs.shape[1])
+            xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(transformed_data_te, n_in, False)
+            ys_te = jax.vmap(target_transform, in_axes=(0, None))(transformed_targets_te, xs_te.shape[1])
+
+            # Convert test dataset to same format as training datasets
+            X_te, _ = reshape_timeseries(xs_te, xs_te.shape[1])
+            Y_te, _ = reshape_timeseries(ys_te, ys_te.shape[1])
+
+            perm = jax.random.permutation(dataset_gen_prng, len(xs))
+            split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
+            val_indices = jnp.split(perm, split_indices)
+
+            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
+            virtual_minibatches: dict[int, int] = {}
+            last_unpadded_lengths: dict[int, int] = {}
+            total_tr_vb: int = 0
+            for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
+                X_vl = xs[val_idx]
+                Y_vl = ys[val_idx]
+                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
+                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
+                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
+                virtual_minibatches[idx] = X_vl.shape[1]
+                last_unpadded_lengths[idx] = last_unpadded_length
+
+                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, data_config.num_examples_in_minibatch)
+
+                if idx == 0:
+                    total_tr_vb = virtual_minibatches[0] * math.ceil(
+                        X_vl.shape[0] / data_config.num_examples_in_minibatch
+                    )
+
+            # Add test dataset info
+            virtual_minibatches[len(datasets)] = 1
+            last_unpadded_lengths[len(datasets)] = 0
+            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.data[0].num_examples_in_minibatch)
+
     subkeys = jax.random.split(dataloader_prng, len(datasets))
     loaders = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(len(datasets))]
 

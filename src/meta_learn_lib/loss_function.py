@@ -3,7 +3,14 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from meta_learn_lib.config import CIFAR10Config, DelayAddOnlineConfig, FashionMnistConfig, GodConfig, MnistConfig
+from meta_learn_lib.config import (
+    CIFAR10Config,
+    DelayAddOnlineConfig,
+    FashionMnistConfig,
+    GodConfig,
+    MnistConfig,
+    CIFAR100Config,
+)
 from meta_learn_lib.interface import ClassificationInterface, GeneralInterface
 from meta_learn_lib.lib_types import LOSS, STAT
 from meta_learn_lib.util import accuracy_hard, filter_cond, get_loss_fn
@@ -83,7 +90,7 @@ def make_loss_fn[ENV](
 
             _loss_fn = eqx.filter_vmap(loss_sequence_length)
 
-        case CIFAR10Config(n_in):
+        case CIFAR10Config(n_in) | CIFAR100Config(n_in):
             seq_len = 3072 // n_in - 1
             __loss_fn = get_loss_fn(config.loss_fn)
 
@@ -133,7 +140,7 @@ def make_statistics_fn[ENV](
             _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
             # premptively multiply by series length so averaging cancels out the factor
 
-        case CIFAR10Config(n_in):
+        case CIFAR10Config(n_in) | CIFAR100Config(n_in):
             seq_len = 3072 // n_in - 1
             _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
 

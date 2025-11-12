@@ -19,7 +19,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 60))
+    # time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -46,14 +46,14 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
-        # dataset=CIFAR10Config(96),
+        dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
         # dataset=FashionMnistConfig(28),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
-        dataset=MnistConfig(28, False),
+        # dataset=MnistConfig(28, False),
         num_base_epochs=600,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=274, data_seed=1, parameter_seed=1, test_seed=12345),
@@ -66,20 +66,20 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            # 0: LSTMLayer(
-            #     n=128,
-            #     use_bias=True,
-            #     use_in_readout=True,
-            #     use_random_init=False,
-            # ),
-            0: NNLayer(
-                n=32,
-                activation_fn="tanh",
+            0: LSTMLayer(
+                n=128,
                 use_bias=True,
                 use_in_readout=True,
-                layer_norm=None,
                 use_random_init=False,
             ),
+            # 0: NNLayer(
+            #     n=32,
+            #     activation_fn="tanh",
+            #     use_bias=True,
+            #     use_in_readout=True,
+            #     layer_norm=None,
+            #     use_random_init=False,
+            # ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="identity",
@@ -294,20 +294,20 @@ def main():
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=100,
+                num_virtual_minibatches_per_turn=84,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=83.333,
                 num_examples_in_minibatch=500,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=16.667,
                 num_examples_in_minibatch=500,
-                num_steps_in_timeseries=28,
+                num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
         },

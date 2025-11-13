@@ -24,14 +24,17 @@ from meta_learn_lib.interface import ClassificationInterface
 from meta_learn_lib.learning import create_meta_learner, identity
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.log import get_logs
-from meta_learn_lib.logger import Logger
+from meta_learn_lib.logger import Logger, ThreadedLogger
 from meta_learn_lib.loss_function import make_statistics_fns
 from meta_learn_lib.util import create_fractional_list
 
 
-def runApp(config: GodConfig, logger: Logger) -> None:
+def runApp(config: GodConfig, base_logger: Logger) -> None:
     if not config.clearml_run:
         return
+
+    # Make logging asynchronous
+    logger = ThreadedLogger(base_logger)
 
     # RNG Stuff
     base_key = jax.random.key(config.seed.global_seed)
@@ -393,3 +396,5 @@ def runApp(config: GodConfig, logger: Logger) -> None:
         1,
     )
     logger.close_context(context)
+
+    logger.shutdown()

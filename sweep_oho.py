@@ -12,7 +12,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="a4f28b6530fc457b818e8c651900dd4c",  # Use the actual task ID
+    base_task_id="0f97f96fc8364db39f2d65ffa842c724",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -35,15 +35,6 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/hyperparameter_parametrization/clip",
             values=[1_000_000],
-        ),
-        DiscreteParameterRange(
-            "config/learners/0/optimizer/add_clip",
-            values=[
-                {
-                    "threshold": 1.0,
-                    "sharpness": 1000.0,
-                }
-            ],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",

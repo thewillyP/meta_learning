@@ -245,7 +245,9 @@ def main():
             1: LearnConfig(
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
-                learner=RTRLFiniteHvpConfig(1e-3, start_at_step=0, momentum1=0.95, momentum2=0.9),
+                learner=RTRLFiniteHvpConfig(
+                    1e-3, start_at_step=0, momentum1=0.95, momentum2=0.9, use_reverse_mode=False
+                ),
                 # learner=RTRLConfig(start_at_step=0, momentum1=0.95, momentum2=0.9),
                 # learner=UOROConfig(1.0),
                 # optimizer=SGDConfig(

@@ -235,7 +235,7 @@ def main():
                         hyperparameter_parametrization=HyperparameterConfig.softrelu(10_000),
                     ),
                     momentum=0.0,
-                    # add_clip=None,
+                    add_clip=None,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,

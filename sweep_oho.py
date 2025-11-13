@@ -37,6 +37,7 @@ optimizer = HyperParameterOptimizer(
             "config/learners/0/optimizer/weight_decay/value",
             values=[1.0e-5],
         ),
+        DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[1000]),
@@ -55,7 +56,7 @@ optimizer = HyperParameterOptimizer(
         ),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["02:00:00"]),
+        DiscreteParameterRange("slurm/time", values=["01:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["16GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

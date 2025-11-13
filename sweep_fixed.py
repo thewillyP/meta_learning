@@ -15,39 +15,56 @@ optimizer = HyperParameterOptimizer(
     base_task_id="c84638333b5f4dbeb04f88e2d7f1f909",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
+        # DiscreteParameterRange(
+        #     "config/seed/global_seed",
+        #     values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+        # ),
+        # DiscreteParameterRange("config/seed/test_seed", values=[12345]),
+        # DiscreteParameterRange(
+        #     "config/learners/0/optimizer/learning_rate/value",
+        #     values=[
+        #         0.001,
+        #         0.001801648230654412,
+        #         0.00324593634702017,
+        #         0.005848035476425728,
+        #         0.010536102768906645,
+        #         0.0189823509115937,
+        #         0.03419951893353393,
+        #         0.061615502775833435,
+        #         0.11100946155696226,
+        #         0.2,
+        #     ],
+        # ),
+        # DiscreteParameterRange(
+        #     "config/learners/0/optimizer/weight_decay/value",
+        #     values=[
+        #         9.999999999999999e-06,
+        #         2.782559402207126e-05,
+        #         7.742636826811277e-05,
+        #         0.00021544346900318823,
+        #         0.0005994842503189409,
+        #         0.001668100537200059,
+        #         0.004641588833612777,
+        #         0.012915496650148827,
+        #         0.03593813663804626,
+        #         0.1,
+        #     ],
+        # ),
         DiscreteParameterRange(
             "config/seed/global_seed",
-            values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+            values=[1, 2],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
                 0.001,
-                0.001801648230654412,
-                0.00324593634702017,
-                0.005848035476425728,
-                0.010536102768906645,
-                0.0189823509115937,
-                0.03419951893353393,
-                0.061615502775833435,
-                0.11100946155696226,
-                0.2,
             ],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
             values=[
                 9.999999999999999e-06,
-                2.782559402207126e-05,
-                7.742636826811277e-05,
-                0.00021544346900318823,
-                0.0005994842503189409,
-                0.001668100537200059,
-                0.004641588833612777,
-                0.012915496650148827,
-                0.03593813663804626,
-                0.1,
             ],
         ),
         DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
@@ -84,9 +101,7 @@ optimizer = HyperParameterOptimizer(
     max_number_of_concurrent_tasks=1950,
     optimizer_class=GridSearch,
     execution_queue="willyp",
-    optimizer_kwargs={
-        "total_max_jobs": 1,
-    },
+    total_max_jobs=1,
 )
 
 # Start optimization

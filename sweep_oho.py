@@ -37,6 +37,15 @@ optimizer = HyperParameterOptimizer(
             values=[1_000_000],
         ),
         DiscreteParameterRange(
+            "config/learners/0/optimizer/add_clip",
+            values=[
+                {
+                    "threshold": 1.0,
+                    "sharpness": 1000.0,
+                }
+            ],
+        ),
+        DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[1.0e-3],
         ),

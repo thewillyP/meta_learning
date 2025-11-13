@@ -222,7 +222,7 @@ def create_learning_parameter(learn_config: LearnConfig) -> LearningParameter:
     parameter = create_optimizer_parameter(learn_config.optimizer)
 
     match learn_config.learner:
-        case RFLOConfig(time_constant):
+        case RFLOConfig(time_constant, use_reverse_mode):
             parameter = parameter.set(rflo_timeconstant=time_constant)
 
     return parameter

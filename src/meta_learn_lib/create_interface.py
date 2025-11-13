@@ -242,7 +242,7 @@ def create_transition_interfaces(config: GodConfig) -> dict[int, dict[int, Infer
     default_interpreter: InferenceInterface[GodState] = get_default_inference_interface()
     interpreters: dict[int, dict[int, InferenceInterface[GodState]]] = {}
     match config.learners[min(config.learners.keys())].learner:
-        case RFLOConfig(_time_constant):
+        case RFLOConfig(_time_constant, use_reverse_mode):
             time_constant = _time_constant
         case _:
             time_constant = 1.0

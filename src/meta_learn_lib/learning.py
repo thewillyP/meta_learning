@@ -101,9 +101,7 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
     learn_interface: LearnInterface[ENV],
     get_tr: Callable[[DATA], TR_DATA],
     get_vl: Callable[[DATA], VL_DATA],
-    start_at_step: int,
-    m1: float,
-    m2: float,
+    rtrl_config: RTRLConfig,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         arr, static = eqx.partition(env, eqx.is_array)
@@ -114,26 +112,42 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             rtrl_t = learn_interface.get_rtrl_t(_env)
             _env = learn_interface.put_rtrl_t(_env, rtrl_t + 1)
 
-            s__p = learn_interface.get_state(_env), learn_interface.get_param(_env)
-            s__p_vector = to_vector(s__p)
+            s = to_vector(learn_interface.get_state(_env))
+            p = to_vector(learn_interface.get_param(_env))
 
-            def state_fn(state__param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
-                state, param = s__p_vector.to_param(state__param)
+            def state_fn(state: jax.Array) -> tuple[jax.Array, None]:
+                state = s.to_param(state)
                 __env = learn_interface.put_state(_env, state)
-                __env = learn_interface.put_param(__env, param)
                 __env, stat = transition(__env, get_tr(data))
                 state = learn_interface.get_state(__env)
-                return state, (__env, stat)
+                return state, None
+
+            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+                param = p.to_param(param)
+                __env = learn_interface.put_param(_env, param)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                __arr, _ = eqx.partition(__env, eqx.is_array)
+                return state, (__arr, stat)
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
 
-            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            _, _new_influence_tensor, (_env, tr_stat) = jacobian_matrix_product(
-                state_fn, s__p_vector.vector, state_jacobian
-            )
+            # state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
+            _, _hvp, __ = jacobian_matrix_product(state_fn, s.vector, influence_tensor)
+            if rtrl_config.use_reverse_mode:
+                dhdp, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
+            else:
+                dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
+
+            _env = eqx.combine(_arr, static)
+            _new_influence_tensor = _hvp + dhdp
+
             _new_influence_tensor = filter_cond(
-                rtrl_t >= start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
+                rtrl_t >= rtrl_config.start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
             )
+
+            m1 = rtrl_config.momentum1
+            m2 = rtrl_config.momentum2
 
             new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
             new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
@@ -231,7 +245,7 @@ def rflo[ENV, TR_DATA, VL_DATA, DATA](
     learn_interface: LearnInterface[ENV],
     get_tr: Callable[[DATA], TR_DATA],
     get_vl: Callable[[DATA], VL_DATA],
-    time_constant: float,
+    rflo_config: RFLOConfig,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         arr, static = eqx.partition(env, eqx.is_array)
@@ -249,8 +263,12 @@ def rflo[ENV, TR_DATA, VL_DATA, DATA](
                 return state, (__arr, stat)
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
-            immediate_influence, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
+            if rflo_config.use_reverse_mode:
+                immediate_influence, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
+            else:
+                immediate_influence, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
             _env = eqx.combine(_arr, static)
+            time_constant = rflo_config.time_constant
             new_influence_tensor = (1 - time_constant) * influence_tensor + time_constant * immediate_influence
 
             rflo_t = learn_interface.get_rflo_t(_env)
@@ -281,10 +299,7 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
     learn_interface: LearnInterface[ENV],
     get_tr: Callable[[DATA], TR_DATA],
     get_vl: Callable[[DATA], VL_DATA],
-    epsilon: float,
-    start_at_step: int,
-    m1: float,
-    m2: float,
+    rtrl_config: RTRLHessianDecompConfig,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         arr, static = eqx.partition(env, eqx.is_array)
@@ -318,19 +333,26 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             # recompose hessian with normalized eigenvalues
             eigenvalues, eigenvectors = jnp.linalg.eigh(hessian, symmetrize_input=True)
             spectral_radius = jnp.max(jnp.abs(eigenvalues))  # abs handles complex correctly
-            normalized_eigenvalues = eigenvalues / (spectral_radius + epsilon)
+            normalized_eigenvalues = eigenvalues / (spectral_radius + rtrl_config.epsilon)
             reformed_hessian = (eigenvectors * normalized_eigenvalues) @ eigenvectors.T
 
             # threshold = 1e-6
             # diff_matrix = jnp.abs(hessian - jnp.transpose(hessian))
             # nontrivial_differences = jnp.sum(diff_matrix > threshold)
 
-            dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
+            if rtrl_config.use_reverse_mode:
+                dhdp = eqx.filter_jacrev(param_fn)(p.vector)
+            else:
+                dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
+
             _new_influence_tensor = reformed_hessian @ influence_tensor + dhdp
 
             _new_influence_tensor = filter_cond(
-                rtrl_t >= start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
+                rtrl_t >= rtrl_config.start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
             )
+
+            m1 = rtrl_config.momentum1
+            m2 = rtrl_config.momentum2
 
             new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
             new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
@@ -404,10 +426,7 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
     learn_interface: LearnInterface[ENV],
     get_tr: Callable[[DATA], TR_DATA],
     get_vl: Callable[[DATA], VL_DATA],
-    epsilon: float,
-    start_at_step: int,
-    m1: float,
-    m2: float,
+    rtrl_config: RTRLFiniteHvpConfig,
 ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
         arr, static = eqx.partition(env, eqx.is_array)
@@ -437,18 +456,26 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
                 return state, (__arr, stat)
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
+            epsilon = rtrl_config.epsilon
 
             def finite_hvp(v):
                 return (state_fn(s.vector + epsilon * v) - state_fn(s.vector - epsilon * v)) / (2 * epsilon)
 
             hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor)
 
-            dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
+            if rtrl_config.use_reverse_mode:
+                dhdp, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
+            else:
+                dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
+
             _env = eqx.combine(_arr, static)
             _new_influence_tensor = hmp + dhdp
             _new_influence_tensor = filter_cond(
-                rtrl_t >= start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
+                rtrl_t >= rtrl_config.start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
             )
+
+            m1 = rtrl_config.momentum1
+            m2 = rtrl_config.momentum2
 
             new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
             new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
@@ -611,7 +638,7 @@ def create_meta_learner[ENV, DATA](
         readout_gr = take_jacobian(statistic_fn, learn_interface)
 
         match config.learners[0].learner:
-            case RTRLConfig(start_at_step, m1, m2):
+            case RTRLConfig() as rtrl_config:
 
                 def _learner(
                     env: ENV,
@@ -620,6 +647,7 @@ def create_meta_learner[ENV, DATA](
                     statistic_fn=statistic_fn,
                     readout_gr=readout_gr,
                     learn_interface=learn_interface,
+                    rtrl_config=rtrl_config,
                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
                     tr_data, mask = data
                     return rtrl(
@@ -629,12 +657,10 @@ def create_meta_learner[ENV, DATA](
                         learn_interface,
                         lambda x: x,
                         lambda x: (x, mask),
-                        start_at_step,
-                        m1,
-                        m2,
+                        rtrl_config,
                     )(env, tr_data)
 
-            case RTRLHessianDecompConfig(epsilon, start_at_step, m1, m2):
+            case RTRLHessianDecompConfig() as rtrl_config:
 
                 def _learner(
                     env: ENV,
@@ -643,7 +669,7 @@ def create_meta_learner[ENV, DATA](
                     statistic_fn=statistic_fn,
                     readout_gr=readout_gr,
                     learn_interface=learn_interface,
-                    epsilon=epsilon,
+                    rtrl_config=rtrl_config,
                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
                     tr_data, mask = data
                     return rtrl_hessian_decomp(
@@ -653,13 +679,10 @@ def create_meta_learner[ENV, DATA](
                         learn_interface,
                         lambda x: x,
                         lambda x: (x, mask),
-                        epsilon,
-                        start_at_step,
-                        m1,
-                        m2,
+                        rtrl_config,
                     )(env, tr_data)
 
-            case RTRLFiniteHvpConfig(epsilon, start_at_step, m1, m2):
+            case RTRLFiniteHvpConfig() as rtrl_config:
 
                 def _learner(
                     env: ENV,
@@ -668,7 +691,7 @@ def create_meta_learner[ENV, DATA](
                     statistic_fn=statistic_fn,
                     readout_gr=readout_gr,
                     learn_interface=learn_interface,
-                    epsilon=epsilon,
+                    rtrl_config=rtrl_config,
                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
                     tr_data, mask = data
                     return rtrl_finite_hvp(
@@ -678,10 +701,7 @@ def create_meta_learner[ENV, DATA](
                         learn_interface,
                         lambda x: x,
                         lambda x: (x, mask),
-                        epsilon,
-                        start_at_step,
-                        m1,
-                        m2,
+                        rtrl_config,
                     )(env, tr_data)
 
             case BPTTConfig():
@@ -719,7 +739,7 @@ def create_meta_learner[ENV, DATA](
                         lambda x: x,
                         lambda x: (x, mask),
                     )(env, tr_data)
-            case RFLOConfig(time_constant):
+            case RFLOConfig() as rflo_config:
 
                 def _learner(
                     env: ENV,
@@ -728,7 +748,7 @@ def create_meta_learner[ENV, DATA](
                     statistic_fn=statistic_fn,
                     readout_gr=readout_gr,
                     learn_interface=learn_interface,
-                    time_constant=time_constant,
+                    rflo_config=rflo_config,
                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
                     tr_data, mask = data
                     return rflo(
@@ -738,7 +758,7 @@ def create_meta_learner[ENV, DATA](
                         learn_interface,
                         lambda x: x,
                         lambda x: (x, mask),
-                        time_constant,
+                        rflo_config,
                     )(env, tr_data)
             case UOROConfig(std):
 
@@ -812,7 +832,7 @@ def create_meta_learner[ENV, DATA](
         learner0 = lambda env, data, r=vl_reset, l=learner0: l(r(env), data)
 
         match learn_config.learner:
-            case RTRLConfig(start_at_step, m1, m2):
+            case RTRLConfig() as rtrl_config:
                 _learner = rtrl(
                     learner0,
                     vl_readout,
@@ -820,11 +840,9 @@ def create_meta_learner[ENV, DATA](
                     learn_interface,
                     lambda x: x[0],
                     lambda x: x[1],
-                    start_at_step,
-                    m1,
-                    m2,
+                    rtrl_config,
                 )
-            case RTRLHessianDecompConfig(epsilon, start_at_step, m1, m2):
+            case RTRLHessianDecompConfig() as rtrl_config:
                 _learner = rtrl_hessian_decomp(
                     learner0,
                     vl_readout,
@@ -832,12 +850,9 @@ def create_meta_learner[ENV, DATA](
                     learn_interface,
                     lambda x: x[0],
                     lambda x: x[1],
-                    epsilon,
-                    start_at_step,
-                    m1,
-                    m2,
+                    rtrl_config,
                 )
-            case RTRLFiniteHvpConfig(epsilon, start_at_step, m1, m2):
+            case RTRLFiniteHvpConfig() as rtrl_config:
                 _learner = rtrl_finite_hvp(
                     learner0,
                     vl_readout,
@@ -845,16 +860,13 @@ def create_meta_learner[ENV, DATA](
                     learn_interface,
                     lambda x: x[0],
                     lambda x: x[1],
-                    epsilon,
-                    start_at_step,
-                    m1,
-                    m2,
+                    rtrl_config,
                 )
             case BPTTConfig():
                 _learner = bptt(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
             case IdentityConfig():
                 _learner = identity(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
-            case RFLOConfig(time_constant):
+            case RFLOConfig() as rflo_config:
                 _learner = rflo(
                     learner0,
                     vl_readout,
@@ -862,7 +874,7 @@ def create_meta_learner[ENV, DATA](
                     learn_interface,
                     lambda x: x[0],
                     lambda x: x[1],
-                    time_constant,
+                    rflo_config,
                 )
             case UOROConfig(std):
                 _learner = uoro(

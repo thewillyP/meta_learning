@@ -81,6 +81,7 @@ class RTRLConfig:
     start_at_step: int
     momentum1: float
     momentum2: float
+    use_reverse_mode: bool
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,7 @@ class RTRLHessianDecompConfig:
     start_at_step: int
     momentum1: float
     momentum2: float
+    use_reverse_mode: bool
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,7 @@ class RTRLFiniteHvpConfig:
     start_at_step: int
     momentum1: float
     momentum2: float
+    use_reverse_mode: bool
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,7 @@ class IdentityConfig: ...
 @dataclass(frozen=True)
 class RFLOConfig:
     time_constant: float
+    use_reverse_mode: bool
 
 
 @dataclass(frozen=True)

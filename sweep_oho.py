@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-100,Epochs-100,CIFAR10,LSTM-128,SGD-Adam,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-1000,Epochs-1000,CIFAR10,LSTM-128,SGD-Adam,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -24,10 +24,10 @@ optimizer = HyperParameterOptimizer(
         # DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
-        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.8]),
-        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-4]),
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/hyperparameter_parametrization/clip",
             values=[1_000_000],
@@ -46,15 +46,15 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[100]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[100]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[100]),
+        DiscreteParameterRange("config/num_base_epochs", values=[1000]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[1000]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[1000]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
         # DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
         # DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
         # DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[28]),
         DiscreteParameterRange("config/learners/0/num_virtual_minibatches_per_turn", values=[1]),
-        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[400]),
+        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[40]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
         DiscreteParameterRange(

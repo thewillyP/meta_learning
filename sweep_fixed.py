@@ -65,10 +65,11 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
-        DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
+        # DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
+        DiscreteParameterRange("config/logger_config", values=[({"_type": "ClearMLLoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["04:00:00"]),
+        DiscreteParameterRange("slurm/time", values=["06:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[4]),
         DiscreteParameterRange("slurm/memory", values=["14GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
@@ -83,7 +84,9 @@ optimizer = HyperParameterOptimizer(
     max_number_of_concurrent_tasks=1950,
     optimizer_class=GridSearch,
     execution_queue="willyp",
-    total_max_jobs=100_000,
+    optimizer_kwargs={
+        "total_max_jobs": 1,
+    },
 )
 
 # Start optimization

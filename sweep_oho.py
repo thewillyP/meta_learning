@@ -26,15 +26,15 @@ optimizer = HyperParameterOptimizer(
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.8]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-4]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/hyperparameter_parametrization/clip",
-            values=[100_000],
+            values=[1_000_000],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/hyperparameter_parametrization/clip",
-            values=[100_000],
+            values=[1_000_000],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",

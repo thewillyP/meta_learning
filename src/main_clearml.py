@@ -227,12 +227,12 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=0.001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10_000),
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.00001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10_000),
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                     ),
                     momentum=0.0,
                     add_clip=None,

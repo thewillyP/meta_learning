@@ -235,10 +235,6 @@ def main():
                         hyperparameter_parametrization=HyperparameterConfig.softrelu(10_000),
                     ),
                     momentum=0.0,
-                    add_clip=Clip(
-                        threshold=2.0,
-                        sharpness=1000.0,
-                    ),
                     # add_clip=None,
                 ),
                 lanczos_iterations=0,

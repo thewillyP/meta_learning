@@ -52,7 +52,7 @@ optimizer = HyperParameterOptimizer(
         # ),
         DiscreteParameterRange(
             "config/seed/global_seed",
-            values=[1, 2],
+            values=[1],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         DiscreteParameterRange(
@@ -69,6 +69,7 @@ optimizer = HyperParameterOptimizer(
         ),
         DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
+        DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[1000]),

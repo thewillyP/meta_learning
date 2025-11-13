@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-1000,Epochs-1000,CIFAR10,LSTM-128,SGD-Adam,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-1000,Epochs-1000,CIFAR10,LSTM-256,SGD-Adam,BPTT-RTRL",
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
@@ -44,6 +44,7 @@ optimizer = HyperParameterOptimizer(
             "config/learners/0/optimizer/weight_decay/value",
             values=[1.0e-5],
         ),
+        DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[1000]),

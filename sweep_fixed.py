@@ -88,7 +88,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["06:00:00"]),
-        DiscreteParameterRange("slurm/cpu", values=[4]),
+        DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["14GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),

@@ -24,11 +24,18 @@ optimizer = HyperParameterOptimizer(
         # DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
-        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.95]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1.0e-3]),
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLConfig"]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-4]),
-        # DiscreteParameterRange("config/learners/1/optimizer/momentum", values=[0.9]),
+        DiscreteParameterRange(
+            "config/learners/0/optimizer/weight_decay/hyperparameter_parametrization/clip",
+            values=[100_000],
+        ),
+        DiscreteParameterRange(
+            "config/learners/0/optimizer/learning_rate/hyperparameter_parametrization/clip",
+            values=[100_000],
+        ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[1.0e-3],

@@ -261,23 +261,9 @@ def main():
                 ),
                 # learner=RTRLConfig(start_at_step=0, momentum1=0.95, momentum2=0.9),
                 # learner=UOROConfig(1.0),
-                # optimizer=SGDConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=0.01,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     momentum=0.0,
-                #     add_clip=None,
-                # ),
-                optimizer=AdamConfig(
+                optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-3,
+                        value=0.01,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -286,8 +272,22 @@ def main():
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
+                    momentum=0.0,
                     add_clip=None,
                 ),
+                # optimizer=AdamConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=1e-3,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     add_clip=None,
+                # ),
                 # optimizer=ExponentiatedGradientConfig(
                 #     learning_rate=HyperparameterConfig(
                 #         value=1e-2,

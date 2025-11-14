@@ -58,9 +58,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
-        DiscreteParameterRange(
-            "config/logger_config", values=[({"_type": "HDF5LoggerConfig"}, {"_type": "ClearMLLoggerConfig"})]
-        ),
+        DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["03:30:00"]),

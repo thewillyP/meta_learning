@@ -13,7 +13,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="3a6615e43c6640e09d21075969916417",  # Use the actual task ID
+    base_task_id="a38f7317fef24397a8b2f732641c0e66",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -28,7 +28,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
         DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
-        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-2]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[5e-4]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[1.0e-3],

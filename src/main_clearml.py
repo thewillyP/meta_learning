@@ -66,20 +66,28 @@ def main():
             #     # activation_fn="tanh",
             #     use_bias=True,
             # ),
-            0: LSTMLayer(
-                n=128,
-                use_bias=True,
-                use_in_readout=True,
-                use_random_init=False,
-            ),
-            # 0: NNLayer(
-            #     n=512,
-            #     activation_fn="tanh",
+            # 0: LSTMLayer(
+            #     n=128,
             #     use_bias=True,
             #     use_in_readout=True,
-            #     layer_norm=None,
             #     use_random_init=False,
             # ),
+            0: NNLayer(
+                n=128,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=False,
+                layer_norm=None,
+                use_random_init=False,
+            ),
+            1: NNLayer(
+                n=128,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=None,
+                use_random_init=False,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="identity",
@@ -235,7 +243,10 @@ def main():
                         hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                     ),
                     momentum=0.0,
-                    add_clip=None,
+                    add_clip=Clip(
+                        threshold=1.0,
+                        sharpness=100.0,
+                    ),
                 ),
                 lanczos_iterations=0,
                 track_logs=True,
@@ -246,7 +257,7 @@ def main():
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
                 learner=RTRLFiniteHvpConfig(
-                    1e-3, start_at_step=0, momentum1=0.95, momentum2=0.9, use_reverse_mode=False
+                    1e-3, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
                 ),
                 # learner=RTRLConfig(start_at_step=0, momentum1=0.95, momentum2=0.9),
                 # learner=UOROConfig(1.0),
@@ -293,19 +304,19 @@ def main():
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=400,
+                num_virtual_minibatches_per_turn=10,
             ),
         },
         data={
             0: DataConfig(
                 train_percent=80,
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=4000,
                 num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
                 train_percent=20,
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=4000,
                 num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),

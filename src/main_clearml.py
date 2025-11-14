@@ -49,9 +49,9 @@ def main():
         clearml_run=False,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
-        dataset=CIFAR10Config(96),
+        # dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
-        # dataset=FashionMnistConfig(28),
+        dataset=FashionMnistConfig(28, False),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),
         num_base_epochs=1000,
@@ -175,19 +175,19 @@ def main():
                 # optimizer=RecurrenceConfig(
                 #     recurrent_optimizer=SGDConfig(
                 #         learning_rate=HyperparameterConfig(
-                #             value=0.01,
-                #             learnable=False,
-                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #             value=1e-3,
+                #             learnable=True,
+                #             hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                 #         ),
                 #         weight_decay=HyperparameterConfig(
-                #             value=0.0,
-                #             learnable=False,
-                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #             value=1e-5,
+                #             learnable=True,
+                #             hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                 #         ),
-                #         momentum=0.85,
+                #         momentum=0.0,
                 #         add_clip=Clip(
                 #             threshold=1.0,
-                #             sharpness=100.0,
+                #             sharpness=1000.0,
                 #         ),
                 #     ),
                 #     # recurrent_optimizer=AdamConfig(
@@ -205,17 +205,20 @@ def main():
                 #     # ),
                 #     readout_optimizer=SGDConfig(
                 #         learning_rate=HyperparameterConfig(
-                #             value=0.001,
+                #             value=1e-3,
                 #             learnable=True,
-                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #             hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                 #         ),
                 #         weight_decay=HyperparameterConfig(
-                #             value=0.0,
-                #             learnable=False,
-                #             hyperparameter_parametrization=HyperparameterConfig.squared(1),
+                #             value=1e-5,
+                #             learnable=True,
+                #             hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                 #         ),
                 #         momentum=0.0,
-                #         add_clip=None,
+                #         add_clip=Clip(
+                #             threshold=1.0,
+                #             sharpness=1000.0,
+                #         ),
                 #     ),
                 # ),
                 # optimizer=AdamConfig(
@@ -261,23 +264,9 @@ def main():
                 ),
                 # learner=RTRLConfig(start_at_step=0, momentum1=0.95, momentum2=0.9),
                 # learner=UOROConfig(1.0),
-                optimizer=SGDConfig(
-                    learning_rate=HyperparameterConfig(
-                        value=0.01,
-                        learnable=False,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    ),
-                    weight_decay=HyperparameterConfig(
-                        value=0.0,
-                        learnable=False,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    ),
-                    momentum=0.0,
-                    add_clip=None,
-                ),
-                # optimizer=AdamConfig(
+                # optimizer=SGDConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         value=1e-3,
+                #         value=0.01,
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
@@ -286,8 +275,22 @@ def main():
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
+                #     momentum=0.0,
                 #     add_clip=None,
                 # ),
+                optimizer=AdamConfig(
+                    learning_rate=HyperparameterConfig(
+                        value=1e-3,
+                        learnable=False,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    ),
+                    weight_decay=HyperparameterConfig(
+                        value=0.0,
+                        learnable=False,
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    ),
+                    add_clip=None,
+                ),
                 # optimizer=ExponentiatedGradientConfig(
                 #     learning_rate=HyperparameterConfig(
                 #         value=1e-2,
@@ -309,15 +312,15 @@ def main():
         },
         data={
             0: DataConfig(
-                train_percent=80,
-                num_examples_in_minibatch=4000,
-                num_steps_in_timeseries=32,
+                train_percent=83.333,
+                num_examples_in_minibatch=5000,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=20,
-                num_examples_in_minibatch=4000,
-                num_steps_in_timeseries=32,
+                train_percent=16.667,
+                num_examples_in_minibatch=5000,
+                num_steps_in_timeseries=28,
                 num_times_to_avg_in_timeseries=1,
             ),
         },

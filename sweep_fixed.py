@@ -24,12 +24,13 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
-                0.01,
-                0.019743504858348197,
-                0.03898059840916188,
-                0.0769613634072608,
-                0.15194870523363546,
-                0.29999999999999993,
+                # 0.01,
+                # 0.019743504858348197,
+                # 0.03898059840916188,
+                # 0.0769613634072608,
+                # 0.15194870523363546,
+                # 0.29999999999999993,
+                0.4,
             ],
         ),
         DiscreteParameterRange(

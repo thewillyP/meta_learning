@@ -13,12 +13,12 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="a38f7317fef24397a8b2f732641c0e66",  # Use the actual task ID
+    base_task_id="00af80ace0c0444f9bed92e62af50578",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
             "config/seed/global_seed",
-            values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+            values=[1, 2, 3, 4, 5],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         # dataset
@@ -50,9 +50,10 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
-        DiscreteParameterRange(
-            "config/logger_config", values=[({"_type": "HDF5LoggerConfig"}, {"_type": "ClearMLLoggerConfig"})]
-        ),
+        # DiscreteParameterRange(
+        #     "config/logger_config", values=[({"_type": "HDF5LoggerConfig"}, {"_type": "ClearMLLoggerConfig"})]
+        # ),
+        DiscreteParameterRange("config/logger_config", values=[({"_type": "ClearMLLoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["02:00:00"]),

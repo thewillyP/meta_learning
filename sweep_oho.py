@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-4000,Epochs-1000,CIFAR10,RNN-128-128,SGD-Adam,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-5000,Epochs-1000,FashionMNIST,LSTM-256,SGD-Adam,BPTT-RTRL",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
@@ -13,7 +13,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="00af80ace0c0444f9bed92e62af50578",  # Use the actual task ID
+    base_task_id="781a2a133cd647cea11d9d49358cafd5",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -28,7 +28,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
         DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
-        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[5e-4]),
+        DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[1.0e-3],
@@ -40,8 +40,8 @@ optimizer = HyperParameterOptimizer(
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[1000]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[4000]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[4000]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[5000]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[5000]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
         # DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
         # DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),

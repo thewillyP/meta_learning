@@ -21,39 +21,26 @@ optimizer = HyperParameterOptimizer(
             values=[1],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
-        # DiscreteParameterRange(
-        #     "config/learners/0/optimizer/learning_rate/value",
-        #     values=[
-        #         0.01,
-        #         0.019743504858348197,
-        #         0.03898059840916188,
-        #         0.0769613634072608,
-        #         0.15194870523363546,
-        #         0.29999999999999993,
-        #         0.4,
-        #     ],
-        # ),
-        # DiscreteParameterRange(
-        #     "config/learners/0/optimizer/weight_decay/value",
-        #     values=[
-        #         9.999999999999999e-06,
-        #         5.253055608807533e-05,
-        #         0.00027594593229224307,
-        #         0.0014495593273553926,
-        #         0.007614615754863519,
-        #         0.04000000000000001,
-        #     ],
-        # ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
-                0.4,
+                0.01,
+                0.019743504858348197,
+                0.03898059840916188,
+                0.0769613634072608,
+                0.15194870523363546,
+                0.29999999999999993,
             ],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
             values=[
-                0.04000000000000001,
+                9.999999999999999e-06,
+                5.253055608807533e-05,
+                0.00027594593229224307,
+                0.0014495593273553926,
+                0.007614615754863519,
+                0.0200000000000000,
             ],
         ),
         DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
@@ -72,12 +59,10 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
-        DiscreteParameterRange(
-            "config/logger_config", values=[({"_type": "HDF5LoggerConfig"}, {"_type": "ClearMLLoggerConfig"})]
-        ),
+        DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["03:30:00"]),
+        DiscreteParameterRange("slurm/time", values=["03:45:00"]),
         DiscreteParameterRange("slurm/cpu", values=[4]),
         DiscreteParameterRange("slurm/memory", values=["16GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

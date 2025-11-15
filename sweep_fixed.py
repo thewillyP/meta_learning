@@ -18,7 +18,7 @@ optimizer = HyperParameterOptimizer(
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
             "config/seed/global_seed",
-            values=[1],
+            values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         DiscreteParameterRange(

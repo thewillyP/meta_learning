@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional, Union
 
+from meta_learn_lib.config_nn import GraphConfig
+
 
 @dataclass(frozen=True)
 class DockerContainerSource:
@@ -233,50 +235,6 @@ class LearnConfig:
 
 
 @dataclass(frozen=True)
-class LayerNorm:
-    epsilon: float
-    use_weight: bool
-    use_bias: bool
-
-
-@dataclass(frozen=True)
-class NNLayer:
-    n: int
-    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
-    use_bias: bool
-    use_in_readout: bool
-    layer_norm: Optional[LayerNorm]
-    use_random_init: bool
-
-
-@dataclass(frozen=True)
-class GRULayer:
-    n: int
-    use_bias: bool
-    use_in_readout: bool
-    use_random_init: bool
-
-
-@dataclass(frozen=True)
-class LSTMLayer:
-    n: int
-    use_bias: bool
-    use_in_readout: bool
-    use_random_init: bool
-
-
-@dataclass(frozen=True)
-class IdentityLayer:
-    # no learnable parameters, just applies the activation function
-    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
-
-
-@dataclass(frozen=True)
-class FeedForwardConfig:
-    ffw_layers: dict[int, NNLayer]
-
-
-@dataclass(frozen=True)
 class HDF5LoggerConfig: ...
 
 
@@ -303,8 +261,7 @@ class GodConfig:
     checkpoint_every_n_minibatches: int
     seed: SeedConfig
     loss_fn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
-    transition_function: dict[int, Union[NNLayer, GRULayer, LSTMLayer, IdentityLayer]]
-    readout_function: Union[FeedForwardConfig]
+    inference_fn: GraphConfig
     learners: dict[int, LearnConfig]
     data: dict[int, DataConfig]
     ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference

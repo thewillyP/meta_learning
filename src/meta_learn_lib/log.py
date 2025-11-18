@@ -59,6 +59,7 @@ def get_logs(config: GodConfig, env: GodState) -> tuple[jax.Array, ...]:
     # )
     rnn_activations = jnp.zeros((1, 1))
     rnn_activations_norm = jnp.array(0.0)
+    largest_eigenvalue = env.general[1].logs.largest_eigenvalue
     return (
         lrs,
         wds,
@@ -66,4 +67,5 @@ def get_logs(config: GodConfig, env: GodState) -> tuple[jax.Array, ...]:
         meta_gr_norm,
         rnn_activations_norm,
         rnn_activations,
+        largest_eigenvalue,
     )

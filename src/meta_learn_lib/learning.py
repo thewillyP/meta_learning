@@ -6,6 +6,9 @@ from jaxtyping import PyTree
 import optax
 import equinox as eqx
 import toolz
+import matfree
+import matfree.decomp
+import matfree.eig
 
 from meta_learn_lib.config import (
     BPTTConfig,
@@ -20,7 +23,7 @@ from meta_learn_lib.config import (
 from meta_learn_lib.env import Logs, UOROState
 from meta_learn_lib.interface import GeneralInterface, LearnInterface
 from meta_learn_lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, traverse
-from meta_learn_lib.util import filter_cond, jacobian_matrix_product, to_vector
+from meta_learn_lib.util import filter_cond, jacobian_matrix_product, jvp, to_vector
 
 
 def do_optimizer[ENV](env: ENV, gr: GRADIENT, learn_interface: LearnInterface[ENV]) -> ENV:
@@ -306,6 +309,7 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
 
         def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
             _env = eqx.combine(_arr, static)
+            key, _env = learn_interface.get_prng(_env)
 
             rtrl_t = learn_interface.get_rtrl_t(_env)
             _env = learn_interface.put_rtrl_t(_env, rtrl_t + 1)
@@ -328,13 +332,23 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
                 return state
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
-            hessian, (_env, tr_stat) = eqx.filter_jacrev(state_fn, has_aux=True)(s.vector)
 
-            # recompose hessian with normalized eigenvalues
-            eigenvalues, eigenvectors = jnp.linalg.eigh(hessian, symmetrize_input=True)
-            spectral_radius = jnp.max(jnp.abs(eigenvalues))  # abs handles complex correctly
-            normalized_eigenvalues = eigenvalues / (spectral_radius + rtrl_config.epsilon)
-            reformed_hessian = (eigenvectors * normalized_eigenvalues) @ eigenvectors.T
+            v0 = jnp.array(jax.random.normal(key, s.vector.shape))
+            tridag = matfree.decomp.tridiag_sym(30, custom_vjp=False)
+            get_eig = matfree.eig.eigh_partial(tridag)
+            fn = lambda v: jvp(lambda a: state_fn(a), s.vector, v)[0]
+            eigvals, _ = get_eig(fn, v0)
+            spectral_radius = jnp.max(jnp.abs(eigvals))
+
+            _, _hvp, (_env, tr_stat) = jacobian_matrix_product(state_fn, s.vector, influence_tensor)
+
+            # hessian, (_env, tr_stat) = eqx.filter_jacrev(state_fn, has_aux=True)(s.vector)
+
+            # # recompose hessian with normalized eigenvalues
+            # eigenvalues, eigenvectors = jnp.linalg.eigh(hessian, symmetrize_input=True)
+            # spectral_radius = jnp.max(jnp.abs(eigenvalues))  # abs handles complex correctly
+            # normalized_eigenvalues = eigenvalues / (spectral_radius + rtrl_config.epsilon)
+            # reformed_hessian = (eigenvectors * normalized_eigenvalues) @ eigenvectors.T
 
             # threshold = 1e-6
             # diff_matrix = jnp.abs(hessian - jnp.transpose(hessian))
@@ -345,7 +359,7 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             else:
                 dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
 
-            _new_influence_tensor = reformed_hessian @ influence_tensor + dhdp
+            _new_influence_tensor = _hvp / (spectral_radius + rtrl_config.epsilon) + dhdp
 
             _new_influence_tensor = filter_cond(
                 rtrl_t >= rtrl_config.start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
@@ -354,8 +368,10 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             m1 = rtrl_config.momentum1
             m2 = rtrl_config.momentum2
 
-            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
-            new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+            # new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
+            # new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+            new_influence_tensor = _new_influence_tensor
+            new_influence_tensor_m = new_influence_tensor
 
             influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
             new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
@@ -408,6 +424,11 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             # _env = learn_interface.put_influence_tensor(_env, infl)
 
             # grad = filter_cond(nontrivial_differences > 0, lambda _: jnp.zeros_like(grad), lambda _: grad, None)
+
+            _env = learn_interface.put_logs(
+                _env,
+                Logs(largest_eigenvalue=spectral_radius),
+            )
 
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)

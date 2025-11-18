@@ -67,6 +67,7 @@ class Logs(PClass):
     gradient: Optional[jax.Array] = field(initial=None)
     hessian_contains_nans: Optional[bool] = field(initial=None)
     immediate_influence_contains_nans: Optional[bool] = field(initial=None)
+    largest_eigenvalue: Optional[jax.Array] = field(initial=None)
 
 
 class SpecialLogs(PClass):

@@ -341,6 +341,7 @@ def create_env(
                 gradient=jnp.zeros_like(filter_hyperparam(prev_parameter)),
                 hessian_contains_nans=jnp.array(False),
                 immediate_influence_contains_nans=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                largest_eigenvalue=jnp.array(0.0),
             )
         else:
             logs = None

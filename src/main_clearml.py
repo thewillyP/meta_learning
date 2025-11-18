@@ -19,7 +19,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 60))
+    # time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -46,7 +46,7 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
@@ -63,11 +63,12 @@ def main():
             # 0: IdentityLayer(activation_fn="identity"),
             # 0: GRULayer(
             #     n=128,
-            #     # activation_fn="tanh",
             #     use_bias=True,
+            #     use_in_readout=True,
+            #     use_random_init=False,
             # ),
             0: LSTMLayer(
-                n=256,
+                n=128,
                 use_bias=True,
                 use_in_readout=True,
                 use_random_init=False,
@@ -76,7 +77,7 @@ def main():
             #     n=128,
             #     activation_fn="tanh",
             #     use_bias=True,
-            #     use_in_readout=False,
+            #     use_in_readout=True,
             #     layer_norm=None,
             #     use_random_init=False,
             # ),
@@ -238,18 +239,20 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=0.001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
+                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.00001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
+                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
+                        # hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
                     momentum=0.0,
                     add_clip=Clip(
-                        threshold=1.0,
-                        sharpness=100.0,
+                        threshold=0.5,
+                        sharpness=1000.0,
                     ),
+                    # add_clip=None,
                 ),
                 lanczos_iterations=0,
                 track_logs=True,
@@ -260,13 +263,16 @@ def main():
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
                 learner=RTRLFiniteHvpConfig(
-                    1e-3, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
+                    1e-3, start_at_step=0, momentum1=0.999, momentum2=0.9, use_reverse_mode=False
                 ),
-                # learner=RTRLConfig(start_at_step=0, momentum1=0.95, momentum2=0.9),
+                # learner=RTRLHessianDecompConfig(
+                #     epsilon=1e-4, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
+                # ),
+                # learner=RTRLConfig(start_at_step=0, momentum1=0.0, momentum2=0.9, use_reverse_mode=False),
                 # learner=UOROConfig(1.0),
                 # optimizer=SGDConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         value=0.01,
+                #         value=0.001,
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
                 #     ),
@@ -341,6 +347,7 @@ def main():
             HyperparameterConfig.softrelu,
             HyperparameterConfig.silu_positive,
             HyperparameterConfig.squared,
+            HyperparameterConfig.softclip,
         ],
     )
     setup_flattened_union(converter, Union[NNLayer, GRULayer, LSTMLayer, IdentityLayer])

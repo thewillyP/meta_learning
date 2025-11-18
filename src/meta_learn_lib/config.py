@@ -144,9 +144,15 @@ class HyperparameterConfig:
     class squared:
         scale: float
 
+    @dataclass(frozen=True)
+    class softclip:
+        a: float | None
+        b: float | None
+        clip: float
+
     value: float
     learnable: bool
-    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu, silu_positive, squared]
+    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
 
 
 @dataclass(frozen=True)

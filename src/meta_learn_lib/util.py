@@ -193,6 +193,9 @@ def hyperparameter_reparametrization(
         HyperparameterConfig.softrelu,
     ],
 ) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    def softminus(x):
+        return -jax.nn.softplus(-x)
+
     match reparametrization:
         case HyperparameterConfig.identity():
             reparam_fn = lambda lr: lr
@@ -203,9 +206,6 @@ def hyperparameter_reparametrization(
         case HyperparameterConfig.softrelu(clip):
 
             def softrelu(x, c):
-                def softminus(x):
-                    return -jax.nn.softplus(-x)
-
                 v = x - softminus(c * x) / c
                 return v
 
@@ -230,13 +230,13 @@ def hyperparameter_reparametrization(
 
             bias = jnp.real(lambertw_jax(1 / jnp.e))  # ≈ 0.2784645
 
-            def silu_positive(x, scale):
-                return x * jax.nn.sigmoid(scale * x) + bias
+            def silu_positive(x, s):
+                return x * jax.nn.sigmoid(s * x) + bias
 
-            def silu_positive_inverse(y, scale):
-                z = scale * (y - bias)
+            def silu_positive_inverse(y, s):
+                z = s * (y - bias)
                 w = lambertw_jax(z * jnp.exp(-z))
-                return (z + w) / scale
+                return (z + w) / s
 
             reparam_fn = lambda x: silu_positive(x, scale)
             reparam_inverse = lambda y: silu_positive_inverse(y, scale)
@@ -244,6 +244,30 @@ def hyperparameter_reparametrization(
         case HyperparameterConfig.squared(scale):
             reparam_fn = lambda x: (scale * x) ** 2
             reparam_inverse = lambda y: jnp.sqrt(y) / scale
+
+        case HyperparameterConfig.softclip(a, b, clip):
+
+            def softclip(x):
+                """
+                Clipping with softplus and softminus, with paramterized corner sharpness.
+                Set either (or both) endpoint to None to indicate no clipping at that end.
+                """
+                # when clipping at both ends, make c dimensionless w.r.t. b - a / 2
+                c = clip
+                if a is not None and b is not None:
+                    c /= (b - a) / 2
+
+                v = x
+                if a is not None:
+                    v = v - softminus(c * (x - a)) / c
+                if b is not None:
+                    v = v - jax.nn.softplus(c * (x - b)) / c
+                return v
+
+            reparam_fn = softclip
+            reparam_inverse = lambda y: jnp.minimum(
+                jnp.maximum(y, a if a is not None else -jnp.inf), b if b is not None else jnp.inf
+            )  # Note: not strictly correct, as softclip is not invertible
 
         case _:
             raise ValueError("Invalid hyperparameter reparametrization")

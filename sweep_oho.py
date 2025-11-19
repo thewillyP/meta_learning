@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-5000,Epochs-600,FashionMNIST,GRU-128,SGD-Adam,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-5000,Epochs-600,FashionMNIST,RNN-256,SGD-Adam,BPTT-RTRL",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
@@ -13,7 +13,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="bfe92c2d57174b3abb2061717384eb49",  # Use the actual task ID
+    base_task_id="d807f159489f47c09c4c72fe17ed3baa",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -27,7 +27,7 @@ optimizer = HyperParameterOptimizer(
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.99]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
@@ -37,6 +37,7 @@ optimizer = HyperParameterOptimizer(
             "config/learners/0/optimizer/weight_decay/value",
             values=[1.0e-5],
         ),
+        DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[600]),

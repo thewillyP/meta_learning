@@ -61,26 +61,26 @@ def main():
         # loss_fn="cross_entropy",
         transition_function={
             # 0: IdentityLayer(activation_fn="identity"),
-            0: GRULayer(
-                n=128,
-                use_bias=True,
-                use_in_readout=True,
-                use_random_init=False,
-            ),
+            # 0: GRULayer(
+            #     n=128,
+            #     use_bias=True,
+            #     use_in_readout=True,
+            #     use_random_init=False,
+            # ),
             # 0: LSTMLayer(
             #     n=128,
             #     use_bias=True,
             #     use_in_readout=True,
             #     use_random_init=False,
             # ),
-            # 0: NNLayer(
-            #     n=128,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            #     use_in_readout=True,
-            #     layer_norm=None,
-            #     use_random_init=False,
-            # ),
+            0: NNLayer(
+                n=256,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=None,
+                use_random_init=False,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="tanh",
@@ -239,12 +239,12 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=0.001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 1_000),
+                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.00001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 1_000),
+                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
                     ),
                     momentum=0.0,
                     add_clip=Clip(
@@ -269,23 +269,9 @@ def main():
                 # ),
                 # learner=RTRLConfig(start_at_step=0, momentum1=0.0, momentum2=0.9, use_reverse_mode=False),
                 # learner=UOROConfig(1.0),
-                # optimizer=SGDConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=0.001,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     momentum=0.0,
-                #     add_clip=None,
-                # ),
-                optimizer=AdamConfig(
+                optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
-                        value=1e-3,
+                        value=0.001,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
@@ -294,8 +280,22 @@ def main():
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                     ),
+                    momentum=0.0,
                     add_clip=None,
                 ),
+                # optimizer=AdamConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=1e-4,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #     ),
+                #     add_clip=None,
+                # ),
                 # optimizer=ExponentiatedGradientConfig(
                 #     learning_rate=HyperparameterConfig(
                 #         value=1e-2,

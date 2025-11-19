@@ -19,7 +19,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    # time.sleep(_jitter_rng.uniform(1, 60))
+    time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -46,7 +46,7 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=True,
+        clearml_run=False,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
@@ -54,7 +54,7 @@ def main():
         dataset=FashionMnistConfig(28, False),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),
-        num_base_epochs=1000,
+        num_base_epochs=600,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -67,20 +67,20 @@ def main():
             #     use_in_readout=True,
             #     use_random_init=False,
             # ),
-            0: LSTMLayer(
-                n=128,
-                use_bias=True,
-                use_in_readout=True,
-                use_random_init=False,
-            ),
-            # 0: NNLayer(
+            # 0: LSTMLayer(
             #     n=128,
-            #     activation_fn="tanh",
             #     use_bias=True,
             #     use_in_readout=True,
-            #     layer_norm=None,
             #     use_random_init=False,
             # ),
+            0: NNLayer(
+                n=128,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=None,
+                use_random_init=False,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="tanh",
@@ -239,13 +239,12 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=0.001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.00001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
-                        # hyperparameter_parametrization=HyperparameterConfig.identity(),
+                        hyperparameter_parametrization=HyperparameterConfig.softrelu(100_000),
                     ),
                     momentum=0.0,
                     add_clip=Clip(
@@ -263,7 +262,7 @@ def main():
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
                 learner=RTRLFiniteHvpConfig(
-                    1e-3, start_at_step=0, momentum1=0.999, momentum2=0.9, use_reverse_mode=False
+                    1e-3, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
                 ),
                 # learner=RTRLHessianDecompConfig(
                 #     epsilon=1e-4, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False

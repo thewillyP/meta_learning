@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-4000,Epochs-1000,CIFAR10,RNN-256,SGD-ADAM,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-5000,Epochs-600,FashionMNIST,RNN-128,SGD-Adam,BPTT-ID",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
@@ -13,7 +13,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="c84638333b5f4dbeb04f88e2d7f1f909",  # Use the actual task ID
+    base_task_id="d807f159489f47c09c4c72fe17ed3baa",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -41,6 +41,7 @@ optimizer = HyperParameterOptimizer(
                 0.0014495593273553926,
                 0.007614615754863519,
                 0.0200000000000000,
+                0.1,
             ],
         ),
         DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
@@ -48,9 +49,9 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[1000]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[4000]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[4000]),
+        DiscreteParameterRange("config/num_base_epochs", values=[600]),
+        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[5000]),
+        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[5000]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
         # DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
         # DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
@@ -74,7 +75,7 @@ optimizer = HyperParameterOptimizer(
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",
     objective_metric_sign="min",
-    max_number_of_concurrent_tasks=1950,
+    max_number_of_concurrent_tasks=100_000,
     optimizer_class=GridSearch,
     execution_queue="willyp",
     total_max_jobs=100_000,

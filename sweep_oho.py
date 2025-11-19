@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-5000,Epochs-1000,FashionMNIST,LSTM-256,SGD-Adam,BPTT-RTRL",
+    task_name="Seed+ILR Sweep: Batch-5000,Epochs-600,FashionMNIST,RNN-128,SGD-Adam,BPTT-RTRL",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
@@ -13,12 +13,12 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="781a2a133cd647cea11d9d49358cafd5",  # Use the actual task ID
+    base_task_id="d807f159489f47c09c4c72fe17ed3baa",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
             "config/seed/global_seed",
-            values=[1, 2, 3, 4, 5],
+            values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         # dataset
@@ -27,7 +27,7 @@ optimizer = HyperParameterOptimizer(
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.95]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
@@ -39,7 +39,7 @@ optimizer = HyperParameterOptimizer(
         ),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[1000]),
+        DiscreteParameterRange("config/num_base_epochs", values=[600]),
         DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[5000]),
         DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[5000]),
         # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
@@ -50,10 +50,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
         # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
         DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
-        # DiscreteParameterRange(
-        #     "config/logger_config", values=[({"_type": "HDF5LoggerConfig"}, {"_type": "ClearMLLoggerConfig"})]
-        # ),
-        DiscreteParameterRange("config/logger_config", values=[({"_type": "ClearMLLoggerConfig"},)]),
+        DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
         DiscreteParameterRange("slurm/time", values=["02:00:00"]),
@@ -68,7 +65,7 @@ optimizer = HyperParameterOptimizer(
     objective_metric_title="final_test/loss",
     objective_metric_series="final_test_loss",
     objective_metric_sign="min",
-    max_number_of_concurrent_tasks=1950,
+    max_number_of_concurrent_tasks=100_000,
     optimizer_class=GridSearch,
     execution_queue="willyp",
     total_max_jobs=100_000,

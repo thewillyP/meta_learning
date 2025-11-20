@@ -19,7 +19,7 @@ from meta_learn_lib.util import setup_flattened_union
 
 def main():
     _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 60))
+    # time.sleep(_jitter_rng.uniform(1, 60))
 
     # names don't matter, can change in UI
     # clearml.Task.set_offline(True)
@@ -46,12 +46,12 @@ def main():
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
+        clearml_run=True,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
-        dataset=FashionMnistConfig(28, False),
+        dataset=MnistConfig(28, False),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),
         num_base_epochs=600,
@@ -261,13 +261,13 @@ def main():
             1: LearnConfig(
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
-                learner=RTRLFiniteHvpConfig(
-                    1e-3, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
-                ),
+                # learner=RTRLFiniteHvpConfig(
+                #     1e-3, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
+                # ),
                 # learner=RTRLHessianDecompConfig(
                 #     epsilon=1e-4, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
                 # ),
-                # learner=RTRLConfig(start_at_step=0, momentum1=0.0, momentum2=0.9, use_reverse_mode=False),
+                learner=RTRLConfig(start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False),
                 # learner=UOROConfig(1.0),
                 optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(

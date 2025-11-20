@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Seed+ILR Sweep: Batch-5000,Epochs-600,FashionMNIST,RNN-128,SGD-Adam,BPTT-ID",
+    task_name="Seed+ILR Sweep: Batch-5000,Epochs-600,FashionMNIST,GRU-128,SGD-Adam,BPTT-ID",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
@@ -13,7 +13,7 @@ opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
-    base_task_id="d807f159489f47c09c4c72fe17ed3baa",  # Use the actual task ID
+    base_task_id="bfe92c2d57174b3abb2061717384eb49",  # Use the actual task ID
     hyper_parameters=[
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
@@ -25,28 +25,26 @@ optimizer = HyperParameterOptimizer(
             "config/learners/0/optimizer/learning_rate/value",
             values=[
                 0.01,
-                0.019743504858348197,
-                0.03898059840916188,
-                0.0769613634072608,
-                0.15194870523363546,
-                0.29999999999999993,
+                0.023389428374280204,
+                0.054706535967558395,
+                0.12795546046181908,
+                0.299280507756976,
+                0.7,
             ],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
             values=[
-                9.999999999999999e-06,
-                5.253055608807533e-05,
-                0.00027594593229224307,
-                0.0014495593273553926,
-                0.007614615754863519,
-                0.0200000000000000,
                 0.1,
+                0.01,
+                0.001,
+                0.0001,
+                1e-05,
+                1e-06,
             ],
         ),
         DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
-        # DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
         DiscreteParameterRange("config/num_base_epochs", values=[600]),

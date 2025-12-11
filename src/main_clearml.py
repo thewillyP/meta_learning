@@ -61,18 +61,18 @@ def main():
         # loss_fn="cross_entropy",
         transition_function={
             # 0: IdentityLayer(activation_fn="identity"),
-            # 0: GRULayer(
-            #     n=128,
-            #     use_bias=True,
-            #     use_in_readout=True,
-            #     use_random_init=False,
-            # ),
-            0: LSTMLayer(
+            0: GRULayer(
                 n=128,
                 use_bias=True,
                 use_in_readout=True,
                 use_random_init=False,
             ),
+            # 0: LSTMLayer(
+            #     n=128,
+            #     use_bias=True,
+            #     use_in_readout=True,
+            #     use_random_init=False,
+            # ),
             # 0: NNLayer(
             #     n=256,
             #     activation_fn="tanh",

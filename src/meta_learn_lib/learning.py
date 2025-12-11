@@ -13,6 +13,7 @@ import matfree.eig
 from meta_learn_lib.config import (
     BPTTConfig,
     GodConfig,
+    HyperparameterConfig,
     IdentityConfig,
     RFLOConfig,
     RTRLConfig,
@@ -23,7 +24,7 @@ from meta_learn_lib.config import (
 from meta_learn_lib.env import Logs, UOROState
 from meta_learn_lib.interface import GeneralInterface, LearnInterface
 from meta_learn_lib.lib_types import GRADIENT, JACOBIAN, LOSS, STAT, traverse
-from meta_learn_lib.util import filter_cond, jacobian_matrix_product, jvp, to_vector
+from meta_learn_lib.util import filter_cond, hyperparameter_reparametrization, jacobian_matrix_product, jvp, to_vector
 
 
 def do_optimizer[ENV](env: ENV, gr: GRADIENT, learn_interface: LearnInterface[ENV]) -> ENV:
@@ -111,6 +112,7 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
 
         def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
             _env = eqx.combine(_arr, static)
+            key, _env = learn_interface.get_prng(_env)
 
             rtrl_t = learn_interface.get_rtrl_t(_env)
             _env = learn_interface.put_rtrl_t(_env, rtrl_t + 1)
@@ -137,6 +139,14 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
 
             # state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             _, _hvp, __ = jacobian_matrix_product(state_fn, s.vector, influence_tensor)
+
+            v0 = jnp.array(jax.random.normal(key, s.vector.shape))
+            tridag = matfree.decomp.tridiag_sym(60, custom_vjp=False)
+            get_eig = matfree.eig.eigh_partial(tridag)
+            fn = lambda v: jvp(lambda a: state_fn(a), s.vector, v)[0]
+            eigvals, _ = get_eig(fn, v0)
+            spectral_radius = jnp.max(jnp.abs(eigvals))
+
             if rtrl_config.use_reverse_mode:
                 dhdp, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
             else:
@@ -152,7 +162,7 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             m1 = rtrl_config.momentum1
             m2 = rtrl_config.momentum2
 
-            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
+            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor + m1 * dhdp
             new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
 
             influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
@@ -169,6 +179,12 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
 
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
             _env = learn_interface.put_influence_tensor_squared(_env, new_influence_tensor_squared)
+
+            _env = learn_interface.put_logs(
+                _env,
+                Logs(largest_eigenvalue=jnp.squeeze(spectral_radius)),
+            )
+
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
 
@@ -317,30 +333,31 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             s = to_vector(learn_interface.get_state(_env))
             p = to_vector(learn_interface.get_param(_env))
 
-            def state_fn(state: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+            def state_fn(state: jax.Array) -> tuple[jax.Array, None]:
                 state = s.to_param(state)
                 __env = learn_interface.put_state(_env, state)
                 __env, stat = transition(__env, get_tr(data))
                 state = learn_interface.get_state(__env)
-                return state, (__env, stat)
+                return state, None
 
-            def param_fn(param: jax.Array) -> jax.Array:
+            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
                 param = p.to_param(param)
                 __env = learn_interface.put_param(_env, param)
                 __env, stat = transition(__env, get_tr(data))
                 state = learn_interface.get_state(__env)
-                return state
+                __arr, _ = eqx.partition(__env, eqx.is_array)
+                return state, (__arr, stat)
 
             influence_tensor = learn_interface.get_influence_tensor(_env)
 
             v0 = jnp.array(jax.random.normal(key, s.vector.shape))
-            tridag = matfree.decomp.tridiag_sym(30, custom_vjp=False)
+            tridag = matfree.decomp.tridiag_sym(60, custom_vjp=False)
             get_eig = matfree.eig.eigh_partial(tridag)
             fn = lambda v: jvp(lambda a: state_fn(a), s.vector, v)[0]
             eigvals, _ = get_eig(fn, v0)
             spectral_radius = jnp.max(jnp.abs(eigvals))
 
-            _, _hvp, (_env, tr_stat) = jacobian_matrix_product(state_fn, s.vector, influence_tensor)
+            _, _hvp, __ = jacobian_matrix_product(state_fn, s.vector, influence_tensor)
 
             # hessian, (_env, tr_stat) = eqx.filter_jacrev(state_fn, has_aux=True)(s.vector)
 
@@ -355,23 +372,36 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             # nontrivial_differences = jnp.sum(diff_matrix > threshold)
 
             if rtrl_config.use_reverse_mode:
-                dhdp = eqx.filter_jacrev(param_fn)(p.vector)
+                dhdp, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
             else:
-                dhdp = eqx.filter_jacfwd(param_fn, has_aux=False)(p.vector)
+                dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
+            _env = eqx.combine(_arr, static)
 
-            _new_influence_tensor = _hvp / (spectral_radius + rtrl_config.epsilon) + dhdp
+            learn_param = learn_interface.get_optimizer_param(_env)
+
+            lr_forward, _ = hyperparameter_reparametrization(HyperparameterConfig.softrelu(100_000))
+            wd_forward, _ = hyperparameter_reparametrization(HyperparameterConfig.softrelu(100_000))
+
+            alpha = lr_forward(learn_param.learning_rate.value)
+            weight_decay = wd_forward(learn_param.weight_decay.value)
+            # l = (1 - spectral_radius) / (alpha)
+            # spectral_radius = jnp.max(jnp.abs(1.0 - eigvals)) / alpha
+
+            _new_influence_tensor = _hvp + dhdp
 
             _new_influence_tensor = filter_cond(
                 rtrl_t >= rtrl_config.start_at_step, lambda _: _new_influence_tensor, lambda _: influence_tensor, None
             )
 
+            # m1 = rtrl_config.momentum1
+            # m1 = 1 / (spectral_radius + rtrl_config.epsilon)
             m1 = rtrl_config.momentum1
             m2 = rtrl_config.momentum2
 
-            # new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
-            # new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
-            new_influence_tensor = _new_influence_tensor
-            new_influence_tensor_m = new_influence_tensor
+            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor + m1 * dhdp
+            new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+            # new_influence_tensor = _new_influence_tensor
+            # new_influence_tensor_m = new_influence_tensor
 
             influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
             new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
@@ -427,7 +457,7 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
 
             _env = learn_interface.put_logs(
                 _env,
-                Logs(largest_eigenvalue=spectral_radius),
+                Logs(largest_eigenvalue=jnp.squeeze(spectral_radius)),
             )
 
             _arr, _ = eqx.partition(_env, eqx.is_array)
@@ -498,7 +528,7 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
             m1 = rtrl_config.momentum1
             m2 = rtrl_config.momentum2
 
-            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
+            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor + m1 * dhdp
             new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
 
             influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)

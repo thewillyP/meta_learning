@@ -168,6 +168,7 @@ def create_learn_interfaces(config: GodConfig) -> dict[int, LearnInterface[GodSt
             put_rflo_t=lambda env, t, i=j: env.transform(["learning_states", i, "rflo_t"], lambda _: t),
             get_rtrl_t=lambda env, i=j: env.learning_states[i].rtrl_t,
             put_rtrl_t=lambda env, t, i=j: env.transform(["learning_states", i, "rtrl_t"], lambda _: t),
+            get_optimizer_param=lambda env, i=j: env.parameters[i + 1].learning_parameter,
         )
         interpreters[j] = interpreter
 
@@ -232,6 +233,7 @@ def create_validation_learn_interfaces(
             put_rflo_t=lambda env, t, i=j: env.transform(["validation_learning_states", i, "rflo_t"], lambda _: t),
             get_rtrl_t=lambda env, i=j: env.validation_learning_states[i].rtrl_t,
             put_rtrl_t=lambda env, t, i=j: env.transform(["validation_learning_states", i, "rtrl_t"], lambda _: t),
+            # get_optimizer_param=lambda env, i=j: env.parameters[1].learning_parameter,
         )
         interpreters[j] = interpreter
 

@@ -6,7 +6,16 @@ import optax
 import equinox as eqx
 
 from meta_learn_lib.config import LearnConfig
-from meta_learn_lib.env import RNN, CustomSequential, LSTMState, Logs, RNNState, SpecialLogs, UOROState
+from meta_learn_lib.env import (
+    RNN,
+    CustomSequential,
+    LSTMState,
+    LearningParameter,
+    Logs,
+    RNNState,
+    SpecialLogs,
+    UOROState,
+)
 from meta_learn_lib.lib_types import JACOBIAN, PRNG, batched
 
 
@@ -67,6 +76,7 @@ class LearnInterface[ENV]:
     put_rflo_t: Callable[[ENV, int], ENV]
     get_rtrl_t: Callable[[ENV], int]
     put_rtrl_t: Callable[[ENV, int], ENV]
+    get_optimizer_param: Callable[[ENV], LearningParameter]
 
 
 def get_default_inference_interface[ENV]() -> InferenceInterface[ENV]:
@@ -113,6 +123,7 @@ def get_default_learn_interface[ENV]() -> LearnInterface[ENV]:
         put_rflo_t=lambda env, _: env,
         get_rtrl_t=lambda env: None,
         put_rtrl_t=lambda env, _: env,
+        get_optimizer_param=lambda env: None,
     )
 
 

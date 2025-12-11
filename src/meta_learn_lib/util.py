@@ -213,7 +213,11 @@ def hyperparameter_reparametrization(
             reparam_inverse = lambda y: y  # Note: not strictly correct, as softrelu is not invertible
 
         case HyperparameterConfig.relu():
+            # def straight_through_relu(x):
+            #     return x + lax.stop_gradient(jnp.maximum(x, 0.0) - x)
+
             reparam_fn = lambda x: jnp.maximum(x, 0.0)
+            # reparam_fn = straight_through_relu
             reparam_inverse = lambda y: y  # Note: not strictly correct, as relu is not invertible
         case HyperparameterConfig.silu_positive(scale):
 
@@ -265,9 +269,10 @@ def hyperparameter_reparametrization(
                 return v
 
             reparam_fn = softclip
-            reparam_inverse = lambda y: jnp.minimum(
-                jnp.maximum(y, a if a is not None else -jnp.inf), b if b is not None else jnp.inf
-            )  # Note: not strictly correct, as softclip is not invertible
+            reparam_inverse = lambda y: y  # Note: not strictly correct, as softclip is not invertible
+            # reparam_inverse = lambda y: jnp.minimum(
+            #     jnp.maximum(y, a if a is not None else -jnp.inf), b if b is not None else jnp.inf
+            # )  # Note: not strictly correct, as softclip is not invertible
 
         case _:
             raise ValueError("Invalid hyperparameter reparametrization")

@@ -26,8 +26,10 @@ def get_optimizer(
         def update_fn(updates, state, _):
             grads_flat, _ = jax.flatten_util.ravel_pytree(updates)
             grad_norm = jnp.linalg.norm(grads_flat)
-            clipped_norm = grad_norm - jax.nn.softplus(sharpness * (grad_norm - threshold)) / sharpness
+            # clipped_norm = grad_norm - jax.nn.softplus(sharpness * (grad_norm - threshold)) / sharpness
+            clipped_norm = jnp.minimum(grad_norm, threshold)
             scale = clipped_norm / (grad_norm + 1e-6)
+            # scale = jax.lax.stop_gradient(scale)
             updates_scaled = jax.tree.map(lambda g: g * scale, updates)
             return updates_scaled, state
 

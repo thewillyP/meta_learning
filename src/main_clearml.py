@@ -61,18 +61,18 @@ def main():
         # loss_fn="cross_entropy",
         transition_function={
             # 0: IdentityLayer(activation_fn="identity"),
-            0: GRULayer(
-                n=128,
-                use_bias=True,
-                use_in_readout=True,
-                use_random_init=False,
-            ),
-            # 0: LSTMLayer(
+            # 0: GRULayer(
             #     n=128,
             #     use_bias=True,
             #     use_in_readout=True,
             #     use_random_init=False,
             # ),
+            0: LSTMLayer(
+                n=128,
+                use_bias=True,
+                use_in_readout=True,
+                use_random_init=False,
+            ),
             # 0: NNLayer(
             #     n=256,
             #     activation_fn="tanh",
@@ -273,9 +273,27 @@ def main():
                 # ),
                 learner=RTRLConfig(start_at_step=0, momentum1=0.9, momentum2=0.0, use_reverse_mode=False),
                 # learner=UOROConfig(1.0),
-                optimizer=SGDConfig(
+                # optimizer=SGDConfig(
+                #     learning_rate=HyperparameterConfig(
+                #         value=0.0001,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #         min_value=0.0,
+                #         max_value=jnp.inf,
+                #     ),
+                #     weight_decay=HyperparameterConfig(
+                #         value=0.0,
+                #         learnable=False,
+                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #         min_value=0.0,
+                #         max_value=jnp.inf,
+                #     ),
+                #     momentum=0.0,
+                #     add_clip=None,
+                # ),
+                optimizer=AdamConfig(
                     learning_rate=HyperparameterConfig(
-                        value=0.0001,
+                        value=1e-3,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                         min_value=0.0,
@@ -288,22 +306,8 @@ def main():
                         min_value=0.0,
                         max_value=jnp.inf,
                     ),
-                    momentum=0.0,
                     add_clip=None,
                 ),
-                # optimizer=AdamConfig(
-                #     learning_rate=HyperparameterConfig(
-                #         value=1e-4,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     weight_decay=HyperparameterConfig(
-                #         value=0.0,
-                #         learnable=False,
-                #         hyperparameter_parametrization=HyperparameterConfig.identity(),
-                #     ),
-                #     add_clip=None,
-                # ),
                 # optimizer=ExponentiatedGradientConfig(
                 #     learning_rate=HyperparameterConfig(
                 #         value=1e-2,

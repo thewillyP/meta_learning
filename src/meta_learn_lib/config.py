@@ -153,6 +153,8 @@ class HyperparameterConfig:
     value: float
     learnable: bool
     hyperparameter_parametrization: Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
+    min_value: float
+    max_value: float
 
 
 @dataclass(frozen=True)

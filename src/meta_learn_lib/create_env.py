@@ -204,10 +204,14 @@ def create_optimizer_parameter(optimizer: Optimizer) -> LearningParameter:
                 learning_rate=Hyperparameter(
                     value=lr_backward(jnp.array([opt.learning_rate.value])),
                     learnable=opt.learning_rate.learnable,
+                    min_value=opt.learning_rate.min_value,
+                    max_value=opt.learning_rate.max_value,
                 ),
                 weight_decay=Hyperparameter(
                     value=wd_backward(jnp.array([opt.weight_decay.value])),
                     learnable=opt.weight_decay.learnable,
+                    min_value=opt.weight_decay.min_value,
+                    max_value=opt.weight_decay.max_value,
                 ),
             )
         case RecurrenceConfig(recurrence_optimizer, out_optimizer):

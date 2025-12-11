@@ -9,7 +9,7 @@ from meta_learn_lib import app
 from meta_learn_lib.config import *
 from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
 from meta_learn_lib.util import setup_flattened_union
-# import jax
+import jax.numpy as jnp
 
 # jax.config.update("jax_platform_name", "cpu")
 # jax.config.update("jax_enable_x64", True)
@@ -49,12 +49,12 @@ def main():
         clearml_run=True,
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
-        # dataset=CIFAR10Config(96),
+        dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
-        dataset=MnistConfig(28, False),
+        # dataset=MnistConfig(28, False),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),
-        num_base_epochs=600,
+        num_base_epochs=1000,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
@@ -239,16 +239,20 @@ def main():
                     learning_rate=HyperparameterConfig(
                         value=0.001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                        min_value=0.0,
+                        max_value=jnp.inf,
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.00001,
                         learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softclip(1e-6, None, 100_000),
+                        hyperparameter_parametrization=HyperparameterConfig.identity(),
+                        min_value=0.0,
+                        max_value=jnp.inf,
                     ),
                     momentum=0.0,
                     add_clip=Clip(
-                        threshold=0.5,
+                        threshold=1.0,
                         sharpness=1000.0,
                     ),
                     # add_clip=None,
@@ -265,20 +269,24 @@ def main():
                 #     1e-3, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
                 # ),
                 # learner=RTRLHessianDecompConfig(
-                #     epsilon=1e-4, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
+                #     epsilon=1e-4, start_at_step=0, momentum1=0.9, momentum2=0.0, use_reverse_mode=False
                 # ),
-                learner=RTRLConfig(start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False),
+                learner=RTRLConfig(start_at_step=0, momentum1=0.9, momentum2=0.0, use_reverse_mode=False),
                 # learner=UOROConfig(1.0),
                 optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
-                        value=0.001,
+                        value=0.0001,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                        min_value=0.0,
+                        max_value=jnp.inf,
                     ),
                     weight_decay=HyperparameterConfig(
                         value=0.0,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                        min_value=0.0,
+                        max_value=jnp.inf,
                     ),
                     momentum=0.0,
                     add_clip=None,
@@ -317,15 +325,15 @@ def main():
         },
         data={
             0: DataConfig(
-                train_percent=83.333,
-                num_examples_in_minibatch=5000,
-                num_steps_in_timeseries=28,
+                train_percent=80,
+                num_examples_in_minibatch=4000,
+                num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=16.667,
-                num_examples_in_minibatch=5000,
-                num_steps_in_timeseries=28,
+                train_percent=20,
+                num_examples_in_minibatch=4000,
+                num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
         },

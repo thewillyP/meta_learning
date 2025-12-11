@@ -140,12 +140,12 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             # state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             _, _hvp, __ = jacobian_matrix_product(state_fn, s.vector, influence_tensor)
 
-            v0 = jnp.array(jax.random.normal(key, s.vector.shape))
-            tridag = matfree.decomp.tridiag_sym(60, custom_vjp=False)
-            get_eig = matfree.eig.eigh_partial(tridag)
-            fn = lambda v: jvp(lambda a: state_fn(a), s.vector, v)[0]
-            eigvals, _ = get_eig(fn, v0)
-            spectral_radius = jnp.max(jnp.abs(eigvals))
+            # v0 = jnp.array(jax.random.normal(key, s.vector.shape))
+            # tridag = matfree.decomp.tridiag_sym(60, custom_vjp=False)
+            # get_eig = matfree.eig.eigh_partial(tridag)
+            # fn = lambda v: jvp(lambda a: state_fn(a), s.vector, v)[0]
+            # eigvals, _ = get_eig(fn, v0)
+            # spectral_radius = jnp.max(jnp.abs(eigvals))
 
             if rtrl_config.use_reverse_mode:
                 dhdp, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
@@ -180,10 +180,10 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
             _env = learn_interface.put_influence_tensor_squared(_env, new_influence_tensor_squared)
 
-            _env = learn_interface.put_logs(
-                _env,
-                Logs(largest_eigenvalue=jnp.squeeze(spectral_radius)),
-            )
+            # _env = learn_interface.put_logs(
+            #     _env,
+            #     Logs(largest_eigenvalue=jnp.squeeze(spectral_radius)),
+            # )
 
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
@@ -351,7 +351,7 @@ def rtrl_hessian_decomp[ENV, TR_DATA, VL_DATA, DATA](
             influence_tensor = learn_interface.get_influence_tensor(_env)
 
             v0 = jnp.array(jax.random.normal(key, s.vector.shape))
-            tridag = matfree.decomp.tridiag_sym(60, custom_vjp=False)
+            tridag = matfree.decomp.tridiag_sym(40, custom_vjp=False)
             get_eig = matfree.eig.eigh_partial(tridag)
             fn = lambda v: jvp(lambda a: state_fn(a), s.vector, v)[0]
             eigvals, _ = get_eig(fn, v0)

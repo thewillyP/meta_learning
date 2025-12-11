@@ -36,14 +36,71 @@ def get_optimizer(
         clipping = optax.GradientTransformation(lambda _: (), update_fn)
         return clipping
 
+    def add_projection(grad, state, param):
+        match optimizer:
+            case ExponentiatedGradientConfig() | ExponentiatedGradientAdamConfig():
+                fn = lambda a, b: a * b
+                fn_inv = lambda a, b: a / b
+            case _:
+                fn = lambda a, b: a + b
+                fn_inv = lambda a, b: a - b
+
+        grad_pytree = format_to_param(grad)
+        param_pytree = format_to_param(param)
+
+        if grad_pytree.learning_parameter is None:
+            return grad, state
+        else:
+            lr_lb, lr_ub = (
+                param_pytree.learning_parameter.learning_rate.min_value,
+                param_pytree.learning_parameter.learning_rate.max_value,
+            )
+            wd_lb, wd_ub = (
+                param_pytree.learning_parameter.weight_decay.min_value,
+                param_pytree.learning_parameter.weight_decay.max_value,
+            )
+
+            lr_update = fn_inv(
+                jnp.clip(
+                    fn(
+                        param_pytree.learning_parameter.learning_rate.value,
+                        grad_pytree.learning_parameter.learning_rate.value,
+                    ),
+                    lr_lb,
+                    lr_ub,
+                ),
+                param_pytree.learning_parameter.learning_rate.value,
+            )
+            wd_update = fn_inv(
+                jnp.clip(
+                    fn(
+                        param_pytree.learning_parameter.weight_decay.value,
+                        grad_pytree.learning_parameter.weight_decay.value,
+                    ),
+                    wd_lb,
+                    wd_ub,
+                ),
+                param_pytree.learning_parameter.weight_decay.value,
+            )
+
+            new_grad_pytree = grad_pytree.transform(
+                ["learning_parameter", "learning_rate", "value"], lambda v: lr_update
+            ).transform(["learning_parameter", "weight_decay", "value"], lambda v: wd_update)
+
+            return to_vector(new_grad_pytree).vector, state
+
+    projection_fn = optax.GradientTransformation(lambda _: (), add_projection)
+
     match optimizer:
         case SGDConfig(learning_rate, weight_decay, momentum, add_clip):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(weight_decay.hyperparameter_parametrization)
+
             return lambda pr: optax.chain(
                 add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
                 optax.add_decayed_weights(wd_forward(pr.weight_decay.value)),
                 optax.sgd(lr_forward(pr.learning_rate.value), momentum=momentum),
+                projection_fn,
             )
         case SGDNormalizedConfig(learning_rate, weight_decay, momentum):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
@@ -52,6 +109,7 @@ def get_optimizer(
                 optax.normalize_by_update_norm(scale_factor=1.0),
                 optax.add_decayed_weights(wd_forward(pr.weight_decay.value)),
                 optax.sgd(lr_forward(pr.learning_rate.value), momentum=momentum),
+                projection_fn,
             )
         case AdamConfig(learning_rate, weight_decay, add_clip):
             lr_forward, _ = hyperparameter_reparametrization(learning_rate.hyperparameter_parametrization)
@@ -62,6 +120,7 @@ def get_optimizer(
                     lr_forward(pr.learning_rate.value),
                     weight_decay=wd_forward(pr.weight_decay.value),
                 ),
+                projection_fn,
             )
 
         case ExponentiatedGradientAdamConfig(learning_rate, weight_decay, momentum, add_clip):
@@ -88,6 +147,7 @@ def get_optimizer(
                 return optax.chain(
                     add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
                     optax.GradientTransformation(init_fn, update_fn),
+                    projection_fn,
                 )
 
             return update_rule
@@ -105,6 +165,7 @@ def get_optimizer(
                 return optax.chain(
                     add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
                     optax.GradientTransformation(lambda params: None, update_fn),
+                    projection_fn,
                 )
 
             return update_rule

@@ -4,14 +4,14 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Eigenvalue Demo: Batch-4000,Epochs-1000,CIFAR10,LSTM-128-FFW-128,SGD-Adam,BPTT-RTRL",
+    task_name="Eigenvalue Demo: Batch-4000,Epochs-1000,CIFAR10,MLP-128-128-128,SGD-SGD,BPTT-RTRL",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
-task = Task.get_task(project_name="oho", task_name="lstm128_adam")
+task = Task.get_task(project_name="oho", task_name="mlp_128-128-128")
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
@@ -27,9 +27,9 @@ optimizer = HyperParameterOptimizer(
         # DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
-        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.99]),
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLHessianDecompConfig"]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-4]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
@@ -38,10 +38,6 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
             values=[1.0e-5],
-        ),
-        DiscreteParameterRange(
-            "config/learners/1/optimizer/learning_rate/value",
-            values=[1.0e-4],
         ),
         # DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters

@@ -27,6 +27,7 @@ def main():
         project_name="temp",
         task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
         task_type=clearml.TaskTypes.training,
+        auto_resource_monitoring=False,
     )
 
     # Values dont matter because can change in UI

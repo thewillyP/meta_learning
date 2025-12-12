@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Mu Demo: Batch-4000,Epochs-1000,CIFAR10,RNN-256,SGD-SGD,BPTT-RTRL",
+    task_name="Mu Demo 2: Batch-4000,Epochs-1000,CIFAR10,RNN-256,SGD-SGD,BPTT-RTRL",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
@@ -20,7 +20,7 @@ optimizer = HyperParameterOptimizer(
         # Seed configurations as complete seed objects
         DiscreteParameterRange(
             "config/seed/global_seed",
-            values=[1, 2, 3, 4, 5, 6],
+            values=[7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
         ),
         DiscreteParameterRange("config/seed/test_seed", values=[12345]),
         # dataset
@@ -29,7 +29,7 @@ optimizer = HyperParameterOptimizer(
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.0, 0.1, 0.5, 0.9]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.1, 0.5, 0.9]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
@@ -58,7 +58,7 @@ optimizer = HyperParameterOptimizer(
         ),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["04:00:00"]),
+        DiscreteParameterRange("slurm/time", values=["01:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["16GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

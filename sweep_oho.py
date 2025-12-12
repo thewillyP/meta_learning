@@ -11,7 +11,7 @@ opt_task = Task.init(
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
-task = Task.get_task(project_name="oho", task_name="lstm128_adam")
+task = Task.get_task(project_name="oho", task_name="lstm128_adam_noclip")
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(

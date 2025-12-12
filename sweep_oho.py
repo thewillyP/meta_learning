@@ -11,7 +11,7 @@ opt_task = Task.init(
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
-task = Task.get_task(project_name="oho", task_name="lstm128_ffw128")
+task = Task.get_task(project_name="oho", task_name="lstm128_adam")
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
@@ -29,7 +29,7 @@ optimizer = HyperParameterOptimizer(
         # OHO
         DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
         DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.99]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
@@ -38,6 +38,10 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
             values=[1.0e-5],
+        ),
+        DiscreteParameterRange(
+            "config/learners/1/optimizer/learning_rate/value",
+            values=[1.0e-4],
         ),
         # DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters

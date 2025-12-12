@@ -161,6 +161,14 @@ def main():
                 #     use_random_init=False,
                 # ),
                 0: NNLayer(
+                    n=128,
+                    activation_fn="relu",
+                    use_bias=True,
+                    use_in_readout=False,
+                    layer_norm=None,
+                    use_random_init=False,
+                ),
+                1: NNLayer(
                     n=10,
                     activation_fn="identity",
                     use_bias=True,

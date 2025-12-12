@@ -4,7 +4,7 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Eigenvalue Demo: Batch-4000,Epochs-1000,CIFAR10,LSTM-128,SGD-SGD,BPTT-ID",
+    task_name="Eigenvalue Demo: Batch-4000,Epochs-1000,CIFAR10,LSTM-128,SGD-SGD,BPTT-RTRL",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
@@ -27,17 +27,17 @@ optimizer = HyperParameterOptimizer(
         # DiscreteParameterRange("config/dataset/_type", values=["FashionMnistConfig"]),
         # DiscreteParameterRange("config/dataset/n_in", values=[28]),
         # OHO
-        DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-4]),
-        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.9]),
+        DiscreteParameterRange("config/learners/1/learner/_type", values=["RTRLFiniteHvpConfig"]),
+        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[1e-3]),
+        DiscreteParameterRange("config/learners/1/learner/momentum1", values=[0.5]),
         DiscreteParameterRange("config/learners/1/optimizer/learning_rate/value", values=[1e-3]),
         DiscreteParameterRange(
             "config/learners/0/optimizer/learning_rate/value",
-            values=[0.12],
+            values=[1.0e-3],
         ),
         DiscreteParameterRange(
             "config/learners/0/optimizer/weight_decay/value",
-            values=[1.0e-3],
+            values=[1.0e-5],
         ),
         # DiscreteParameterRange("config/transition_function/0/n", values=[256]),
         # Fixed parameters
@@ -58,7 +58,7 @@ optimizer = HyperParameterOptimizer(
         ),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
         # Slurm configurations
-        DiscreteParameterRange("slurm/time", values=["02:00:00"]),
+        DiscreteParameterRange("slurm/time", values=["04:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[2]),
         DiscreteParameterRange("slurm/memory", values=["16GB"]),
         DiscreteParameterRange("slurm/use_singularity", values=[True]),

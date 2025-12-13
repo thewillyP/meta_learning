@@ -51,7 +51,7 @@ def main():
         data_root_dir="/scratch/datasets",
         log_dir="/scratch/offline_logs",
         # dataset=CIFAR10Config(3072),
-        dataset=FashionMnistConfig(784),
+        dataset=FashionMnistConfig(784, False),
         # dataset=MnistConfig(28, False),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),

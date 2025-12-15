@@ -4,14 +4,14 @@ from clearml import Task
 # Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Fixed Seed+ILR Sweep: Batch-4000,Epochs-1000,CIFAR10,RNN-256,SGD-SGD,BPTT-ID",
+    task_name="Fixed Seed+ILR Sweep: Batch-4000,Epochs-1000,CIFAR10,GRU-128,SGD-SGD,BPTT-ID",
     task_type=Task.TaskTypes.optimizer,
 )
 # task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
 # task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
-task = Task.get_task(project_name="oho", task_name="rnn256_base1")
+task = Task.get_task(project_name="oho", task_name="gru128_exp")
 
 # Configure optimizer
 optimizer = HyperParameterOptimizer(
@@ -43,14 +43,14 @@ optimizer = HyperParameterOptimizer(
             values=[
                 0.0,
                 1e-06,
-                3.866973986492824e-06,
-                1.4953487812212205e-05,
-                5.782474837716209e-05,
-                0.00022360679774997895,
-                0.0008646816701021308,
-                0.0033437015248821097,
-                0.012930006815315507,
-                0.049999999999999996,
+                3.627773439663084e-06,
+                1.3160740129524926e-05,
+                4.774418348819862e-05,
+                0.00017320508075688776,
+                0.000628348791584537,
+                0.002279507056954778,
+                0.00826953515674511,
+                0.029999999999999995,
             ],
         ),
         DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),

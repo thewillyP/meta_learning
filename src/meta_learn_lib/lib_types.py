@@ -1,4 +1,4 @@
-from typing import NewType
+from typing import Literal, NewType
 from dataclasses import dataclass
 import jax
 import equinox as eqx
@@ -16,6 +16,9 @@ REC_STATE = NewType("REC_STATE", jax.Array)  # is a vector
 REC_PARAM = NewType("REC_PARAM", jax.Array)  # is a vector
 LOSS = NewType("LOSS", jax.Array)  # is a scalar
 STAT = NewType("STAT", jax.Array)  # is a scalar
+
+
+type ACTIVATION_FN = Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
 
 
 class traverse[DATA](eqx.Module):

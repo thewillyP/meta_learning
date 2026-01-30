@@ -1,10 +1,9 @@
-from typing import Callable, Literal, Optional
+from typing import Optional
 import equinox as eqx
 import jax
 import optax
-import jax.numpy as jnp
-from pyrsistent import PClass, field, pmap, thaw
-from pyrsistent.typing import PMap
+from pyrsistent import PClass, field, pmap, pvector, thaw
+from pyrsistent.typing import PVector
 from pyrsistent._pmap import PMap as PMapClass
 
 from meta_learn_lib.lib_types import *
@@ -18,8 +17,12 @@ def deep_serialize(_, obj):
     elif isinstance(obj, PMapClass):
         thawed = thaw(obj)
         return {k: deep_serialize(_, v) for k, v in thawed.items()}
+    elif isinstance(obj, PVector):
+        return [deep_serialize(_, v) for v in obj]
     elif isinstance(obj, dict):
         return {k: deep_serialize(_, v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return type(obj)(deep_serialize(_, v) for v in obj)
     else:
         return obj
 
@@ -36,6 +39,18 @@ def _pmap_tree_unflatten(keys, values):
 
 
 jax.tree_util.register_pytree_node(PMapClass, _pmap_tree_flatten, _pmap_tree_unflatten)
+
+
+# Register PVector as PyTree
+def _pvector_tree_flatten(pv):
+    return list(pv), None
+
+
+def _pvector_tree_unflatten(_, values):
+    return pvector(values)
+
+
+jax.tree_util.register_pytree_node(PVector, _pvector_tree_flatten, _pvector_tree_unflatten)
 
 
 # PyTree registration helpers
@@ -63,158 +78,106 @@ def register_pytree(cls, static_fields):
 # ============================================================================
 
 
+class Parameter[T](PClass):
+    value: T = field(serializer=deep_serialize)
+    learnable: bool = field()
+    min_value: float = field()
+    max_value: float = field()
+
+
+class State[T](PClass):
+    value: T = field(serializer=deep_serialize)
+    is_batched: bool = field()
+
+
+# rather, put in configs a boolean for each field whether to allocate or not
 class Logs(PClass):
     gradient: Optional[jax.Array] = field(initial=None)
     hessian_contains_nans: Optional[bool] = field(initial=None)
     immediate_influence_contains_nans: Optional[bool] = field(initial=None)
     largest_eigenvalue: Optional[jax.Array] = field(initial=None)
-
-
-class SpecialLogs(PClass):
     influence_tensor: Optional[jax.Array] = field(initial=None)
     immediate_influence_tensor: Optional[jax.Array] = field(initial=None)
     largest_jac_eigenvalue: Optional[jax.Array] = field(initial=None)
     jacobian: Optional[jax.Array] = field(initial=None)
 
 
-class CustomSequential(eqx.Module):
-    model: eqx.nn.Sequential
-
-    def __init__(
-        self,
-        layer_defs: list[tuple[int, bool, Callable[[jax.Array], jax.Array], Optional[eqx.nn.LayerNorm]]],
-        input_size: int,
-        key: PRNG,
-    ):
-        layers = []
-        in_size = input_size
-        layer_keys = jax.random.split(key, len(layer_defs))
-
-        for (out_size, use_bias, activation, layer_norm), k in zip(layer_defs, layer_keys):
-            linear = eqx.nn.Linear(in_size, out_size, use_bias=use_bias, key=k)
-            new_weight = jax.random.normal(k, (out_size, in_size)) * jnp.sqrt(1 / in_size)
-            new_bias = jnp.zeros((out_size,)) if use_bias else None
-            where = lambda l: (l.weight, l.bias)
-            new_linear = eqx.tree_at(where, linear, (new_weight, new_bias))
-            layers.append(new_linear)
-            if layer_norm is not None:
-                layers.append(layer_norm)
-            layers.append(eqx.nn.Lambda(activation))
-            in_size = out_size
-
-        self.model = eqx.nn.Sequential(layers)
-
-    def __call__(self, x: jax.Array) -> jax.Array:
-        return self.model(x)
-
-
-class RNNState(PClass):
-    activation: jax.Array = field()
-    n_h: int = field()
-    n_in: int = field()
-    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"] = field()
-
-
-class LSTMState(PClass):
-    h: jax.Array = field()
-    c: jax.Array = field()
-    n_h: int = field()
-    n_in: int = field()
+class MLP(PClass):
+    model: Parameter[eqx.nn.Sequential] = field(serializer=deep_serialize)
 
 
 class RNN(PClass):
-    w_rec: jax.Array = field()
-    b_rec: Optional[jax.Array] = field()
-    layer_norm: Optional[eqx.nn.LayerNorm] = field()
+    w_rec: Parameter[jax.Array] = field(serializer=deep_serialize)
+    b_rec: Optional[Parameter[jax.Array]] = field(serializer=deep_serialize)
+    layer_norm: Optional[Parameter[eqx.nn.LayerNorm]] = field(serializer=deep_serialize)
+    time_constant: Parameter[jax.Array] = field(serializer=deep_serialize)
+
+
+type Model = MLP | RNN | eqx.nn.GRUCell | eqx.nn.LSTMCell
+
+
+class RecurrentState(PClass):
+    activation: State[jax.Array] = field(serializer=deep_serialize)
+
+
+class VanillaRecurrentState(RecurrentState):
+    activation_fn: ACTIVATION_FN = field(serializer=deep_serialize)
+
+
+class LSTMState(PClass):
+    h: State[jax.Array] = field(serializer=deep_serialize)
+    c: State[jax.Array] = field(serializer=deep_serialize)
 
 
 class UOROState(PClass):
-    A: jax.Array = field()
-    B: jax.Array = field()
+    A: State[jax.Array] = field(serializer=deep_serialize)
+    B: State[jax.Array] = field(serializer=deep_serialize)
 
 
-class Hyperparameter(PClass):
-    value: jax.Array = field()
-    learnable: bool = field()
-    min_value: float = field()
-    max_value: float = field()
+class Parameters(PClass):
+    models: PVector[Model] = field(serializer=deep_serialize)
+    learning_rates: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
+    weight_decays: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
+    rflo_timeconstants: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
 
 
-class LearningParameter(PClass):
-    learning_rate: Optional[Hyperparameter] = field()
-    weight_decay: Optional[Hyperparameter] = field()
-    rflo_timeconstant: Optional[float] = field()
-    multiple_parameters: Optional[tuple["LearningParameter", ...]] = field()
-
-
-class LearningState(PClass):
-    influence_tensor: Optional[JACOBIAN] = field()
-    influence_tensor_squared: Optional[JACOBIAN] = field()
-    uoro: Optional[UOROState] = field(serializer=deep_serialize)
-    opt_state: Optional[optax.OptState] = field()
-    rflo_t: Optional[jax.Array] = field()
-    rtrl_t: Optional[jax.Array] = field()
-
-
-class InferenceParameter(PClass):
-    rnn: Optional[RNN] = field(serializer=deep_serialize, initial=None)
-    gru: Optional[eqx.nn.GRUCell] = field(initial=None)
-    lstm: Optional[eqx.nn.LSTMCell] = field(initial=None)
-
-
-class InferenceState(PClass):
-    rnn: Optional[RNNState] = field(serializer=deep_serialize)
-    lstm: Optional[LSTMState] = field(serializer=deep_serialize)
-
-
-class General(PClass):
-    current_virtual_minibatch: jax.Array = field()
-    logs: Optional[Logs] = field(serializer=deep_serialize)
-    special_logs: Optional[SpecialLogs] = field(serializer=deep_serialize)
-
-
-class TransitionParameter(PClass):
-    param: PMap[int, InferenceParameter] = field(serializer=deep_serialize)
-
-
-class Parameter(PClass):
-    transition_parameter: Optional[TransitionParameter] = field(serializer=deep_serialize)
-    readout_fn: Optional[CustomSequential] = field()
-    learning_parameter: Optional[LearningParameter] = field(serializer=deep_serialize)
+class States(PClass):
+    influence_tensors: PVector[JACOBIAN] = field()
+    uoros: PVector[UOROState] = field(serializer=deep_serialize)
+    opt_states: PVector[optax.OptState] = field(serializer=deep_serialize)
+    ticks: PVector[jax.Array] = field()
+    logs: PVector[Logs] = field(serializer=deep_serialize)
+    recurrent_states: PVector[RecurrentState] = field(serializer=deep_serialize)
+    vanilla_recurrent_states: PVector[VanillaRecurrentState] = field(serializer=deep_serialize)
+    lstm_states: PVector[LSTMState] = field(serializer=deep_serialize)
+    prngs: PVector[State[PRNG]] = field(serializer=deep_serialize)
 
 
 class GodState(PClass):
-    learning_states: PMap[int, LearningState] = field(serializer=deep_serialize)
-    inference_states: PMap[int, PMap[int, InferenceState]] = field(serializer=deep_serialize)
-    validation_learning_states: PMap[int, LearningState] = field(serializer=deep_serialize)
-    parameters: PMap[int, Parameter] = field(serializer=deep_serialize)
-    general: PMap[int, General] = field(serializer=deep_serialize)
-    prng: PMap[int, batched[PRNG]] = field(serializer=deep_serialize)
-    prng_learning: PMap[int, PRNG] = field(serializer=deep_serialize)
-    start_epoch: jax.Array = field()
+    meta_levels: PVector[tuple[States, Parameters]] = field(serializer=deep_serialize)
+    validation_levels: PVector[tuple[States, Parameters]] = field(serializer=deep_serialize)
 
+
+# Idea: we let the interface take care of the index mappings. Just make it so that each level has access to all the info it needs
 
 # ============================================================================
 # PYTREE REGISTRATIONS
 # ============================================================================
 
 # Register leaf types first
-register_pytree(Hyperparameter, {"learnable", "min_value", "max_value"})
+register_pytree(Parameter, {"learnable", "min_value", "max_value"})
+register_pytree(State, {"is_batched"})
 register_pytree(Logs, set())
-register_pytree(SpecialLogs, set())
-register_pytree(RNNState, {"n_h", "n_in", "activation_fn"})
-register_pytree(LSTMState, {"n_h", "n_in"})
+register_pytree(RecurrentState, set())
+register_pytree(VanillaRecurrentState, {"activation_fn"})
+register_pytree(LSTMState, set())
 register_pytree(RNN, set())
+register_pytree(MLP, set())
 register_pytree(UOROState, set())
-register_pytree(LearningParameter, {"rflo_timeconstant"})
-register_pytree(TransitionParameter, set())
 
 # Register container types that depend on leaf types
-register_pytree(InferenceParameter, set())
-register_pytree(InferenceState, set())
-register_pytree(LearningState, set())
-register_pytree(General, set())
-register_pytree(Parameter, set())
+register_pytree(Parameters, set())
+register_pytree(States, set())
 
 # Register top-level container last
 register_pytree(GodState, set())

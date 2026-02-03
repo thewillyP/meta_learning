@@ -4,36 +4,12 @@ from typing import Literal, Optional, Union
 
 
 @dataclass(frozen=True)
-class DockerContainerSource:
-    docker_url: str
-    type: str = "docker_url"
-
-
-@dataclass(frozen=True)
-class SifContainerSource:
-    sif_path: str
-    type: str = "sif_path"
-
-
-@dataclass(frozen=True)
-class ArtifactContainerSource:
-    project: str
-    dataset_name: str
-    type: str = "artifact_task"
-
-
-@dataclass(frozen=True)
 class SlurmParams:
     memory: str
     time: str
     cpu: int
     gpu: int
     log_dir: str
-    singularity_overlay: str
-    singularity_binds: str
-    container_source: Union[DockerContainerSource, SifContainerSource, ArtifactContainerSource]
-    use_singularity: bool
-    setup_commands: str
     skip_python_env_install: bool
 
 
@@ -43,6 +19,14 @@ class SeedConfig:
     data_seed: int
     parameter_seed: int
     test_seed: int
+
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
+    num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT). Every dataset will be treated as a time series. Even trivial ones.
+    num_examples_total: int  # total number of examples in dataset split
+    is_test: bool  # whether this split is test or train. if test then it will source from standardized test set
 
 
 @dataclass(frozen=True)
@@ -221,14 +205,6 @@ type Optimizer = Union[
 
 
 @dataclass(frozen=True)
-class DataConfig:
-    train_percent: float  # % data devote to learn, meta 1 validation, meta 2 validation, etc
-    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
-    num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT)
-    num_times_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
-
-
-@dataclass(frozen=True)
 class LearnConfig:
     learner: Union[
         RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
@@ -303,23 +279,43 @@ class MatplotlibLoggerConfig:
 
 @dataclass(frozen=True)
 class GodConfig:
+    seed: SeedConfig
     clearml_run: bool
     data_root_dir: str
-    log_dir: str
-    dataset: Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config, CIFAR100Config]
-    num_base_epochs: int
+    epochs: int
     checkpoint_every_n_minibatches: int
-    seed: SeedConfig
-    loss_fn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
-    transition_function: dict[int, Union[NNLayer, GRULayer, LSTMLayer, IdentityLayer]]
-    readout_function: Union[FeedForwardConfig]
-    learners: dict[int, LearnConfig]
-    data: dict[int, DataConfig]
-    ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
-    readout_uses_input_data: bool
-    logger_config: tuple[Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig], ...]
-    treat_inference_state_as_online: bool  # if true, influence tensors will be computed for inference state
+    log_dir: str
+    logger_config: dict[int, Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig]]
+    dataset_configs: dict[str, DatasetConfig]
+    datasets: dict[str, Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config, CIFAR100Config]]
+    model_dag: dict[str, list[str]]
+    model_configs: dict[str, Union[NNLayer, GRULayer, LSTMLayer, IdentityLayer, FeedForwardConfig]]
 
+    learners: dict[int, LearnConfig]
+
+    loss_fn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
+
+
+"""
+Use the DAG way of doing inference. This solves
+1. allows choosing which functions rereference the data source.
+2. allows which functions get to be readout so even rnns can be readout.
+
+
+1. how to set up easily clearml hpo configs?
+2. how to model configs for DAG based inference?
+
+"""
+
+
+"""
+Datasets will now be reorganized so that at each meta level I can specify the dataset that I want which
+could be different from validation vs training potentially. additionally instead of a split percentage,
+I will just say give me X examples for this meta level, and then based on if I repeatedely sampled from
+this dataset, I will select random examples until it is exhausted. 
+
+
+"""
 
 """
 RL

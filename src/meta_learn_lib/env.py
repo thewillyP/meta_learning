@@ -159,6 +159,11 @@ class GodState(PClass):
     meta_parameters: PVector[Parameters] = field(serializer=deep_serialize)
 
 
+class Outputs(PClass):
+    predictions: PVector[PREDICTION] = field(serializer=deep_serialize)
+    logits: PVector[LOGITS] = field(serializer=deep_serialize)
+
+
 # Idea: we let the interface take care of the index mappings. Just make it so that each level has access to all the info it needs
 
 # ============================================================================
@@ -180,6 +185,7 @@ register_pytree(UOROState, set())
 # Register container types that depend on leaf types
 register_pytree(Parameters, set())
 register_pytree(States, set())
+register_pytree(Outputs, set())
 
 # Register top-level container last
 register_pytree(GodState, set())
@@ -241,16 +247,77 @@ I will need at least one dummy batched axis for this technique to work though.
 since it is isomorphic to just putting everything in env which is THE separate input to begin with. 
 14. The loss function should be part of the interface now as well.
 The dataset layer should not matter at all. The interface should query whether I get this specific type of 
-input data or this output data or None. THe model outputs will now be stored in the env as well. 
+input data or this output data or None. The model outputs will now be stored in the env as well. 
 Then the loss functions should be task specific i.e.
 - classification
 - regression
-- 
+- vae objective
 
-15. There will be two learning algorithms for each level. One for transition and one for readout.
-THe pattern is very simple. 
+I will actually have another interface to another object that is soley generated during readout.
+That way there won't be confusion with getting pred from state and not being able to grad over it. 
+
+15. There will be two learning algorithms for each level. One for the model and one for the optimizer.
+Each level has a model (base, validation1, validation2, ...) and an optimizer (normal learner, meta learner1, meta learner2, ...)
+and each will get a learning algorithm. 
+
+Nvm, learning algorithm only makes sense at each optimizer level. 
+Every learning algorithm needs a transition function and a readout function.
+Then I get to specify what learning algorithm is used to compute the gradient of the readout function.
+But that learning algorithm requires a transition function and a readout...
+
+For the model level, the user can specify whatever learning algorithm for the readout,
+but the transition fn will always be DATA -> ENV -> ENV where it is the identity and ignores DATA.
+In fact, the data being passed in 
+
+16. Batching will have to change to support meta learning. 
+Given a set of examples, these need to be batch fed. 
+Given a set of tasks, these need to be batch fed.
+Each level should create a new batched level. 
+Also the batched timestep becomes nonsensical at the meta level since it doesn't
+make sense to me what it means to intermediate update within a task. Like partially complete a task
+and then update hyperparemter? Like what is partial of a task even mean?
+
+(T3, B3, T2, B2, T1, B1, T0, ...)
+
+Here T0 should avtually be part of the features ...
+B comes first before T since we want to aggregate on batches before doing an update with T.
+T1 refers to the virtual minibatches coming from chunking the data into sublists
+B2 refers to batch of tasks.
+T2 refers to number of gradient steps to take.
+
+Basically the pattern of T is how many update steps should actually be done with BPTT
+minibatches controls update steps of model state
+gradient steps controls steps of parameter state
+
+THen B3 for test is trivially 1 although it could in theory be arbitrary. 
+And T3 controls the number of total steps done in one RAM cycle. So if
+I'm running online, this controls how many online steps I can actually do all in one RAM cycle
+before needing to load in more data. It becomes a nice proxy for managing data streaming. 
+
+17. basically I will need two DAGs now, one for transition and one for readout.
+Both will have ENV has input but one is static (except for prng which it will get from transition ENV)
+so the API is the same. 
+
+18. The readout_gr will compute both dL/dht+1 and dL/dtheta instead of me computing separately
+so that I dont' have to pass in a readout as well. This makes sense since learning
+functions typically only care about the loss and gradient so getting the gr directly is just better. 
 
 it doesnt make sense to do an exact ecs style systems things because
 I never do the same operation on a list of components.
+
+What does online mean?
+Means for level 1 that everything is stateful, T=1 timesteps.
+Means for level 2 that everything is stateful, T=1 timesteps.
+If inner loop offline then T>1 timesteps.
+If outer loop online then T=1 timesteps.
+If outer loop offline then T>1 timesteps.
+Offline means after T timesteps, new examples are drawn.
+Online means after T timesteps, either next step is drawn or new step is begun. 
+
+What if I want to achieve meta learning?
+That is just OHO but offline version and batched across both task and examples where at each level there is a batch of tasks and a
+batch of examples. 
+MAML is just batched on level 1 and level 2 and offline both levels.
+
 
 """

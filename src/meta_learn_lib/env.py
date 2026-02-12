@@ -5,6 +5,7 @@ import optax
 from pyrsistent import PClass, field, pmap, pvector, thaw
 from pyrsistent.typing import PVector
 from pyrsistent._pmap import PMap as PMapClass
+from pyrsistent._pvector import PythonPVector
 
 from meta_learn_lib.lib_types import *
 
@@ -17,7 +18,7 @@ def deep_serialize(_, obj):
     elif isinstance(obj, PMapClass):
         thawed = thaw(obj)
         return {k: deep_serialize(_, v) for k, v in thawed.items()}
-    elif isinstance(obj, PVector):
+    elif isinstance(obj, PythonPVector):
         return [deep_serialize(_, v) for v in obj]
     elif isinstance(obj, dict):
         return {k: deep_serialize(_, v) for k, v in obj.items()}
@@ -50,7 +51,7 @@ def _pvector_tree_unflatten(_, values):
     return pvector(values)
 
 
-jax.tree_util.register_pytree_node(PVector, _pvector_tree_flatten, _pvector_tree_unflatten)
+jax.tree_util.register_pytree_node(PythonPVector, _pvector_tree_flatten, _pvector_tree_unflatten)
 
 
 # PyTree registration helpers
@@ -80,6 +81,7 @@ def register_pytree(cls, static_fields):
 
 class Parameter[T](PClass):
     value: T = field(serializer=deep_serialize)
+    is_batched: bool = field()
     is_learnable: bool = field()
     min_value: float = field()
     max_value: float = field()
@@ -152,6 +154,7 @@ class States(PClass):
     vanilla_recurrent_states: PVector[VanillaRecurrentState] = field(serializer=deep_serialize)
     lstm_states: PVector[LSTMState] = field(serializer=deep_serialize)
     prngs: PVector[State[PRNG]] = field(serializer=deep_serialize)
+    autoregressive_predictions: PVector[State[jax.Array]] = field(serializer=deep_serialize)
 
 
 class GodState(PClass):
@@ -170,10 +173,9 @@ class Outputs(PClass):
 # PYTREE REGISTRATIONS
 # ============================================================================
 
-Parameter.is_learnable
 # Register leaf types first
-register_pytree(Parameter, {"is_learnable", "min_value", "max_value"})
-register_pytree(State, {"is_batched", "is_stateful"})
+register_pytree(Parameter, {"is_learnable", "is_batched", "min_value", "max_value"})
+register_pytree(State, {"is_stateful", "is_batched"})
 register_pytree(Logs, set())
 register_pytree(RecurrentState, set())
 register_pytree(VanillaRecurrentState, {"activation_fn"})
@@ -301,6 +303,27 @@ so the API is the same.
 18. The readout_gr will compute both dL/dht+1 and dL/dtheta instead of me computing separately
 so that I dont' have to pass in a readout as well. This makes sense since learning
 functions typically only care about the loss and gradient so getting the gr directly is just better. 
+
+19. I need to specify a task family for each model level,
+and then the base family gets familly of familied. 
+Task family for validation because technically after I "train" on a task, I can evaluate on multiple tasks.
+So each line in a batch of tasks sprouts into another branches of tasks. Batch within batch.
+
+20. How is_persistent works is it determines if your stateful and or your learnable and if you need to be batched.
+If true and a state, then yes stateful
+If true and a parameter, then yes learn it
+If true then regardless YOU MUST be batched. Otherwise not make sense to be batchless. 
+If false then we can save space by not batching so only keep one copy.
+This copy wont be updated because it gets reset because its not stateful.
+Nor will it get updated due to learning since its not learnable. 
+
+Pattern is doing a vmal turns a learnable batch into
+sending it to be a single learnable parameter for that branch in the batch. Then it gets updated
+and the update fn assumes only one copy of it. 
+
+hyperhyerparameter: [B3, ...]
+hyperparameter: [B3, B2, ...]
+parameter: [B3, B2, B1, ...]
 
 it doesnt make sense to do an exact ecs style systems things because
 I never do the same operation on a list of components.

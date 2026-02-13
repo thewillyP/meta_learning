@@ -343,4 +343,22 @@ batch of examples.
 MAML is just batched on level 1 and level 2 and offline both levels.
 
 
+I still need to mask losses if I want to do online learning with scans that have periodic losses
+I will put some token or label to tell it where to do masking instead of tracking sequence number or something
+
+I still need to do readouts from env for output
+
+
+I dont need a fold because my scan takes care of that. I can just output nothings. 
+
+do I need to change my archiecture based on offline vs online. 
+no because technically if rnn can be offline it can be put as scan on the readout section. 
+but then if I want to reformat data to be online and run an online algorithm I would need to change it.
+
+but if I put rnn in transition, then it can work for online since its in the transition.
+but also it can work for offline since transition can literally be one step as well before reset.
+but thats only true for folds like sequential mnist task.
+what about output at every timestep tasks? 
+
+like the readout changes. like if its offline should there be a readout??? 
 """

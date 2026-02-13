@@ -24,8 +24,14 @@ class SeedConfig:
 
 
 @dataclass(frozen=True)
-class DatasetConfig:
-    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
+class MetaTaskConfig:
+    task_batch: int  # for online its num parallel in a batch, for offline its num ex, per validation
+    num_tasks: int  # total number of examples in dataset split
+
+
+@dataclass(frozen=True)
+class ValidationConfig:
+    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validation
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT). Every dataset will be treated as a time series. Even trivial ones.
     num_examples_total: int  # total number of examples in dataset split
     is_test: bool  # whether this split is test or train. if test then it will source from standardized test set
@@ -36,7 +42,6 @@ class MNISTTaskFamily:
     n_in: int
     add_spurious_pixel_to_train: bool
     domain: frozenset[Literal["mnist", "fashion_mnist"]]
-    sampling: Literal["stochastic", "deterministic"]
 
 
 @dataclass(frozen=True)
@@ -98,7 +103,6 @@ class HyperparameterConfig:
     type Parametrization = Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
 
     value: float
-    learnable: bool
     hyperparameter_parametrization: Parametrization
     min_value: float  # used for mandatory gradient projection
     max_value: float  # used for mandatory gradient projection
@@ -124,7 +128,6 @@ class SGDConfig:
     learning_rate: HP
     weight_decay: HP
     momentum: HP
-    add_clip: HardClip | SoftClip | None
 
 
 @dataclass(frozen=True)
@@ -138,7 +141,6 @@ class SGDNormalizedConfig:
 class AdamConfig:
     learning_rate: HP
     weight_decay: HP
-    add_clip: HardClip | SoftClip | None
 
 
 @dataclass(frozen=True)
@@ -146,14 +148,12 @@ class ExponentiatedGradientAdamConfig:
     learning_rate: HP
     weight_decay: HP
     momentum: HP
-    add_clip: HardClip | SoftClip | None
 
 
 @dataclass(frozen=True)
 class ExponentiatedGradientConfig:
     learning_rate: HP
     weight_decay: HP
-    add_clip: HardClip | SoftClip | None
 
 
 type Optimizer = Union[
@@ -200,7 +200,7 @@ class BPTTConfig: ...
 
 
 @dataclass(frozen=True)
-class IdentityConfig: ...
+class IdentityLearnerConfig: ...
 
 
 @dataclass(frozen=True)
@@ -219,16 +219,23 @@ type GradientMethod = Union[
     RTRLHessianDecompConfig,
     RTRLFiniteHvpConfig,
     BPTTConfig,
-    IdentityConfig,
+    IdentityLearnerConfig,
     RFLOConfig,
     UOROConfig,
 ]
 
 
 @dataclass(frozen=True)
+class GradientConfig:
+    method: GradientMethod
+    add_clip: HardClip | SoftClip | None
+    scale: float
+
+
+@dataclass(frozen=True)
 class LearnConfig:
-    model_learner: GradientMethod
-    optimizer_learner: GradientMethod
+    model_learner: GradientConfig
+    optimizer_learner: GradientConfig
     optimizer: list[OptimizerAssignment]
 
 
@@ -269,14 +276,35 @@ class LSTMLayer:
 
 @dataclass(frozen=True)
 class Scan:  # Wraps around a layer and repeats it in an unfold manner
-    n: int | None  # if None then scan over input instead of stacking input n times
     graph: dict[str, list[str]]
-    autoregressive_mask: Literal["teacher_forcing", "identity", "none"]
-    input_source: str  # which node in the graph to source input I will be scanning over. This is time series
+    autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     pred_source: str  # which node in the graph to source teacher predictions.
 
 
-type Node = Union[NNLayer, VanillaRNNLayer, GRULayer, LSTMLayer, Scan]
+@dataclass(frozen=True)
+class Repeat:
+    n: int
+
+
+@dataclass(frozen=True)
+class Concat: ...
+
+
+@dataclass(frozen=True)
+class ToEmpty: ...
+
+
+@dataclass(frozen=True)
+class UnlabeledSource: ...
+
+
+@dataclass(frozen=True)
+class LabeledSource: ...
+
+
+type Node = Union[
+    NNLayer, VanillaRNNLayer, GRULayer, LSTMLayer, Scan, UnlabeledSource, LabeledSource, Repeat, Concat, ToEmpty
+]
 
 
 @dataclass(frozen=True)
@@ -300,19 +328,30 @@ type LoggerConfig = Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConf
 
 
 @dataclass(frozen=True)
-class VaeObjective:
-    beta: HP
-
-
-@dataclass(frozen=True)
 class RegressionObjective: ...
 
 
 @dataclass(frozen=True)
-class CrossEntropyObjective: ...
+class CrossEntropyObjective:
+    mode: Literal["cross_entropy_with_integer_labels", "cross_entropy"]
 
 
-type ObjectiveFn = Union[VaeObjective, RegressionObjective, CrossEntropyObjective]
+@dataclass(frozen=True)
+class ELBOObjective:
+    beta: HP
+    likelihood: CrossEntropyObjective | RegressionObjective
+
+
+type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjective]
+
+
+@dataclass(frozen=True)
+class MetaConfig:
+    objective_fn: ObjectiveFn  # objective function used for validation inference at each meta level
+    dataset_validation: ValidationConfig
+    dataset_source: Task  # what dataset validation inference uses at each meta level
+    meta_task: MetaTaskConfig  # number of simultaneous tasks at same level
+    learner: LearnConfig
 
 
 @dataclass(frozen=True)
@@ -320,21 +359,14 @@ class GodConfig:
     seed: SeedConfig
     clearml_run: bool
     data_root_dir: str
-    epochs: int
-    checkpoint_every_n_minibatches: int
     log_dir: str
     logger_config: list[LoggerConfig]
+    epochs: int
+    checkpoint_every_n_minibatches: int
 
-    # Inference
     transition_graph: dict[str, list[str]]
     transition_nodes: dict[str, Node]
     readout_graph: dict[str, list[str]]
     readout_nodes: dict[str, Node]
-    objective_fn: list[ObjectiveFn]  # objective function used for validation inference at each meta level
 
-    # Dataloading
-    dataset_meta_levels: list[DatasetConfig]  # the number of meta learning levels
-    dataset_meta_sources: list[Task]  # what dataset validation inference uses at each meta level
-
-    # Learning
-    learners: list[LearnConfig]
+    levels: list[MetaConfig]

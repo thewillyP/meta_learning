@@ -29,12 +29,204 @@ from meta_learn_lib.loss_function import make_statistics_fns
 from meta_learn_lib.util import create_fractional_list
 
 
-def runApp(config: GodConfig, base_logger: Logger) -> None:
+def runApp(config: GodConfig) -> None:
+
+    config = GodConfig(
+        seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, test_seed=12345),
+        clearml_run=False,
+        data_root_dir="/scratch/wlp9800/datasets",
+        log_dir="/scratch/wlp9800/offline_logs",
+        logger_config=[ClearMLLoggerConfig()],
+        epochs=100,
+        checkpoint_every_n_minibatches=1,
+        transition_graph={
+            "x": [],
+            "rnn1": ["x"],
+            "rnn2": ["rnn1"],
+        },
+        transition_nodes={
+            "x": UnlabeledSource(),
+            "rnn1": VanillaRNNLayer(
+                nn_layer=NNLayer(
+                    n=128,
+                    activation_fn="tanh",
+                    use_bias=True,
+                    layer_norm=None,
+                ),
+                use_random_init=False,
+            ),
+            "rnn2": VanillaRNNLayer(
+                nn_layer=NNLayer(
+                    n=32,
+                    activation_fn="tanh",
+                    use_bias=True,
+                    layer_norm=None,
+                ),
+                use_random_init=False,
+            ),
+        },
+        readout_graph={
+            "readout": ["rnn2"],
+        },
+        readout_nodes={
+            "readout": NNLayer(
+                n=10,
+                activation_fn="identity",
+                use_bias=True,
+                layer_norm=None,
+            ),
+        },
+        levels=[
+            MetaConfig(
+                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+                dataset_validation=ValidationConfig(
+                    num_examples_in_minibatch=1000,
+                    num_steps_in_timeseries=28,
+                    num_examples_total=50_000,
+                    is_test=False,
+                ),
+                dataset_source=MNISTTaskFamily(
+                    n_in=28,
+                    add_spurious_pixel_to_train=False,
+                    domain=frozenset({"mnist"}),
+                ),
+                meta_task=MetaTaskConfig(
+                    task_batch=1,
+                    num_tasks=1,
+                ),
+                learner=LearnConfig(
+                    model_learner=GradientConfig(
+                        method=BPTTConfig(),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer_learner=GradientConfig(
+                        method=BPTTConfig(),
+                        add_clip=HardClip(1.0),
+                        scale=1.0,
+                    ),
+                    optimizer=[
+                        OptimizerAssignment(
+                            target=frozenset({"rnn1", "rnn2", "readout"}),
+                            optimizer=SGDConfig(
+                                learning_rate=HyperparameterConfig(
+                                    value=0.001,
+                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                                    min_value=0.0,
+                                    max_value=jnp.inf,
+                                    id="meta1_sgd1.lr",
+                                ),
+                                weight_decay=HyperparameterConfig(
+                                    value=0.00001,
+                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                                    min_value=0.0,
+                                    max_value=jnp.inf,
+                                    id="meta1_sgd1.wd",
+                                ),
+                                momentum=HyperparameterConfig(
+                                    value=0.0,
+                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                                    min_value=0.0,
+                                    max_value=1.0,
+                                    id="meta1_sgd1.momentum",
+                                ),
+                            ),
+                            per_parameter=False,
+                        )
+                    ],
+                ),
+            ),
+            MetaConfig(
+                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+                dataset_validation=ValidationConfig(
+                    num_examples_in_minibatch=1000,
+                    num_steps_in_timeseries=28,
+                    num_examples_total=10_000,
+                    is_test=False,
+                ),
+                dataset_source=MNISTTaskFamily(
+                    n_in=28,
+                    add_spurious_pixel_to_train=False,
+                    domain=frozenset({"mnist"}),
+                ),
+                meta_task=MetaTaskConfig(
+                    task_batch=1,
+                    num_tasks=1,
+                ),
+                learner=LearnConfig(
+                    model_learner=GradientConfig(
+                        method=BPTTConfig(),
+                        add_clip=HardClip(1.0),
+                        scale=1.0,
+                    ),
+                    optimizer_learner=GradientConfig(
+                        method=RTRLConfig(
+                            start_at_step=0,
+                            hessian_damping=0.1,
+                            use_reverse_mode=False,
+                        ),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer=[
+                        OptimizerAssignment(
+                            target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
+                            optimizer=AdamConfig(
+                                learning_rate=HyperparameterConfig(
+                                    value=0.001,
+                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                                    min_value=0.0,
+                                    max_value=jnp.inf,
+                                    id="meta1_adam1.lr",
+                                ),
+                                weight_decay=HyperparameterConfig(
+                                    value=0.0,
+                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                                    min_value=0.0,
+                                    max_value=jnp.inf,
+                                    id="meta1_adam1.wd",
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            MetaConfig(
+                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+                dataset_validation=ValidationConfig(
+                    num_examples_in_minibatch=1000,
+                    num_steps_in_timeseries=28,
+                    num_examples_total=10_000,
+                    is_test=True,
+                ),
+                dataset_source=MNISTTaskFamily(
+                    n_in=28,
+                    add_spurious_pixel_to_train=False,
+                    domain=frozenset({"mnist"}),
+                ),
+                meta_task=MetaTaskConfig(
+                    task_batch=1,
+                    num_tasks=1,
+                ),
+                learner=LearnConfig(
+                    model_learner=GradientConfig(
+                        method=IdentityLearnerConfig(),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer_learner=GradientConfig(
+                        method=IdentityLearnerConfig(),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer=[],
+                ),
+            ),
+        ],
+    )
+
     if not config.clearml_run:
         return
-
-    # Make logging asynchronous
-    logger = ThreadedLogger(base_logger)
 
     # RNG Stuff
     base_key = jax.random.key(config.seed.global_seed)
@@ -54,17 +246,7 @@ def runApp(config: GodConfig, base_logger: Logger) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-    # metric function
-    match config.dataset:
-        case MnistConfig() | FashionMnistConfig() | CIFAR10Config() | CIFAR100Config():
-            metric_fn = jnp.sum
-        case DelayAddOnlineConfig():
-            metric_fn = jnp.mean
-
     # Dataset
-    percentages = create_fractional_list([x.train_percent / 100 for x in config.data.values()])
-    if percentages is None:
-        raise ValueError("Learner percentages must sum to 100.")
 
     dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb = create_dataloader(
         config, percentages, dataset_gen_prng, test_prng

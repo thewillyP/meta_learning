@@ -94,9 +94,8 @@ def image_transforms(
             torchvision.transforms.Normalize(mean, std),
             torchvision.transforms.Lambda(
                 lambda x: (
-                    x.numpy()
-                    .reshape(x.shape[0], height // patch_h, patch_h, width // patch_w, patch_w)
-                    .transpose(1, 3, 0, 2, 4)
+                    x.reshape(x.shape[0], height // patch_h, patch_h, width // patch_w, patch_w)
+                    .permute(1, 3, 0, 2, 4)
                     .reshape(seq_len, channel, patch_h, patch_w)
                 )
             ),
@@ -104,9 +103,9 @@ def image_transforms(
     )
 
     def make_targets(y):
-        y_val = np.array(y)
-        fill = y_val if not label_last_only else np.array(y_mask, dtype=y_val.dtype)
-        arr = np.full((seq_len,), fill)
+        y_val = torch.tensor(y)
+        fill = y_val if not label_last_only else torch.tensor(y_mask, dtype=y_val.dtype)
+        arr = torch.full((seq_len,), fill)
         arr[-1] = y_val
         return arr
 
@@ -114,12 +113,32 @@ def image_transforms(
     return x_transform, y_transform
 
 
-def dataset_sources(task: Task, root_dir: str, is_test: bool, y_mask: float) -> list[Dataset]:
+def dataset_sources(
+    task: Task,
+    root_dir: str,
+    is_test: bool,
+    y_mask: float,
+    num_tasks: int,
+    seed: PRNG,
+) -> list[Dataset]:
+
+    def split_dataset(ds: Dataset, count: int, key: PRNG) -> list[Dataset]:
+        if count == 0:
+            return []
+        generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
+        sizes = [len(ds) // count] * count
+        sizes[-1] += len(ds) - sum(sizes)
+        return list(random_split(ds, sizes, generator=generator))
+
     match task:
         case MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, domain):
+            domain_list = sorted(domain)
+            seed_assign, seed_split = jax.random.split(seed)
+            assignments = jax.random.randint(seed_assign, shape=(num_tasks,), minval=0, maxval=len(domain_list))
+            split_keys = jax.random.split(seed_split, len(domain_list))
 
-            def domain_to_dataset(domain: MNISTTaskFamily.Domain) -> Dataset:
-                match domain:
+            def make_domain_datasets(d: MNISTTaskFamily.Domain) -> Dataset:
+                match d:
                     case "mnist":
                         factory = torchvision.datasets.MNIST
                         mean, std = MNIST_MEAN, MNIST_STD
@@ -146,7 +165,12 @@ def dataset_sources(task: Task, root_dir: str, is_test: bool, y_mask: float) -> 
                     target_transform=y_transform,
                 )
 
-            return [domain_to_dataset(d) for d in domain]
+            counts = [int((assignments == i).sum()) for i in range(len(domain_list))]
+            return [
+                ds
+                for d, c, k in zip(domain_list, counts, split_keys)
+                for ds in split_dataset(make_domain_datasets(d), c, k)
+            ]
 
         case CIFAR10TaskFamily(patch_h, patch_w, label_last_only) | CIFAR100TaskFamily(
             patch_h, patch_w, label_last_only
@@ -180,17 +204,29 @@ def dataset_sources(task: Task, root_dir: str, is_test: bool, y_mask: float) -> 
                 y_mask=y_mask,
                 label_last_only=label_last_only,
             )
-            return [
-                factory(
-                    root=f"{root_dir}/data",
-                    train=not is_test,
-                    download=True,
-                    transform=x_transform,
-                    target_transform=y_transform,
-                ),
-            ]
+            ds = factory(
+                root=f"{root_dir}/data",
+                train=not is_test,
+                download=True,
+                transform=x_transform,
+                target_transform=y_transform,
+            )
+            return split_dataset(ds, num_tasks, seed)
         case DelayAddTaskFamily(t1_lb, t1_ub, t2_lb, t2_ub, tau_task_lb, tau_task_ub, t_train, n_train, t_test, n_test):
-            ...
+            keys = jax.random.split(seed, num_tasks)
+            t = t_test if is_test else t_train
+            n = n_test if is_test else n_train
+
+            def make_task(key: PRNG) -> Dataset:
+                k1, k2, k3, k4 = jax.random.split(key, 4)
+                t1 = jax.random.randint(k1, shape=(), minval=t1_lb, maxval=t1_ub + 1).item()
+                t2 = jax.random.randint(k2, shape=(), minval=t2_lb, maxval=t2_ub + 1).item()
+                tau_task = jax.random.randint(k3, shape=(), minval=tau_task_lb, maxval=tau_task_ub + 1).item()
+                example_keys = jax.random.split(k4, n)
+                X, Y = jax.vmap(lambda k: generate_add_task_dataset(t, t1, t2, tau_task, k))(example_keys)
+                return torch.utils.data.TensorDataset(torch.from_numpy(np.array(X)), torch.from_numpy(np.array(Y)))
+
+            return [make_task(k) for k in keys]
 
 
 def create_dataloader(config: GodConfig, prng: PRNG, test_prng: PRNG):
@@ -585,8 +621,8 @@ def generate_add_task_dataset(N: int, t_1: int, t_2: int, tau_task: int, rng_key
     Y = jnp.asarray([y, 1 - y]).T
 
     # Temporally stretch according to the desire timescale of change.
-    X = jnp.tile(X, tau_task).reshape((1, tau_task * N, 2))  # outer=1 bc only 1 example
-    Y = jnp.tile(Y, tau_task).reshape((1, tau_task * N, 2))
+    X = jnp.tile(X, tau_task).reshape(tau_task * N, 2)
+    Y = jnp.tile(Y, tau_task).reshape(tau_task * N, 2)
 
     return X, Y
 

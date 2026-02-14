@@ -95,6 +95,7 @@ def runApp(config: GodConfig) -> None:
                     label_last_only=True,
                     add_spurious_pixel_to_train=False,
                     domain=frozenset({"mnist"}),
+                    normalize=True,
                 ),
                 meta_task=MetaTaskConfig(
                     task_batch=1,
@@ -158,6 +159,7 @@ def runApp(config: GodConfig) -> None:
                     label_last_only=True,
                     add_spurious_pixel_to_train=False,
                     domain=frozenset({"mnist"}),
+                    normalize=True,
                 ),
                 meta_task=MetaTaskConfig(
                     task_batch=1,
@@ -217,6 +219,7 @@ def runApp(config: GodConfig) -> None:
                     label_last_only=True,
                     add_spurious_pixel_to_train=False,
                     domain=frozenset({"mnist"}),
+                    normalize=True,
                 ),
                 meta_task=MetaTaskConfig(
                     task_batch=1,

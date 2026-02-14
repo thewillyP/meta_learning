@@ -47,6 +47,7 @@ class MNISTTaskFamily:
     label_last_only: bool
     add_spurious_pixel_to_train: bool
     domain: frozenset[Domain]
+    normalize: bool
 
 
 @dataclass(frozen=True)

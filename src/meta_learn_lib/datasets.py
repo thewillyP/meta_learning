@@ -10,11 +10,30 @@ import math
 import numpy as np
 from torchvision.datasets.mnist import MNIST, FashionMNIST
 from torchvision.transforms.transforms import Lambda
+from PIL import Image
 
 from meta_learn_lib.config import *
 from meta_learn_lib.constants import *
 from meta_learn_lib.lib_types import PRNG, FractionalList
 from meta_learn_lib.util import infinite_keys, reshape_timeseries, subset_n
+
+
+class SpuriousMNISTDataset(Dataset):
+    def __init__(self, dataset: Dataset, k: int = 1):
+        self.dataset = dataset
+        self.k = k
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, idx: int) -> tuple:
+        image, label = self.dataset[idx]
+        image = np.array(image)
+        pixel_location = (label * 10) % image.shape[0]
+        h_end = min(pixel_location + self.k, image.shape[0])
+        w_end = min(pixel_location + self.k, image.shape[1])
+        image[pixel_location:h_end, pixel_location:w_end] = 255
+        return Image.fromarray(image), label
 
 
 class TransformedDataset(torch.utils.data.Dataset):
@@ -131,7 +150,7 @@ def dataset_sources(
         return list(random_split(ds, sizes, generator=generator))
 
     match task:
-        case MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, domain):
+        case MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, domain, normalize):
             domain_list = sorted(domain)
             seed_assign, seed_split = jax.random.split(seed)
             assignments = jax.random.randint(seed_assign, shape=(num_tasks,), minval=0, maxval=len(domain_list))
@@ -141,10 +160,20 @@ def dataset_sources(
                 match d:
                     case "mnist":
                         factory = torchvision.datasets.MNIST
-                        mean, std = MNIST_MEAN, MNIST_STD
+                        mean, std = (MNIST_MEAN, MNIST_STD) if normalize else ((0.0,), (1.0,))
                     case "fashion_mnist":
                         factory = torchvision.datasets.FashionMNIST
-                        mean, std = FASHION_MNIST_MEAN, FASHION_MNIST_STD
+                        mean, std = (FASHION_MNIST_MEAN, FASHION_MNIST_STD) if normalize else ((0.0,), (1.0,))
+
+                ds = factory(
+                    root=f"{root_dir}/data",
+                    train=not is_test,
+                    download=True,
+                )
+
+                if add_spurious_pixel_to_train and not is_test:
+                    ds = SpuriousMNISTDataset(ds)
+
                 x_transform, y_transform = image_transforms(
                     mean=mean,
                     std=std,
@@ -157,13 +186,8 @@ def dataset_sources(
                     y_mask=y_mask,
                     label_last_only=label_last_only,
                 )
-                return factory(
-                    root=f"{root_dir}/data",
-                    train=not is_test,
-                    download=True,
-                    transform=x_transform,
-                    target_transform=y_transform,
-                )
+
+                return TransformedDataset(ds, x_transform, y_transform)
 
             counts = [int((assignments == i).sum()) for i in range(len(domain_list))]
             return [
@@ -232,48 +256,10 @@ def dataset_sources(
 def create_dataloader(config: GodConfig, prng: PRNG, test_prng: PRNG):
     dataloader_prng, dataset_gen_prng = jax.random.split(prng, 2)
 
-    def make_dataloader_fn(X, Y, batch_size):
-        def get_dataloader(rng: PRNG):
-            return standard_dataloader(X, Y, X.shape[0], batch_size, rng)
-
-        return get_dataloader
+    [c.dataset_source for c in config.levels]
 
     # trying to get it into consistent shape: [num virtual minibatches, batch, time series, features...] for all datasets
     match config.dataset:
-        case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
-            data_size = dict(zip(config.data.keys(), subset_n(n, percentages)))
-            dataset_te = generate_add_task_dataset(nTest, t1, t2, tau_task, test_prng)
-            # Convert test dataset to same format as training datasets
-            X_te, _ = reshape_timeseries(dataset_te[0], dataset_te[0].shape[1])
-            Y_te, _ = reshape_timeseries(dataset_te[1], dataset_te[1].shape[1])
-
-            n_in_shape = dataset_te[0].shape[2:]
-
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
-            virtual_minibatches: dict[int, int] = {}
-            last_unpadded_lengths: dict[int, int] = {}
-            total_tr_vb: int = 0
-            for idx, (i, data_config) in enumerate(sorted(config.data.items())):
-                data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
-                X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
-                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
-                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
-                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[idx] = X_vl.shape[1]
-                last_unpadded_lengths[idx] = last_unpadded_length
-
-                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, 1)
-
-                if idx == 0:
-                    total_tr_vb = virtual_minibatches[0] * math.ceil(X_vl.shape[0] / 1)
-                # 1. check when to reset after consume concrete example
-                # 2. check when is last padded minibatch
-
-            # Add test dataset info
-            virtual_minibatches[len(datasets)] = 1
-            last_unpadded_lengths[len(datasets)] = 0
-            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, 1)
-
         case MnistConfig(n_in, add_spurious_pixel_to_train) | FashionMnistConfig(n_in, add_spurious_pixel_to_train):
             n_in_shape = (n_in,)
 
@@ -647,24 +633,3 @@ def target_transform(label, sequence_length):
     labels = labels.at[:, 0].set(label)  # Repeat class label
     labels = labels.at[:, 1].set(jnp.arange(sequence_length))  # Sequence numbers
     return labels
-
-
-def add_spurious_features(image, label, k):
-    correlated_image = image.clone()
-    pixel_location = (label * 10) % 28
-    correlated_image[pixel_location : pixel_location + k, pixel_location : pixel_location + k] = 255.0
-    return correlated_image
-
-
-class SpuriousMNISTDataset(Dataset):
-    def __init__(self, dataset, k=1):
-        self.dataset = dataset
-        self.k = k
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        image, label = self.dataset[idx]
-        correlated_image = add_spurious_features(image, label, self.k)
-        return correlated_image, label

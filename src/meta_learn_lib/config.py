@@ -35,23 +35,32 @@ class ValidationConfig:
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT). Every dataset will be treated as a time series. Even trivial ones.
     num_examples_total: int  # total number of examples in dataset split
     is_test: bool  # whether this split is test or train. if test then it will source from standardized test set
+    label_mask_value: float
+    unlabeled_mask_value: float
 
 
 @dataclass(frozen=True)
 class MNISTTaskFamily:
-    n_in: int
+    type Domain = Literal["mnist", "fashion_mnist"]
+    patch_h: int
+    patch_w: int
+    label_last_only: bool
     add_spurious_pixel_to_train: bool
-    domain: frozenset[Literal["mnist", "fashion_mnist"]]
+    domain: frozenset[Domain]
 
 
 @dataclass(frozen=True)
 class CIFAR10TaskFamily:
-    n_in: int
+    patch_h: int
+    patch_w: int
+    label_last_only: bool
 
 
 @dataclass(frozen=True)
 class CIFAR100TaskFamily:
-    n_in: int
+    patch_h: int
+    patch_w: int
+    label_last_only: bool
 
 
 @dataclass(frozen=True)
@@ -302,8 +311,22 @@ class UnlabeledSource: ...
 class LabeledSource: ...
 
 
+@dataclass(frozen=True)
+class Flatten: ...
+
+
 type Node = Union[
-    NNLayer, VanillaRNNLayer, GRULayer, LSTMLayer, Scan, UnlabeledSource, LabeledSource, Repeat, Concat, ToEmpty
+    NNLayer,
+    VanillaRNNLayer,
+    GRULayer,
+    LSTMLayer,
+    Scan,
+    UnlabeledSource,
+    LabeledSource,
+    Repeat,
+    Concat,
+    ToEmpty,
+    Flatten,
 ]
 
 

@@ -1,34 +1,199 @@
+from itertools import islice
 import jax
 import jax.numpy as jnp
-from typing import Callable, Iterator
+from typing import Callable, Iterable, Iterator
 from torch.utils.data import Dataset, DataLoader, IterableDataset, random_split
 import torch
 import torchvision
 from toolz import mapcat
 import math
 import numpy as np
+from torchvision.datasets.mnist import MNIST, FashionMNIST
+from torchvision.transforms.transforms import Lambda
 
 from meta_learn_lib.config import *
+from meta_learn_lib.constants import *
 from meta_learn_lib.lib_types import PRNG, FractionalList
 from meta_learn_lib.util import infinite_keys, reshape_timeseries, subset_n
 
 
-class PyTreeDataset(Dataset):
-    def __init__(self, pytree_data):
-        self.data = pytree_data
-        leaves = jax.tree.leaves(pytree_data)
-        if not leaves:
-            raise ValueError("PyTree has no leaves!")
-        self.n_samples = len(leaves[0])
+class TransformedDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset: torch.utils.data.Dataset, transform: Lambda, target_transform: Lambda):
+        self.dataset = dataset
+        self.transform = transform
+        self.target_transform = target_transform
 
-    def __len__(self):
-        return self.n_samples
+    def __len__(self) -> int:
+        return len(self.dataset)
 
-    def __getitem__(self, idx):
-        return jax.tree.map(lambda x: x[idx], self.data)
+    def __getitem__(self, idx: int) -> tuple:
+        x, y = self.dataset[idx]
+        return self.transform(x), self.target_transform(y)
 
 
-def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG, test_prng: PRNG):
+def make_timeseries_transforms(n_consume: int, ignore_value: float) -> Lambda:
+    def reshape_to_timeseries(arr: np.ndarray, pad_value: float) -> np.ndarray:
+        length: int = arr.shape[0]
+        num_vb = math.ceil(length / n_consume)
+        pad_length = (-length) % num_vb
+        new_time_dim = (length + pad_length) // num_vb
+        if pad_length > 0:
+            pad_width = [(0, pad_length)] + [(0, 0)] * (arr.ndim - 1)
+            arr = np.pad(arr, pad_width, constant_values=pad_value)
+        return arr.reshape(num_vb, new_time_dim, *arr.shape[1:])
+
+    transform = torchvision.transforms.Lambda(lambda x: reshape_to_timeseries(x, ignore_value))
+    return transform
+
+
+def take_datasets(
+    seed: PRNG,
+    remaining: list[Dataset],
+    n: int,
+    batch_indices: list[int],
+    n_consume: int,
+    x_mask: float,
+    y_mask: float,
+) -> tuple[list[Dataset], list[Dataset]]:
+    x_transform = make_timeseries_transforms(n_consume, x_mask)
+    y_transform = make_timeseries_transforms(n_consume, y_mask)
+    keys = jax.random.split(seed, len(batch_indices))
+
+    def make_dataset(idx: int, key: PRNG) -> tuple[Dataset, Dataset]:
+        generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
+        take_n = min(n, len(remaining[idx]))
+        taken, leftover = random_split(remaining[idx], [take_n, len(remaining[idx]) - take_n], generator=generator)
+        return TransformedDataset(taken, x_transform, y_transform), leftover
+
+    datasets_out, new_remaining = zip(*map(make_dataset, batch_indices, keys))
+    full_remaining = remaining.copy()
+    for idx, leftover in zip(batch_indices, new_remaining):
+        full_remaining[idx] = leftover
+    return list(datasets_out), full_remaining
+
+
+def image_transforms(
+    mean: tuple[float, ...],
+    std: tuple[float, ...],
+    height: int,
+    width: int,
+    channel: int,
+    patch_h: int,
+    patch_w: int,
+    augment: Lambda,
+    y_mask: float,
+    label_last_only: bool,
+) -> tuple[Lambda, Lambda]:
+    if height % patch_h != 0 or width % patch_w != 0:
+        raise ValueError(f"image ({height}, {width}) not divisible by patch ({patch_h}, {patch_w})")
+    seq_len = (height // patch_h) * (width // patch_w)
+    x_transform = torchvision.transforms.Compose(
+        [
+            augment,
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(mean, std),
+            torchvision.transforms.Lambda(
+                lambda x: (
+                    x.numpy()
+                    .reshape(x.shape[0], height // patch_h, patch_h, width // patch_w, patch_w)
+                    .transpose(1, 3, 0, 2, 4)
+                    .reshape(seq_len, channel, patch_h, patch_w)
+                )
+            ),
+        ]
+    )
+
+    def make_targets(y):
+        y_val = np.array(y)
+        fill = y_val if not label_last_only else np.array(y_mask, dtype=y_val.dtype)
+        arr = np.full((seq_len,), fill)
+        arr[-1] = y_val
+        return arr
+
+    y_transform = torchvision.transforms.Lambda(make_targets)
+    return x_transform, y_transform
+
+
+def dataset_sources(task: Task, root_dir: str, is_test: bool, y_mask: float) -> list[Dataset]:
+    match task:
+        case MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, domain):
+
+            def domain_to_dataset(domain: MNISTTaskFamily.Domain) -> Dataset:
+                match domain:
+                    case "mnist":
+                        factory = torchvision.datasets.MNIST
+                        mean, std = MNIST_MEAN, MNIST_STD
+                    case "fashion_mnist":
+                        factory = torchvision.datasets.FashionMNIST
+                        mean, std = FASHION_MNIST_MEAN, FASHION_MNIST_STD
+                x_transform, y_transform = image_transforms(
+                    mean=mean,
+                    std=std,
+                    height=MNIST_HEIGHT,
+                    width=MNIST_WIDTH,
+                    channel=MNIST_CHANNEL,
+                    patch_h=patch_h,
+                    patch_w=patch_w,
+                    augment=torchvision.transforms.Lambda(lambda x: x),
+                    y_mask=y_mask,
+                    label_last_only=label_last_only,
+                )
+                return factory(
+                    root=f"{root_dir}/data",
+                    train=not is_test,
+                    download=True,
+                    transform=x_transform,
+                    target_transform=y_transform,
+                )
+
+            return [domain_to_dataset(d) for d in domain]
+
+        case CIFAR10TaskFamily(patch_h, patch_w, label_last_only) | CIFAR100TaskFamily(
+            patch_h, patch_w, label_last_only
+        ):
+            match task:
+                case CIFAR10TaskFamily():
+                    factory = torchvision.datasets.CIFAR10
+                    mean, std = CIFAR10_MEAN, CIFAR10_STD
+                case CIFAR100TaskFamily():
+                    factory = torchvision.datasets.CIFAR100
+                    mean, std = CIFAR100_MEAN, CIFAR100_STD
+            augment = (
+                torchvision.transforms.Compose(
+                    [
+                        torchvision.transforms.RandomCrop(32, padding=4),
+                        torchvision.transforms.RandomHorizontalFlip(),
+                    ]
+                )
+                if not is_test
+                else torchvision.transforms.Lambda(lambda x: x)
+            )
+            x_transform, y_transform = image_transforms(
+                mean=mean,
+                std=std,
+                height=CIFAR_HEIGHT,
+                width=CIFAR_WIDTH,
+                channel=CIFAR_CHANNEL,
+                patch_h=patch_h,
+                patch_w=patch_w,
+                augment=augment,
+                y_mask=y_mask,
+                label_last_only=label_last_only,
+            )
+            return [
+                factory(
+                    root=f"{root_dir}/data",
+                    train=not is_test,
+                    download=True,
+                    transform=x_transform,
+                    target_transform=y_transform,
+                ),
+            ]
+        case DelayAddTaskFamily(t1_lb, t1_ub, t2_lb, t2_ub, tau_task_lb, tau_task_ub, t_train, n_train, t_test, n_test):
+            ...
+
+
+def create_dataloader(config: GodConfig, prng: PRNG, test_prng: PRNG):
     dataloader_prng, dataset_gen_prng = jax.random.split(prng, 2)
 
     def make_dataloader_fn(X, Y, batch_size):

@@ -20,13 +20,12 @@ class SeedConfig:
     global_seed: int
     data_seed: int
     parameter_seed: int
-    test_seed: int
 
 
 @dataclass(frozen=True)
-class MetaTaskConfig:
-    task_batch: int  # for online its num parallel in a batch, for offline its num ex, per validation
-    num_tasks: int  # total number of examples in dataset split
+class MetaOptimizationConfig:
+    batch: int  # num optimizers that run in parallel
+    num_steps: int
 
 
 @dataclass(frozen=True)
@@ -35,8 +34,7 @@ class ValidationConfig:
     num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT). Every dataset will be treated as a time series. Even trivial ones.
     num_examples_total: int  # total number of examples in dataset split
     is_test: bool  # whether this split is test or train. if test then it will source from standardized test set
-    label_mask_value: float
-    unlabeled_mask_value: float
+    task_batch_size: int
 
 
 @dataclass(frozen=True)
@@ -374,8 +372,9 @@ class MetaConfig:
     objective_fn: ObjectiveFn  # objective function used for validation inference at each meta level
     dataset_validation: ValidationConfig
     dataset_source: Task  # what dataset validation inference uses at each meta level
-    meta_task: MetaTaskConfig  # number of simultaneous tasks at same level
+    meta_opt: MetaOptimizationConfig  # number of simultaneous tasks at same level
     learner: LearnConfig
+    test_seed: int
 
 
 @dataclass(frozen=True)
@@ -394,3 +393,7 @@ class GodConfig:
     readout_nodes: dict[str, Node]
 
     levels: list[MetaConfig]
+
+    label_mask_value: float
+    unlabeled_mask_value: float
+    num_tasks: int

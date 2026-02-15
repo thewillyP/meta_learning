@@ -86,8 +86,7 @@ def runApp(config: GodConfig) -> None:
                     num_steps_in_timeseries=28,
                     num_examples_total=50_000,
                     is_test=False,
-                    label_mask_value=-1.0,
-                    unlabeled_mask_value=0,
+                    task_batch_size=1,
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -97,9 +96,9 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_task=MetaTaskConfig(
-                    task_batch=1,
-                    num_tasks=1,
+                meta_opt=MetaOptimizationConfig(
+                    batch=1,
+                    num_steps=1,
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
@@ -150,8 +149,7 @@ def runApp(config: GodConfig) -> None:
                     num_steps_in_timeseries=28,
                     num_examples_total=10_000,
                     is_test=False,
-                    label_mask_value=-1.0,
-                    unlabeled_mask_value=0.0,
+                    task_batch_size=1,
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -161,9 +159,9 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_task=MetaTaskConfig(
-                    task_batch=1,
-                    num_tasks=1,
+                meta_opt=MetaOptimizationConfig(
+                    batch=1,
+                    num_steps=1,
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
@@ -210,8 +208,7 @@ def runApp(config: GodConfig) -> None:
                     num_steps_in_timeseries=28,
                     num_examples_total=10_000,
                     is_test=True,
-                    label_mask_value=-1.0,
-                    unlabeled_mask_value=0.0,
+                    task_batch_size=1,
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -221,9 +218,9 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_task=MetaTaskConfig(
-                    task_batch=1,
-                    num_tasks=1,
+                meta_opt=MetaOptimizationConfig(
+                    batch=1,
+                    num_steps=100,
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
@@ -240,6 +237,9 @@ def runApp(config: GodConfig) -> None:
                 ),
             ),
         ],
+        num_tasks=1,
+        unlabeled_mask_value=0.0,
+        label_mask_value=-1.0,
     )
 
     if not config.clearml_run:

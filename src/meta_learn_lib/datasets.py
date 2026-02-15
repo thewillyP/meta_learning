@@ -421,8 +421,8 @@ def create_dataloader(config: GodConfig, prng: PRNG, task_distribution_prng: PRN
         val_key = jax.random.key(meta_config.test_seed) if is_test else val_key
 
         if len(xss) == 0:
-            val_keys = itertools.repeat(val_key, 1)
-            train_loader = make_task_loader(task_indices, meta_config, datasets, val_key)
+            shared = make_task_loader(task_indices, meta_config, datasets, val_key)
+            train_loader, val_loader = itertools.tee(shared, 2)
         else:
             val_keys = infinite_keys(val_key)
 
@@ -432,9 +432,7 @@ def create_dataloader(config: GodConfig, prng: PRNG, task_distribution_prng: PRN
             mc, ds = x
             child_loaders = [make_level_loader(mc, ds, xs, chunk, ckey) for chunk, ckey in zip(chunks, child_keys)]
             train_loader = batch_iterator(child_loaders, len(child_loaders))
-
-        val_loader = mapcat(lambda k: make_task_loader(task_indices, meta_config, datasets, k), val_keys)
-
+            val_loader = mapcat(lambda k: make_task_loader(task_indices, meta_config, datasets, k), val_keys)
         return DataLoader(
             IteratorDataset(zip(train_loader, val_loader)),
             batch_size=num_steps,

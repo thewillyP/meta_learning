@@ -7,33 +7,37 @@ import torch
 import numpy as np
 import toolz
 import math
+import time
 
 from meta_learn_lib.config import *
-from meta_learn_lib.create_axes import create_axes
-from meta_learn_lib.create_env import create_env
-from meta_learn_lib.create_interface import (
-    create_general_interfaces,
-    create_learn_interfaces,
-    create_transition_interfaces,
-    create_validation_learn_interfaces,
-)
-from meta_learn_lib.datasets import create_dataloader
-from meta_learn_lib.env import GodState
-from meta_learn_lib.inference import create_inferences, hard_reset_inference, make_resets
-from meta_learn_lib.interface import ClassificationInterface
-from meta_learn_lib.learning import create_meta_learner, identity
 from meta_learn_lib.lib_types import *
-from meta_learn_lib.log import get_logs
-from meta_learn_lib.logger import Logger, ThreadedLogger
-from meta_learn_lib.loss_function import make_statistics_fns
-from meta_learn_lib.util import create_fractional_list
+from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
+
+
+# from meta_learn_lib.create_axes import create_axes
+# from meta_learn_lib.create_env import create_env
+# from meta_learn_lib.create_interface import (
+#     create_general_interfaces,
+#     create_learn_interfaces,
+#     create_transition_interfaces,
+#     create_validation_learn_interfaces,
+# )
+
+# from meta_learn_lib.env import GodState
+# from meta_learn_lib.inference import create_inferences, hard_reset_inference, make_resets
+# from meta_learn_lib.interface import ClassificationInterface
+# from meta_learn_lib.learning import create_meta_learner, identity
+# from meta_learn_lib.log import get_logs
+# from meta_learn_lib.logger import Logger, ThreadedLogger
+# from meta_learn_lib.loss_function import make_statistics_fns
+# from meta_learn_lib.util import create_fractional_list
 
 
 def runApp(config: GodConfig) -> None:
 
     config = GodConfig(
-        seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, test_seed=12345),
-        clearml_run=False,
+        seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+        clearml_run=True,
         data_root_dir="/scratch/wlp9800/datasets",
         log_dir="/scratch/wlp9800/offline_logs",
         logger_config=[ClearMLLoggerConfig()],
@@ -82,7 +86,7 @@ def runApp(config: GodConfig) -> None:
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=1000,
+                    num_examples_in_minibatch=100,
                     num_steps_in_timeseries=28,
                     num_examples_total=50_000,
                     is_test=False,
@@ -141,11 +145,12 @@ def runApp(config: GodConfig) -> None:
                         )
                     ],
                 ),
+                test_seed=0,
             ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=1000,
+                    num_examples_in_minibatch=100,
                     num_steps_in_timeseries=28,
                     num_examples_total=10_000,
                     is_test=False,
@@ -197,14 +202,16 @@ def runApp(config: GodConfig) -> None:
                                     id="meta1_adam1.wd",
                                 ),
                             ),
+                            per_parameter=False,
                         ),
                     ],
                 ),
+                test_seed=0,
             ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=1000,
+                    num_examples_in_minibatch=100,
                     num_steps_in_timeseries=28,
                     num_examples_total=10_000,
                     is_test=True,
@@ -220,7 +227,7 @@ def runApp(config: GodConfig) -> None:
                 ),
                 meta_opt=MetaOptimizationConfig(
                     batch=1,
-                    num_steps=100,
+                    num_steps=1,
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
@@ -235,6 +242,7 @@ def runApp(config: GodConfig) -> None:
                     ),
                     optimizer=[],
                 ),
+                test_seed=0,
             ),
         ],
         num_tasks=1,
@@ -247,10 +255,10 @@ def runApp(config: GodConfig) -> None:
 
     # RNG Stuff
     base_key = jax.random.key(config.seed.global_seed)
-    keys = jax.random.split(base_key, 2)
+    keys = jax.random.split(base_key, 3)
     data_prng = PRNG(jax.random.fold_in(keys[0], config.seed.data_seed))
     env_prng = PRNG(jax.random.fold_in(keys[1], config.seed.parameter_seed))
-    test_prng = PRNG(jax.random.key(config.seed.test_seed))
+    task_prng = PRNG(jax.random.fold_in(keys[2], config.seed.task_seed))
     dataset_gen_prng, torch_prng = jax.random.split(data_prng, 2)
     torch_seed = jax.random.randint(torch_prng, shape=(), minval=0, maxval=1e6, dtype=jnp.uint32)
     torch_seed = int(torch_seed)
@@ -263,347 +271,373 @@ def runApp(config: GodConfig) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-    # Dataset
+    errors = validate_dataloader_config(config)
+    if errors:
+        raise ValueError("\n".join(errors))
 
-    dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb = create_dataloader(
-        config, percentages, dataset_gen_prng, test_prng
-    )
+    dataset_prng, data_loader_prng = jax.random.split(dataset_gen_prng, 2)
+    data_sources = create_data_sources(config, dataset_prng)
+    dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    if config.ignore_validation_inference_recurrence:
-        if not all(virtual_minibatches[k] == 1 for i, k in enumerate(sorted(virtual_minibatches.keys())) if i > 0):
-            raise ValueError(
-                "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
-            )
+    # t0 = time.perf_counter()
+    # for i, x in enumerate(toolz.take(28, dataloader)):
+    #     t1 = time.perf_counter()
+    #     print(f"step {i}: {t1 - t0:.3f}s")
+    #     t0 = t1
 
-    if total_tr_vb % math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()]) != 0:
-        raise ValueError(
-            f"The total number of virtual minibatches per turn ({total_tr_vb}) must be divisible by the product of num_virtual_minibatches_per_turn for each learner ({math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()])}). Please adjust the num_virtual_minibatches_per_turn settings in the config."
-        )
+    for x in toolz.take(28, dataloader):
+        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+        # print(tr_x, tr_y)
+        print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+        # print(tr_x.shape, tr_y.shape)
+        # print(vl_x.shape, vl_y.shape)
+        # print(te_x.shape, te_y.shape)
 
-    learn_interfaces = create_learn_interfaces(config)
-    validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)
-    inference_interface = create_transition_interfaces(config)
-    general_interfaces = create_general_interfaces(config)
-    data_interface = ClassificationInterface[tuple[jax.Array, jax.Array, jax.Array]](
-        get_input=lambda data: data[0],
-        get_target=lambda data: data[1],
-        get_sequence=lambda data: data[2],
-    )
-    data_interface_for_loss = ClassificationInterface[batched[tuple[jax.Array, jax.Array, jax.Array]]](
-        get_input=lambda data: data.b[0],
-        get_target=lambda data: data.b[1],
-        get_sequence=lambda data: data.b[2],
-    )
-    env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
-    # eqx.tree_pprint(env.serialize())
-    axes = create_axes(env, inference_interface)
-    transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
-    resets = make_resets(
-        # lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-        lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
-        inference_interface,
-        general_interfaces,
-        validation_learn_interfaces,
-        virtual_minibatches,
-        learn_interfaces[0],
-    )
-    env0 = copy.deepcopy(env)
-    test_reset = hard_reset_inference(
-        lambda: env0,
-        inference_interface[min(inference_interface.keys())],
-    )
-    model_statistics_fns = make_statistics_fns(
-        config,
-        readouts,
-        data_interface_for_loss,
-        lambda out: out.b,
-        general_interfaces,
-        virtual_minibatches,
-        last_unpadded_lengths,
-        lambda e: get_logs(config, e),
-    )
+    # # Dataset
 
-    meta_learner = create_meta_learner(
-        config,
-        [v for _, v in sorted(transitions.items())],
-        [v for _, v in sorted(model_statistics_fns.items())],
-        [v for _, v in sorted(resets.items())],
-        test_reset,
-        [v for _, v in sorted(learn_interfaces.items())],
-        [v for _, v in sorted(validation_learn_interfaces.items())],
-        [v for _, v in sorted(general_interfaces.items())],
-        [v for _, v in sorted(virtual_minibatches.items())],
-        [v for _, v in sorted(last_unpadded_lengths.items())],
-    )
+    # dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb = create_dataloader(
+    #     config, percentages, dataset_gen_prng, test_prng
+    # )
 
-    (((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask)), dataloader = (
-        toolz.peek(dataloader)
-    )
-    _scan_data = traverse(
-        ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
-    )
-    scan_data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
+    # if config.ignore_validation_inference_recurrence:
+    #     if not all(virtual_minibatches[k] == 1 for i, k in enumerate(sorted(virtual_minibatches.keys())) if i > 0):
+    #         raise ValueError(
+    #             "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
+    #         )
 
-    update_fn = (
-        eqx.filter_jit(lambda data, init_model: meta_learner(init_model, data), donate="all-except-first")
-        .lower(scan_data, env)
-        .compile()
-    )
+    # if total_tr_vb % math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()]) != 0:
+    #     raise ValueError(
+    #         f"The total number of virtual minibatches per turn ({total_tr_vb}) must be divisible by the product of num_virtual_minibatches_per_turn for each learner ({math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()])}). Please adjust the num_virtual_minibatches_per_turn settings in the config."
+    #     )
 
-    iterations_per_epoch: int = total_tr_vb // math.prod(
-        [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
-    )
+    # learn_interfaces = create_learn_interfaces(config)
+    # validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)
+    # inference_interface = create_transition_interfaces(config)
+    # general_interfaces = create_general_interfaces(config)
+    # data_interface = ClassificationInterface[tuple[jax.Array, jax.Array, jax.Array]](
+    #     get_input=lambda data: data[0],
+    #     get_target=lambda data: data[1],
+    #     get_sequence=lambda data: data[2],
+    # )
+    # data_interface_for_loss = ClassificationInterface[batched[tuple[jax.Array, jax.Array, jax.Array]]](
+    #     get_input=lambda data: data.b[0],
+    #     get_target=lambda data: data.b[1],
+    #     get_sequence=lambda data: data.b[2],
+    # )
+    # env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
+    # # eqx.tree_pprint(env.serialize())
+    # axes = create_axes(env, inference_interface)
+    # transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
+    # resets = make_resets(
+    #     # lambda prng: reinitialize_env(env, config, n_in_shape, prng),
+    #     lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
+    #     inference_interface,
+    #     general_interfaces,
+    #     validation_learn_interfaces,
+    #     virtual_minibatches,
+    #     learn_interfaces[0],
+    # )
+    # env0 = copy.deepcopy(env)
+    # test_reset = hard_reset_inference(
+    #     lambda: env0,
+    #     inference_interface[min(inference_interface.keys())],
+    # )
+    # model_statistics_fns = make_statistics_fns(
+    #     config,
+    #     readouts,
+    #     data_interface_for_loss,
+    #     lambda out: out.b,
+    #     general_interfaces,
+    #     virtual_minibatches,
+    #     last_unpadded_lengths,
+    #     lambda e: get_logs(config, e),
+    # )
 
-    total_iterations = iterations_per_epoch * config.num_base_epochs
+    # meta_learner = create_meta_learner(
+    #     config,
+    #     [v for _, v in sorted(transitions.items())],
+    #     [v for _, v in sorted(model_statistics_fns.items())],
+    #     [v for _, v in sorted(resets.items())],
+    #     test_reset,
+    #     [v for _, v in sorted(learn_interfaces.items())],
+    #     [v for _, v in sorted(validation_learn_interfaces.items())],
+    #     [v for _, v in sorted(general_interfaces.items())],
+    #     [v for _, v in sorted(virtual_minibatches.items())],
+    #     [v for _, v in sorted(last_unpadded_lengths.items())],
+    # )
 
-    for k, (
-        ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
-        (te_x, te_y, te_seqs, te_mask),
-    ) in enumerate(toolz.take(total_iterations, dataloader)):
-        _scan_data = traverse(
-            ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
-        )
-        data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
-        env, stats, te_losses = update_fn(data, env)
-        tr_stats, vl_stats, te_stats = stats
+    # (((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask)), dataloader = (
+    #     toolz.peek(dataloader)
+    # )
+    # _scan_data = traverse(
+    #     ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
+    # )
+    # scan_data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
 
-        tr_loss, tr_acc, _, _wds, tr_grs, __, hT, aT, _eig = tr_stats
-        vl_loss, vl_acc, _, _wds, __, ___, _hT, _aT, _eig = vl_stats
-        te_loss, te_acc, _, _wds, __, ___, _hT, _aT, _eig = te_stats
-        _, __, lrs, wds, ___, meta_grs, _hT, _aT, eig = tr_stats
+    # update_fn = (
+    #     eqx.filter_jit(lambda data, init_model: meta_learner(init_model, data), donate="all-except-first")
+    #     .lower(scan_data, env)
+    #     .compile()
+    # )
 
-        tr_loss = metric_fn(tr_loss, axis=2)
-        tr_acc = metric_fn(tr_acc, axis=2)
-        tr_grs = tr_grs[:, :, -1]
-        vl_loss = metric_fn(vl_loss, axis=2)
-        vl_acc = metric_fn(vl_acc, axis=2)
-        te_loss = metric_fn(te_loss, axis=1)
-        te_acc = metric_fn(te_acc, axis=1)
-        lrs1 = lrs[0][:, :, -1]
-        lrs2 = lrs[1][:, :, -1]
-        wds1 = wds[0][:, :, -1]
-        wds2 = wds[1][:, :, -1]
-        meta_grs = meta_grs[:, :, -1]
-        hT = hT[:, :, -1]
-        aT = aT[:, :, -1]
-        eig = eig[:, :, -1]
+    # iterations_per_epoch: int = total_tr_vb // math.prod(
+    #     [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
+    # )
 
-        jax.block_until_ready(env)
+    # total_iterations = iterations_per_epoch * config.num_base_epochs
 
-        # def corr(a, b):
-        #     # a,b: [batch, hidden]
-        #     a_flat = a.reshape(-1)
-        #     b_flat = b.reshape(-1)
-        #     a_flat = a_flat - a_flat.mean()
-        #     b_flat = b_flat - b_flat.mean()
-        #     return jnp.dot(a_flat, b_flat) / (jnp.linalg.norm(a_flat) * jnp.linalg.norm(b_flat))
+    # for k, (
+    #     ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
+    #     (te_x, te_y, te_seqs, te_mask),
+    # ) in enumerate(toolz.take(total_iterations, dataloader)):
+    #     _scan_data = traverse(
+    #         ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
+    #     )
+    #     data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
+    #     env, stats, te_losses = update_fn(data, env)
+    #     tr_stats, vl_stats, te_stats = stats
 
-        window_size = 100
-        aT_buffer = []  # store past activations
+    #     tr_loss, tr_acc, _, _wds, tr_grs, __, hT, aT, _eig = tr_stats
+    #     vl_loss, vl_acc, _, _wds, __, ___, _hT, _aT, _eig = vl_stats
+    #     te_loss, te_acc, _, _wds, __, ___, _hT, _aT, _eig = te_stats
+    #     _, __, lrs, wds, ___, meta_grs, _hT, _aT, eig = tr_stats
 
-        def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
-            dot = jnp.sum(a_prev * a_curr, axis=1)
-            norm_prev = jnp.linalg.norm(a_prev, axis=1)
-            norm_curr = jnp.linalg.norm(a_curr, axis=1)
-            corr_per_ex = dot / (norm_prev * norm_curr + eps)
-            return jnp.mean(corr_per_ex)
+    #     tr_loss = metric_fn(tr_loss, axis=2)
+    #     tr_acc = metric_fn(tr_acc, axis=2)
+    #     tr_grs = tr_grs[:, :, -1]
+    #     vl_loss = metric_fn(vl_loss, axis=2)
+    #     vl_acc = metric_fn(vl_acc, axis=2)
+    #     te_loss = metric_fn(te_loss, axis=1)
+    #     te_acc = metric_fn(te_acc, axis=1)
+    #     lrs1 = lrs[0][:, :, -1]
+    #     lrs2 = lrs[1][:, :, -1]
+    #     wds1 = wds[0][:, :, -1]
+    #     wds2 = wds[1][:, :, -1]
+    #     meta_grs = meta_grs[:, :, -1]
+    #     hT = hT[:, :, -1]
+    #     aT = aT[:, :, -1]
+    #     eig = eig[:, :, -1]
 
-        context = logger.get_context()
-        for i in range(tr_loss.shape[0]):
-            for j in range(tr_loss.shape[1]):
-                iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
-                if iteration % config.checkpoint_every_n_minibatches == 0:
-                    logger.log_scalar(
-                        context,
-                        "train/loss",
-                        "train_loss",
-                        tr_loss[i, j],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "train/accuracy",
-                        "train_accuracy",
-                        tr_acc[i, j],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "train/recurrent_learning_rate",
-                        "train_recurrent_learning_rate",
-                        lrs1[i, j][0],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "train/readout_learning_rate",
-                        "train_readout_learning_rate",
-                        lrs2[i, j][0],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "train/recurrent_weight_decay",
-                        "train_recurrent_weight_decay",
-                        wds1[i, j][0],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "train/readout_weight_decay",
-                        "train_readout_weight_decay",
-                        wds2[i, j][0],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "train/gradient_norm",
-                        "train_gradient_norm",
-                        jnp.linalg.norm(tr_grs[i, j]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "validation/loss",
-                        "validation_loss",
-                        vl_loss[i, j],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "validation/accuracy",
-                        "validation_accuracy",
-                        vl_acc[i, j],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "meta/gradient_norm",
-                        "meta_gradient_norm",
-                        jnp.linalg.norm(meta_grs[i, j]),
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
-                    logger.log_scalar(
-                        context,
-                        "train/final_rnn_activation_norm",
-                        "train_final_rnn_activation_norm",
-                        hT[i, j],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
+    #     jax.block_until_ready(env)
 
-                    # # store previous activations across iterations
-                    # if iteration == 1:
-                    #     prev_aT = aT[i, j]  # initialize
-                    # else:
-                    #     aT_curr = aT[i, j]  # [batch, hidden]
-                    #     aT_prev = prev_aT  # [batch, hidden]
+    #     # def corr(a, b):
+    #     #     # a,b: [batch, hidden]
+    #     #     a_flat = a.reshape(-1)
+    #     #     b_flat = b.reshape(-1)
+    #     #     a_flat = a_flat - a_flat.mean()
+    #     #     b_flat = b_flat - b_flat.mean()
+    #     #     return jnp.dot(a_flat, b_flat) / (jnp.linalg.norm(a_flat) * jnp.linalg.norm(b_flat))
 
-                    #     at_corr = corr(aT_prev, aT_curr)
+    #     window_size = 100
+    #     aT_buffer = []  # store past activations
 
-                    #     logger.log_scalar(
-                    #         context,
-                    #         "train/aT_correlation",
-                    #         "train_aT_correlation",
-                    #         at_corr,
-                    #         iteration,
-                    #         total_tr_vb * config.num_base_epochs,
-                    #     )
+    #     def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
+    #         dot = jnp.sum(a_prev * a_curr, axis=1)
+    #         norm_prev = jnp.linalg.norm(a_prev, axis=1)
+    #         norm_curr = jnp.linalg.norm(a_curr, axis=1)
+    #         corr_per_ex = dot / (norm_prev * norm_curr + eps)
+    #         return jnp.mean(corr_per_ex)
 
-                    #     prev_aT = aT_curr
+    #     context = logger.get_context()
+    #     for i in range(tr_loss.shape[0]):
+    #         for j in range(tr_loss.shape[1]):
+    #             iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
+    #             if iteration % config.checkpoint_every_n_minibatches == 0:
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/loss",
+    #                     "train_loss",
+    #                     tr_loss[i, j],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/accuracy",
+    #                     "train_accuracy",
+    #                     tr_acc[i, j],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/recurrent_learning_rate",
+    #                     "train_recurrent_learning_rate",
+    #                     lrs1[i, j][0],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/readout_learning_rate",
+    #                     "train_readout_learning_rate",
+    #                     lrs2[i, j][0],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/recurrent_weight_decay",
+    #                     "train_recurrent_weight_decay",
+    #                     wds1[i, j][0],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/readout_weight_decay",
+    #                     "train_readout_weight_decay",
+    #                     wds2[i, j][0],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/gradient_norm",
+    #                     "train_gradient_norm",
+    #                     jnp.linalg.norm(tr_grs[i, j]),
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "validation/loss",
+    #                     "validation_loss",
+    #                     vl_loss[i, j],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "validation/accuracy",
+    #                     "validation_accuracy",
+    #                     vl_acc[i, j],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "meta/gradient_norm",
+    #                     "meta_gradient_norm",
+    #                     jnp.linalg.norm(meta_grs[i, j]),
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/final_rnn_activation_norm",
+    #                     "train_final_rnn_activation_norm",
+    #                     hT[i, j],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
 
-                    aT_curr = aT[i, j]  # [batch, hidden]
+    #                 # # store previous activations across iterations
+    #                 # if iteration == 1:
+    #                 #     prev_aT = aT[i, j]  # initialize
+    #                 # else:
+    #                 #     aT_curr = aT[i, j]  # [batch, hidden]
+    #                 #     aT_prev = prev_aT  # [batch, hidden]
 
-                    # add to buffer
-                    aT_buffer.append(aT_curr)
-                    if len(aT_buffer) > window_size:
-                        aT_buffer.pop(0)
+    #                 #     at_corr = corr(aT_prev, aT_curr)
 
-                    # only compute correlation when we have at least 2 stored activations
-                    if len(aT_buffer) > 1:
-                        # correlate current activation with each previous activation in buffer
-                        corrs = [corr_per_example_dot(prev, aT_curr) for prev in aT_buffer[:-1]]
-                        at_corr = jnp.mean(jnp.array(corrs))
+    #                 #     logger.log_scalar(
+    #                 #         context,
+    #                 #         "train/aT_correlation",
+    #                 #         "train_aT_correlation",
+    #                 #         at_corr,
+    #                 #         iteration,
+    #                 #         total_tr_vb * config.num_base_epochs,
+    #                 #     )
 
-                        logger.log_scalar(
-                            context,
-                            "train/aT_correlation_window",
-                            "train_aT_correlation_window",
-                            at_corr,
-                            iteration,
-                            total_tr_vb * config.num_base_epochs,
-                        )
+    #                 #     prev_aT = aT_curr
 
-                    logger.log_scalar(
-                        context,
-                        "train/largest_eigenvalue",
-                        "train_largest_eigenvalue",
-                        eig[i, j],
-                        iteration,
-                        total_tr_vb * config.num_base_epochs,
-                    )
+    #                 aT_curr = aT[i, j]  # [batch, hidden]
 
-            logger.log_scalar(
-                context, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs
-            )
-            logger.log_scalar(
-                context, "test/accuracy", "test_accuracy", te_acc[i], iteration, total_tr_vb * config.num_base_epochs
-            )
-        logger.close_context(context)
+    #                 # add to buffer
+    #                 aT_buffer.append(aT_curr)
+    #                 if len(aT_buffer) > window_size:
+    #                     aT_buffer.pop(0)
 
-    def te_inf(
-        _env: GodState, ds: traverse[batched[tuple[jax.Array, jax.Array, jax.Array]]], mask: jax.Array
-    ) -> tuple[STAT, ...]:
-        return identity(
-            lambda e, d: (transitions[0](e, d), ()),
-            model_statistics_fns[0],
-            learn_interfaces[0],
-            lambda x: x,
-            lambda x: (x, mask),
-        )(_env, ds)[1]
+    #                 # only compute correlation when we have at least 2 stored activations
+    #                 if len(aT_buffer) > 1:
+    #                     # correlate current activation with each previous activation in buffer
+    #                     corrs = [corr_per_example_dot(prev, aT_curr) for prev in aT_buffer[:-1]]
+    #                     at_corr = jnp.mean(jnp.array(corrs))
 
-    final_te_loss = 0
-    final_te_acc = 0
-    num_te_batches = 0
-    test_env = general_interfaces[0].put_current_virtual_minibatch(env, jnp.nan)
-    for te_x, te_y, te_seqs, te_mask in dataloader_te:
-        ds = traverse(batched((te_x, te_y, te_seqs)))
-        test_env = test_reset(test_env)
-        stats = te_inf(test_env, ds, te_mask)
-        te_loss, te_acc, _, _wds, __, ___, _hT, _aT, _eig = stats[0]
-        te_loss = metric_fn(te_loss)
-        te_acc = metric_fn(te_acc)
-        final_te_loss += te_loss
-        final_te_acc += te_acc
-        num_te_batches += 1
+    #                     logger.log_scalar(
+    #                         context,
+    #                         "train/aT_correlation_window",
+    #                         "train_aT_correlation_window",
+    #                         at_corr,
+    #                         iteration,
+    #                         total_tr_vb * config.num_base_epochs,
+    #                     )
 
-    context = logger.get_context()
-    logger.log_scalar(
-        context,
-        "final_test/loss",
-        "final_test_loss",
-        final_te_loss / num_te_batches,
-        total_tr_vb * config.num_base_epochs,
-        1,
-    )
-    logger.log_scalar(
-        context,
-        "final_test/accuracy",
-        "final_test_accuracy",
-        final_te_acc / num_te_batches,
-        total_tr_vb * config.num_base_epochs,
-        1,
-    )
-    logger.close_context(context)
+    #                 logger.log_scalar(
+    #                     context,
+    #                     "train/largest_eigenvalue",
+    #                     "train_largest_eigenvalue",
+    #                     eig[i, j],
+    #                     iteration,
+    #                     total_tr_vb * config.num_base_epochs,
+    #                 )
 
-    logger.shutdown()
+    #         logger.log_scalar(
+    #             context, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs
+    #         )
+    #         logger.log_scalar(
+    #             context, "test/accuracy", "test_accuracy", te_acc[i], iteration, total_tr_vb * config.num_base_epochs
+    #         )
+    #     logger.close_context(context)
+
+    # def te_inf(
+    #     _env: GodState, ds: traverse[batched[tuple[jax.Array, jax.Array, jax.Array]]], mask: jax.Array
+    # ) -> tuple[STAT, ...]:
+    #     return identity(
+    #         lambda e, d: (transitions[0](e, d), ()),
+    #         model_statistics_fns[0],
+    #         learn_interfaces[0],
+    #         lambda x: x,
+    #         lambda x: (x, mask),
+    #     )(_env, ds)[1]
+
+    # final_te_loss = 0
+    # final_te_acc = 0
+    # num_te_batches = 0
+    # test_env = general_interfaces[0].put_current_virtual_minibatch(env, jnp.nan)
+    # for te_x, te_y, te_seqs, te_mask in dataloader_te:
+    #     ds = traverse(batched((te_x, te_y, te_seqs)))
+    #     test_env = test_reset(test_env)
+    #     stats = te_inf(test_env, ds, te_mask)
+    #     te_loss, te_acc, _, _wds, __, ___, _hT, _aT, _eig = stats[0]
+    #     te_loss = metric_fn(te_loss)
+    #     te_acc = metric_fn(te_acc)
+    #     final_te_loss += te_loss
+    #     final_te_acc += te_acc
+    #     num_te_batches += 1
+
+    # context = logger.get_context()
+    # logger.log_scalar(
+    #     context,
+    #     "final_test/loss",
+    #     "final_test_loss",
+    #     final_te_loss / num_te_batches,
+    #     total_tr_vb * config.num_base_epochs,
+    #     1,
+    # )
+    # logger.log_scalar(
+    #     context,
+    #     "final_test/accuracy",
+    #     "final_test_accuracy",
+    #     final_te_acc / num_te_batches,
+    #     total_tr_vb * config.num_base_epochs,
+    #     1,
+    # )
+    # logger.close_context(context)
+
+    # logger.shutdown()
+
+
+if __name__ == "__main__":
+    runApp(None)

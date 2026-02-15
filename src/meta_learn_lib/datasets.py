@@ -57,6 +57,21 @@ class IteratorDataset(IterableDataset):
         return self.iterator
 
 
+class PyTreeDataset(Dataset):
+    def __init__(self, pytree_data):
+        self.data = pytree_data
+        leaves = jax.tree.leaves(pytree_data)
+        if not leaves:
+            raise ValueError("PyTree has no leaves!")
+        self.n_samples = len(leaves[0])
+
+    def __len__(self):
+        return self.n_samples
+
+    def __getitem__(self, idx):
+        return jax.tree.map(lambda x: x[idx], self.data)
+
+
 def numpy_collate_fn(batch):
     return jax.tree.map(lambda x: np.asarray(x), batch)
 
@@ -114,7 +129,8 @@ def take_datasets(
         generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
         take_n = min(n, len(remaining[idx]))
         taken, leftover = random_split(remaining[idx], [take_n, len(remaining[idx]) - take_n], generator=generator)
-        return TransformedDataset(taken, x_transform, y_transform), leftover
+        xs, ys = jax_collate_fn(numpy_collate_fn([taken[i] for i in range(len(taken))]))
+        return PyTreeDataset((xs, ys)), leftover
 
     datasets_out, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
     return list(datasets_out), list(new_remaining)
@@ -295,7 +311,7 @@ def task_iterator(
         batch_size=batch,
         shuffle=True,
         generator=generator,
-        collate_fn=lambda b: jax_collate_fn(numpy_collate_fn(b)),
+        collate_fn=jax_collate_fn,
         drop_last=False,
     )
     for X_batch, Y_batch in loader:
@@ -339,8 +355,8 @@ def validate_dataloader_config(config: GodConfig) -> list[str]:
     return errors
 
 
-def create_dataloader(config: GodConfig, prng: PRNG, task_distribution_prng: PRNG) -> DataLoader:
-    k1, k2, k3, prng = jax.random.split(prng, 4)
+def create_data_sources(config: GodConfig, prng: PRNG) -> list[list[Dataset]]:
+    k1, k2, prng = jax.random.split(prng, 3)
 
     def get_sources(c: list[MetaConfig], k: PRNG) -> list[tuple[MetaConfig, PRNG]]:
         keys = jax.random.split(k, len(c))
@@ -379,6 +395,17 @@ def create_dataloader(config: GodConfig, prng: PRNG, task_distribution_prng: PRN
             y_mask=config.label_mask_value,
         )
         level_datasets.append(taken)
+
+    return level_datasets
+
+
+def create_dataloader(
+    config: GodConfig,
+    data_sources: list[list[Dataset]],
+    prng: PRNG,
+    task_distribution_prng: PRNG,
+) -> DataLoader:
+    k1, prng = jax.random.split(prng, 2)
 
     # 3. Build nested loaders top-down
     global_perm = jax.random.permutation(task_distribution_prng, config.num_tasks)
@@ -439,5 +466,5 @@ def create_dataloader(config: GodConfig, prng: PRNG, task_distribution_prng: PRN
             collate_fn=jax_collate_fn,
         )
 
-    xs = list(reversed(list(zip(config.levels, level_datasets))))
-    return make_level_loader(config.levels[-1], level_datasets[-1], xs[1:], global_perm, k3)
+    xs = list(reversed(list(zip(config.levels, data_sources))))
+    return make_level_loader(config.levels[-1], data_sources[-1], xs[1:], global_perm, k1)

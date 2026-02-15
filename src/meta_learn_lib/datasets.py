@@ -1,22 +1,20 @@
-from itertools import islice
 import itertools
 import jax
 import jax.numpy as jnp
-from typing import Callable, Iterable, Iterator
+from typing import Iterator
 from torch.utils.data import Dataset, DataLoader, IterableDataset, random_split
 import torch
 import torchvision
 from toolz import mapcat
 import math
 import numpy as np
-from torchvision.datasets.mnist import MNIST, FashionMNIST
 from torchvision.transforms.transforms import Lambda
 from PIL import Image
 
 from meta_learn_lib.config import *
 from meta_learn_lib.constants import *
-from meta_learn_lib.lib_types import PRNG, FractionalList
-from meta_learn_lib.util import infinite_keys, reshape_timeseries, subset_n
+from meta_learn_lib.lib_types import PRNG
+from meta_learn_lib.util import infinite_keys
 
 
 class SpuriousMNISTDataset(Dataset):
@@ -340,15 +338,17 @@ def validate_dataloader_config(config: GodConfig):
 def create_dataloader(config: GodConfig, prng: PRNG):
     k1, k2, k3, prng = jax.random.split(prng, 4)
 
+    def get_sources(c: list[MetaConfig], k: PRNG) -> list[tuple[MetaConfig, PRNG]]:
+        keys = jax.random.split(k, len(c))
+        return [
+            (level, jax.random.key(level.test_seed) if level.dataset_validation.is_test else key)
+            for level, key in zip(c, keys)
+        ]
+
     # 1. Create dataset sources
-    unique_task_pairs = set(
-        (
-            level.dataset_source,
-            level.dataset_validation.is_test,
-            jax.random.key(level.test_seed) if level.dataset_validation.is_test else k,
-        )
-        for (level, k) in zip(config.levels, jax.random.split(k1, len(config.levels)))
-    )
+    unique_task_pairs = {
+        (level.dataset_source, level.dataset_validation.is_test): key for level, key in get_sources(config.levels, k1)
+    }
 
     remaining = {
         (task, is_test): dataset_sources(
@@ -359,17 +359,15 @@ def create_dataloader(config: GodConfig, prng: PRNG):
             num_tasks=config.num_tasks,
             seed=key,
         )
-        for (task, is_test, key) in unique_task_pairs
+        for (task, is_test), key in unique_task_pairs.items()
     }
 
     # 2. Take from sources for each level
-    take_keys = jax.random.split(k2, len(config.levels))
     level_datasets: list[list[Dataset]] = []
-    for level, tk in zip(config.levels, take_keys):
+    for level, tk in get_sources(config.levels, k2):
         key_pair = (level.dataset_source, level.dataset_validation.is_test)
-        seed = jax.random.PRNGKey(level.test_seed) if level.dataset_validation.is_test else tk
         taken, remaining[key_pair] = take_datasets(
-            seed=seed,
+            seed=tk,
             remaining=remaining[key_pair],
             n=level.dataset_validation.num_examples_total,
             n_consume=level.dataset_validation.num_steps_in_timeseries,

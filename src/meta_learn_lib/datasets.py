@@ -57,6 +57,10 @@ class IteratorDataset(IterableDataset):
         return self.iterator
 
 
+def numpy_collate_fn(batch):
+    return jax.tree.map(lambda x: np.asarray(x), batch)
+
+
 def jax_collate_fn(batch):
     return jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
 
@@ -291,7 +295,7 @@ def task_iterator(
         batch_size=batch,
         shuffle=True,
         generator=generator,
-        collate_fn=jax_collate_fn,
+        collate_fn=lambda b: jax_collate_fn(numpy_collate_fn(b)),
         drop_last=False,
     )
     for X_batch, Y_batch in loader:
@@ -305,24 +309,22 @@ def task_iterator(
             yield X_batch[:, vb], Y_batch[:, vb]
 
 
-def batch_iterator(
-    iters: list[Iterator[tuple[jax.Array, jax.Array]]],
-    batch_size: int,
-) -> Iterator[tuple[jax.Array, jax.Array]]:
+def batch_iterator(iters, batch_size):
     for batch_iters in itertools.batched(iters, batch_size):
         for batch in zip(*batch_iters):
-            xs, ys = zip(*batch)
-            yield jnp.stack(xs), jnp.stack(ys)
+            yield jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
 
 
-def validate_dataloader_config(config: GodConfig):
+def validate_dataloader_config(config: GodConfig) -> list[str]:
+    errors = []
+
     if len(config.levels) == 0:
-        raise ValueError("At least one level is required to create a dataloader")
+        errors.append("At least one level is required to create a dataloader")
 
     expected = math.prod(l.meta_opt.batch for l in config.levels)
     if config.num_tasks != expected:
         batches = " * ".join(str(l.meta_opt.batch) for l in config.levels)
-        raise ValueError(
+        errors.append(
             f"num_tasks ({config.num_tasks}) must equal product of meta_opt.batch across levels ({batches} = {expected})"
         )
 
@@ -330,12 +332,14 @@ def validate_dataloader_config(config: GodConfig):
         tasks_per_stream = level.dataset_validation.task_batch_size
         num_indices = math.prod(l.meta_opt.batch for l in config.levels[: i + 1])
         if num_indices % tasks_per_stream != 0:
-            raise ValueError(
+            errors.append(
                 f"Level {i}: num task indices ({num_indices}) must be divisible by task_batch_size ({tasks_per_stream})"
             )
 
+    return errors
 
-def create_dataloader(config: GodConfig, prng: PRNG):
+
+def create_dataloader(config: GodConfig, prng: PRNG, task_distribution_prng: PRNG) -> DataLoader:
     k1, k2, k3, prng = jax.random.split(prng, 4)
 
     def get_sources(c: list[MetaConfig], k: PRNG) -> list[tuple[MetaConfig, PRNG]]:
@@ -377,8 +381,7 @@ def create_dataloader(config: GodConfig, prng: PRNG):
         level_datasets.append(taken)
 
     # 3. Build nested loaders top-down
-    perm_key, iter_key = jax.random.split(k3)
-    global_perm = jax.random.permutation(perm_key, config.num_tasks)
+    global_perm = jax.random.permutation(task_distribution_prng, config.num_tasks)
 
     def make_task_loader(
         task_indices: jax.Array,
@@ -439,4 +442,4 @@ def create_dataloader(config: GodConfig, prng: PRNG):
         )
 
     xs = list(reversed(list(zip(config.levels, level_datasets))))
-    return make_level_loader(config.levels[-1], level_datasets[-1], xs[1:], global_perm, iter_key)
+    return make_level_loader(config.levels[-1], level_datasets[-1], xs[1:], global_perm, k3)

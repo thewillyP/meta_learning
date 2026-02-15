@@ -20,6 +20,7 @@ class SeedConfig:
     global_seed: int
     data_seed: int
     parameter_seed: int
+    task_seed: int
 
 
 @dataclass(frozen=True)

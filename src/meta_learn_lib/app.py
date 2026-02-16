@@ -49,7 +49,10 @@ def runApp(config: GodConfig) -> None:
             "rnn1": ["flatten"],
             "rnn2": ["rnn1"],
         },
-        transition_nodes={
+        readout_graph={
+            "readout": ["rnn2"],
+        },
+        nodes={
             "x": UnlabeledSource(),
             "flatten": Flatten(),
             "rnn1": VanillaRNNLayer(
@@ -84,11 +87,6 @@ def runApp(config: GodConfig) -> None:
                     id="meta1_rnn2_time_constant",
                 ),
             ),
-        },
-        readout_graph={
-            "readout": ["rnn2"],
-        },
-        readout_nodes={
             "readout": NNLayer(
                 n=10,
                 activation_fn="identity",
@@ -129,8 +127,8 @@ def runApp(config: GodConfig) -> None:
                         add_clip=HardClip(1.0),
                         scale=1.0,
                     ),
-                    optimizer=[
-                        OptimizerAssignment(
+                    optimizer={
+                        "meta1_sgd1": OptimizerAssignment(
                             target=frozenset({"rnn1", "rnn2", "readout"}),
                             optimizer=SGDConfig(
                                 learning_rate=HyperparameterConfig(
@@ -156,10 +154,12 @@ def runApp(config: GodConfig) -> None:
                                 ),
                             ),
                             per_parameter=False,
-                        )
-                    ],
+                        ),
+                    },
                 ),
                 test_seed=0,
+                model_persistence=Persistent(parameter_t=None, state_t=1),
+                learner_persistence=Persistent(parameter_t=None, state_t=None),
             ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -197,8 +197,8 @@ def runApp(config: GodConfig) -> None:
                         add_clip=None,
                         scale=1.0,
                     ),
-                    optimizer=[
-                        OptimizerAssignment(
+                    optimizer={
+                        "meta2_adam1": OptimizerAssignment(
                             target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
                             optimizer=AdamConfig(
                                 learning_rate=HyperparameterConfig(
@@ -215,12 +215,21 @@ def runApp(config: GodConfig) -> None:
                                     max_value=jnp.inf,
                                     id="meta2_adam1.wd",
                                 ),
+                                momentum=HyperparameterConfig(
+                                    value=0.9,
+                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                                    min_value=0.0,
+                                    max_value=1.0,
+                                    id="meta2_adam1.momentum",
+                                ),
                             ),
                             per_parameter=False,
                         ),
-                    ],
+                    },
                 ),
                 test_seed=0,
+                model_persistence=Persistent(parameter_t=None, state_t=1),
+                learner_persistence=Persistent(parameter_t=None, state_t=None),
             ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -254,16 +263,17 @@ def runApp(config: GodConfig) -> None:
                         add_clip=None,
                         scale=1.0,
                     ),
-                    optimizer=[],
+                    optimizer={},
                 ),
                 test_seed=0,
+                model_persistence=Persistent(parameter_t=None, state_t=1),
+                learner_persistence=Persistent(parameter_t=None, state_t=None),
             ),
         ],
         num_tasks=1,
         unlabeled_mask_value=0.0,
         label_mask_value=-1.0,
     )
-
     if not config.clearml_run:
         return
 

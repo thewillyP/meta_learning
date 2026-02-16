@@ -10,7 +10,7 @@ import equinox.internal as eqxi
 import optax
 import jax.lax as lax
 from meta_learn_lib.config import HyperparameterConfig
-from meta_learn_lib.lib_types import LOSS, PRNG, FractionalList
+from meta_learn_lib.lib_types import LOSS, PRNG
 
 
 def setup_flattened_union(converter, union_type):
@@ -46,41 +46,6 @@ def jvp(f, primal, tangent):
 def jacobian_matrix_product(f, primal, matrix):
     wrapper = lambda p, t: jvp(f, p, t)
     return eqx.filter_vmap(wrapper, in_axes=(None, 1), out_axes=(None, 1, None))(primal, matrix)
-
-
-def create_fractional_list(percentages: list[float]) -> FractionalList | None:
-    """Create a FractionalList from a list of percentages.
-
-    Args:
-        percentages (list[float]): A list of percentages that sum to 1.0.
-
-    Returns:
-        FractionalList | None: A FractionalList if the input is valid, otherwise None.
-    """
-    if not percentages or abs(sum(percentages) - 1.0) > 1e-6:
-        return None
-    return FractionalList(percentages)
-
-
-def subset_n(n: int, percentages: FractionalList) -> list[int]:
-    """Given a number n and a list of percentages, return a list of integers
-    that represent the subset sizes of n according to the percentages.
-
-    Args:
-        n (int): The total number to be divided into subsets.
-        percentages (list[float]): A list of percentages that sum to 1.0.
-
-    Returns:
-        list[int]: A list of integers representing the subset sizes.
-    """
-    subset_sizes = [int(n * p) for p in percentages]
-    total_assigned = sum(subset_sizes)
-    remainder = n - total_assigned
-
-    for i in range(remainder):
-        subset_sizes[i % len(subset_sizes)] += 1
-
-    return subset_sizes
 
 
 def reshape_timeseries(arr: jax.Array, target_time_dim: int) -> tuple[jax.Array, int]:

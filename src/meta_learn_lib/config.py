@@ -82,8 +82,8 @@ type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayA
 
 @dataclass(frozen=True)
 class Persistent:
-    parameter_t: int
-    state_t: int
+    parameter_t: int | None
+    state_t: int | None
 
 
 @dataclass(frozen=True)
@@ -187,7 +187,6 @@ class OptimizerAssignment:
     target: frozenset[str]
     optimizer: Optimizer
     per_parameter: bool  # separate hyperparameter instance per parameter vs shared
-    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -248,7 +247,6 @@ class GradientConfig:
     method: GradientMethod
     add_clip: HardClip | SoftClip | None
     scale: float
-    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -263,7 +261,6 @@ class LayerNorm:
     epsilon: float
     use_weight: bool
     use_bias: bool
-    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -272,7 +269,6 @@ class NNLayer:
     activation_fn: ACTIVATION_FN
     use_bias: bool
     layer_norm: Optional[LayerNorm]
-    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -287,7 +283,6 @@ class GRULayer:
     n: int
     use_bias: bool
     use_random_init: bool
-    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -295,7 +290,6 @@ class LSTMLayer:
     n: int
     use_bias: bool
     use_random_init: bool
-    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -303,7 +297,6 @@ class Scan:  # Wraps around a layer and repeats it in an unfold manner
     graph: dict[str, list[str]]
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     pred_source: str  # which node in the graph to source teacher predictions.
-    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -392,6 +385,8 @@ class MetaConfig:
     meta_opt: MetaOptimizationConfig  # number of simultaneous tasks at same level
     learner: LearnConfig
     test_seed: int
+    model_persistence: Persistent
+    learner_persistence: Persistent
 
 
 @dataclass(frozen=True)

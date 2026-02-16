@@ -86,7 +86,7 @@ def runApp(config: GodConfig) -> None:
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=100,
+                    num_examples_in_minibatch=5000,
                     num_steps_in_timeseries=28,
                     num_examples_total=50_000,
                     is_test=False,
@@ -150,7 +150,7 @@ def runApp(config: GodConfig) -> None:
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=100,
+                    num_examples_in_minibatch=5000,
                     num_steps_in_timeseries=28,
                     num_examples_total=10_000,
                     is_test=False,
@@ -211,7 +211,7 @@ def runApp(config: GodConfig) -> None:
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=100,
+                    num_examples_in_minibatch=5000,
                     num_steps_in_timeseries=28,
                     num_examples_total=10_000,
                     is_test=True,
@@ -279,19 +279,19 @@ def runApp(config: GodConfig) -> None:
     data_sources = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    # t0 = time.perf_counter()
-    # for i, x in enumerate(toolz.take(28, dataloader)):
-    #     t1 = time.perf_counter()
-    #     print(f"step {i}: {t1 - t0:.3f}s")
-    #     t0 = t1
+    t0 = time.perf_counter()
+    for i, x in enumerate(toolz.take(28, dataloader)):
+        t1 = time.perf_counter()
+        print(f"step {i}: {t1 - t0:.3f}s")
+        t0 = t1
 
-    for x in toolz.take(28, dataloader):
-        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
-        # print(tr_x, tr_y)
-        print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
-        # print(tr_x.shape, tr_y.shape)
-        # print(vl_x.shape, vl_y.shape)
-        # print(te_x.shape, te_y.shape)
+    # for x in toolz.take(1, dataloader):
+    #     (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+    #     # print(tr_x, tr_y)
+    #     # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+    #     print(tr_x.shape, tr_y.shape)
+    #     print(vl_x.shape, vl_y.shape)
+    #     print(te_x.shape, te_y.shape)
 
     # # Dataset
 

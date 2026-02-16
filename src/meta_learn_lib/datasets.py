@@ -77,7 +77,7 @@ def numpy_collate_fn(batch):
 
 
 def jax_collate_fn(batch):
-    return jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
+    return jax.tree.map(lambda *xs: jnp.asarray(np.stack(xs)), *batch)
 
 
 def generate_add_task_dataset(N: int, t_1: int, t_2: int, tau_task: int, rng_key: PRNG):
@@ -128,7 +128,13 @@ def take_datasets(
     def make_dataset(idx: int, key: PRNG) -> tuple[Dataset, Dataset]:
         generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
         take_n = min(n, len(remaining[idx]))
+        if take_n == 0:
+            raise ValueError(
+                f"Task {idx}: no examples remaining (requested {n}, available {len(remaining[idx])}). "
+                f"Earlier levels likely consumed all data from this source."
+            )
         taken, leftover = random_split(remaining[idx], [take_n, len(remaining[idx]) - take_n], generator=generator)
+        taken = TransformedDataset(taken, x_transform, y_transform)
         xs, ys = jax_collate_fn(numpy_collate_fn([taken[i] for i in range(len(taken))]))
         return PyTreeDataset((xs, ys)), leftover
 
@@ -322,7 +328,9 @@ def task_iterator(
             X_batch = jnp.concatenate([X_batch, X_pad])
             Y_batch = jnp.concatenate([Y_batch, Y_pad])
         for vb in range(X_batch.shape[1]):
-            yield X_batch[:, vb], Y_batch[:, vb]
+            x = X_batch[:, vb].swapaxes(0, 1)
+            y = Y_batch[:, vb].swapaxes(0, 1)
+            yield x, y
 
 
 def batch_iterator(iters, batch_size):
@@ -447,21 +455,26 @@ def create_dataloader(
         child_key, val_key = jax.random.split(key)
         val_key = jax.random.key(meta_config.test_seed) if is_test else val_key
 
-        if len(xss) == 0:
-            shared = make_task_loader(task_indices, meta_config, datasets, val_key)
-            train_loader, val_loader = itertools.tee(shared, 2)
-        else:
-            val_keys = infinite_keys(val_key)
+        chunks = jnp.split(task_indices, batch)
+        child_keys = jax.random.split(child_key, batch)
+        val_keys_per_child = [infinite_keys(vk) for vk in jax.random.split(val_key, batch)]
+        partition = zip(chunks, child_keys, val_keys_per_child)
 
-            chunks = jnp.split(task_indices, batch)
-            child_keys = jax.random.split(child_key, batch)
+        if len(xss) == 0:
+            f = lambda c, ck: make_task_loader(c, meta_config, datasets, ck)
+        else:
             x, *xs = xss
             mc, ds = x
-            child_loaders = [make_level_loader(mc, ds, xs, chunk, ckey) for chunk, ckey in zip(chunks, child_keys)]
-            train_loader = batch_iterator(child_loaders, len(child_loaders))
-            val_loader = mapcat(lambda k: make_task_loader(task_indices, meta_config, datasets, k), val_keys)
+            f = lambda c, ck: make_level_loader(mc, ds, xs, c, ck)
+
+        children = [
+            zip(f(chunk, ckey), mapcat(lambda k, c=chunk: make_task_loader(c, meta_config, datasets, k), vks))
+            for chunk, ckey, vks in partition
+        ]
+        train_loader = batch_iterator(children, len(children))
+
         return DataLoader(
-            IteratorDataset(zip(train_loader, val_loader)),
+            IteratorDataset(train_loader),
             batch_size=num_steps,
             collate_fn=jax_collate_fn,
         )

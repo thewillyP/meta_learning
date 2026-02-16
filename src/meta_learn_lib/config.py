@@ -267,6 +267,7 @@ class NNLayer:
 class VanillaRNNLayer:
     nn_layer: NNLayer
     use_random_init: bool
+    time_constant: HP
 
 
 @dataclass(frozen=True)

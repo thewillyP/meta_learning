@@ -1,10 +1,7 @@
 from typing import Literal, NewType
-from dataclasses import dataclass
 import jax
-import equinox as eqx
 
 PRNG = NewType("PRNG", jax.Array)
-FractionalList = NewType("FractionalList", list[float])
 
 ACTIVATION = NewType("ACTIVATION", jax.Array)
 GRADIENT = NewType("GRADIENT", jax.Array)  # is a vector
@@ -19,20 +16,4 @@ STAT = NewType("STAT", jax.Array)  # is a scalar
 LOGITS = NewType("LOGITS", jax.Array)
 PREDICTION = NewType("PREDICTION", jax.Array)
 
-
 type ACTIVATION_FN = Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
-
-
-class traverse[DATA](eqx.Module):
-    d: DATA
-
-
-class batched[DATA](eqx.Module):
-    b: DATA
-
-
-@dataclass(frozen=True)
-class PaddedData:
-    X: jax.Array  # (# examples, # virtual minibatches, # timesteps, feature_dim)
-    Y: jax.Array
-    mask: jax.Array  # (# examples, # virtual minibatches, 1) last is in int

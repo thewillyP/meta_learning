@@ -60,6 +60,13 @@ def runApp(config: GodConfig) -> None:
                     layer_norm=None,
                 ),
                 use_random_init=False,
+                time_constant=HyperparameterConfig(
+                    value=1.0,
+                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    min_value=0.0,
+                    max_value=1.0,
+                    id="meta1_rnn1_time_constant",
+                ),
             ),
             "rnn2": VanillaRNNLayer(
                 nn_layer=NNLayer(
@@ -69,6 +76,13 @@ def runApp(config: GodConfig) -> None:
                     layer_norm=None,
                 ),
                 use_random_init=False,
+                time_constant=HyperparameterConfig(
+                    value=1.0,
+                    hyperparameter_parametrization=HyperparameterConfig.identity(),
+                    min_value=0.0,
+                    max_value=1.0,
+                    id="meta1_rnn2_time_constant",
+                ),
             ),
         },
         readout_graph={
@@ -192,14 +206,14 @@ def runApp(config: GodConfig) -> None:
                                     hyperparameter_parametrization=HyperparameterConfig.identity(),
                                     min_value=0.0,
                                     max_value=jnp.inf,
-                                    id="meta1_adam1.lr",
+                                    id="meta2_adam1.lr",
                                 ),
                                 weight_decay=HyperparameterConfig(
                                     value=0.0,
                                     hyperparameter_parametrization=HyperparameterConfig.identity(),
                                     min_value=0.0,
                                     max_value=jnp.inf,
-                                    id="meta1_adam1.wd",
+                                    id="meta2_adam1.wd",
                                 ),
                             ),
                             per_parameter=False,
@@ -275,40 +289,18 @@ def runApp(config: GodConfig) -> None:
     if errors:
         raise ValueError("\n".join(errors))
 
+    # Dataset
     dataset_prng, data_loader_prng = jax.random.split(dataset_gen_prng, 2)
     data_sources = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    t0 = time.perf_counter()
-    for i, x in enumerate(toolz.take(28, dataloader)):
-        t1 = time.perf_counter()
-        print(f"step {i}: {t1 - t0:.3f}s")
-        t0 = t1
-
-    # for x in toolz.take(1, dataloader):
-    #     (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
-    #     # print(tr_x, tr_y)
-    #     # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
-    #     print(tr_x.shape, tr_y.shape)
-    #     print(vl_x.shape, vl_y.shape)
-    #     print(te_x.shape, te_y.shape)
-
-    # # Dataset
-
-    # dataloader, dataloader_te, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb = create_dataloader(
-    #     config, percentages, dataset_gen_prng, test_prng
-    # )
-
-    # if config.ignore_validation_inference_recurrence:
-    #     if not all(virtual_minibatches[k] == 1 for i, k in enumerate(sorted(virtual_minibatches.keys())) if i > 0):
-    #         raise ValueError(
-    #             "When ignore_validation_inference_recurrence is True, all validation datasets except the first must have num_virtual_minibatches_per_turn=1."
-    #         )
-
-    # if total_tr_vb % math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()]) != 0:
-    #     raise ValueError(
-    #         f"The total number of virtual minibatches per turn ({total_tr_vb}) must be divisible by the product of num_virtual_minibatches_per_turn for each learner ({math.prod([l.num_virtual_minibatches_per_turn for l in config.learners.values()])}). Please adjust the num_virtual_minibatches_per_turn settings in the config."
-    #     )
+    for x in toolz.take(1, dataloader):
+        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+        # print(tr_x, tr_y)
+        # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+        print(tr_x.shape, tr_y.shape)
+        print(vl_x.shape, vl_y.shape)
+        print(te_x.shape, te_y.shape)
 
     # learn_interfaces = create_learn_interfaces(config)
     # validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)

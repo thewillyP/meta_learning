@@ -115,9 +115,6 @@ class RNN(PClass):
     layer_norm: Optional[Parameter[eqx.nn.LayerNorm]] = field(serializer=deep_serialize)
 
 
-type Model = MLP | RNN | eqx.nn.GRUCell | eqx.nn.LSTMCell
-
-
 class RecurrentState(PClass):
     activation: State[jax.Array] = field(serializer=deep_serialize)
 
@@ -137,18 +134,21 @@ class UOROState(PClass):
 
 
 class Parameters(PClass):
-    models: PVector[Model] = field(serializer=deep_serialize)
+    mlps: PVector[MLP] = field(serializer=deep_serialize)
+    rnns: PVector[RNN] = field(serializer=deep_serialize)
+    grus: PVector[Parameter[eqx.nn.GRUCell]] = field(serializer=deep_serialize)
+    lstms: PVector[Parameter[eqx.nn.LSTMCell]] = field(serializer=deep_serialize)
     learning_rates: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
     weight_decays: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
-    rflo_timeconstants: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
+    time_constants: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
     kl_regularizer_betas: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
 
 
 class States(PClass):
-    influence_tensors: PVector[JACOBIAN] = field()
+    influence_tensors: PVector[State[jax.Array]] = field(serializer=deep_serialize)
     uoros: PVector[UOROState] = field(serializer=deep_serialize)
-    opt_states: PVector[optax.OptState] = field(serializer=deep_serialize)
-    ticks: PVector[jax.Array] = field()
+    opt_states: PVector[State[optax.OptState]] = field(serializer=deep_serialize)
+    ticks: PVector[jax.Array] = field(serializer=deep_serialize)
     logs: PVector[Logs] = field(serializer=deep_serialize)
     recurrent_states: PVector[RecurrentState] = field(serializer=deep_serialize)
     vanilla_recurrent_states: PVector[VanillaRecurrentState] = field(serializer=deep_serialize)
@@ -163,8 +163,8 @@ class GodState(PClass):
 
 
 class Outputs(PClass):
-    predictions: PVector[PREDICTION] = field(serializer=deep_serialize)
-    logits: PVector[LOGITS] = field(serializer=deep_serialize)
+    prediction: PREDICTION = field(serializer=deep_serialize)
+    logit: LOGITS = field(serializer=deep_serialize)
 
 
 # Idea: we let the interface take care of the index mappings. Just make it so that each level has access to all the info it needs

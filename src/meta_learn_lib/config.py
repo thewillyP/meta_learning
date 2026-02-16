@@ -81,6 +81,12 @@ type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayA
 
 
 @dataclass(frozen=True)
+class Persistent:
+    parameter_t: int
+    state_t: int
+
+
+@dataclass(frozen=True)
 class HyperparameterConfig:
     @dataclass(frozen=True)
     class identity: ...
@@ -150,6 +156,7 @@ class SGDNormalizedConfig:
 class AdamConfig:
     learning_rate: HP
     weight_decay: HP
+    momentum: HP
 
 
 @dataclass(frozen=True)
@@ -163,6 +170,7 @@ class ExponentiatedGradientAdamConfig:
 class ExponentiatedGradientConfig:
     learning_rate: HP
     weight_decay: HP
+    momentum: HP
 
 
 type Optimizer = Union[
@@ -179,6 +187,7 @@ class OptimizerAssignment:
     target: frozenset[str]
     optimizer: Optimizer
     per_parameter: bool  # separate hyperparameter instance per parameter vs shared
+    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -220,7 +229,7 @@ class RFLOConfig:
 
 @dataclass(frozen=True)
 class UOROConfig:
-    std: HP
+    std: float
 
 
 type GradientMethod = Union[
@@ -239,13 +248,14 @@ class GradientConfig:
     method: GradientMethod
     add_clip: HardClip | SoftClip | None
     scale: float
+    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
 class LearnConfig:
     model_learner: GradientConfig
     optimizer_learner: GradientConfig
-    optimizer: list[OptimizerAssignment]
+    optimizer: dict[str, OptimizerAssignment]
 
 
 @dataclass(frozen=True)
@@ -253,6 +263,7 @@ class LayerNorm:
     epsilon: float
     use_weight: bool
     use_bias: bool
+    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -261,6 +272,7 @@ class NNLayer:
     activation_fn: ACTIVATION_FN
     use_bias: bool
     layer_norm: Optional[LayerNorm]
+    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -275,6 +287,7 @@ class GRULayer:
     n: int
     use_bias: bool
     use_random_init: bool
+    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -282,6 +295,7 @@ class LSTMLayer:
     n: int
     use_bias: bool
     use_random_init: bool
+    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -289,6 +303,7 @@ class Scan:  # Wraps around a layer and repeats it in an unfold manner
     graph: dict[str, list[str]]
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     pred_source: str  # which node in the graph to source teacher predictions.
+    is_persistent: Persistent
 
 
 @dataclass(frozen=True)
@@ -390,9 +405,8 @@ class GodConfig:
     checkpoint_every_n_minibatches: int
 
     transition_graph: dict[str, list[str]]
-    transition_nodes: dict[str, Node]
     readout_graph: dict[str, list[str]]
-    readout_nodes: dict[str, Node]
+    nodes: dict[str, Node]
 
     levels: list[MetaConfig]
 

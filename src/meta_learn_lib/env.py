@@ -3,7 +3,7 @@ import equinox as eqx
 import jax
 import optax
 from pyrsistent import PClass, field, pmap, pvector, thaw
-from pyrsistent.typing import PVector
+from pyrsistent.typing import PMap, PVector
 from pyrsistent._pmap import PMap as PMapClass
 from pyrsistent._pvector import PythonPVector
 
@@ -134,27 +134,28 @@ class UOROState(PClass):
 
 
 class Parameters(PClass):
-    mlps: PVector[MLP] = field(serializer=deep_serialize)
-    rnns: PVector[RNN] = field(serializer=deep_serialize)
-    grus: PVector[Parameter[eqx.nn.GRUCell]] = field(serializer=deep_serialize)
-    lstms: PVector[Parameter[eqx.nn.LSTMCell]] = field(serializer=deep_serialize)
-    learning_rates: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
-    weight_decays: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
-    time_constants: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
-    kl_regularizer_betas: PVector[Parameter[jax.Array]] = field(serializer=deep_serialize)
+    mlps: PMap[int, MLP] = field(serializer=deep_serialize)
+    rnns: PMap[int, RNN] = field(serializer=deep_serialize)
+    grus: PMap[int, Parameter[eqx.nn.GRUCell]] = field(serializer=deep_serialize)
+    lstms: PMap[int, Parameter[eqx.nn.LSTMCell]] = field(serializer=deep_serialize)
+    learning_rates: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
+    weight_decays: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
+    time_constants: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
+    momentums: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
+    kl_regularizer_betas: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
 
 
 class States(PClass):
-    influence_tensors: PVector[State[jax.Array]] = field(serializer=deep_serialize)
-    uoros: PVector[UOROState] = field(serializer=deep_serialize)
-    opt_states: PVector[State[optax.OptState]] = field(serializer=deep_serialize)
-    ticks: PVector[jax.Array] = field(serializer=deep_serialize)
-    logs: PVector[Logs] = field(serializer=deep_serialize)
-    recurrent_states: PVector[RecurrentState] = field(serializer=deep_serialize)
-    vanilla_recurrent_states: PVector[VanillaRecurrentState] = field(serializer=deep_serialize)
-    lstm_states: PVector[LSTMState] = field(serializer=deep_serialize)
-    prngs: PVector[State[PRNG]] = field(serializer=deep_serialize)
-    autoregressive_predictions: PVector[State[jax.Array]] = field(serializer=deep_serialize)
+    influence_tensors: PMap[int, State[JACOBIAN]] = field(serializer=deep_serialize)
+    uoros: PMap[int, UOROState] = field(serializer=deep_serialize)
+    opt_states: PMap[int, State[optax.OptState]] = field(serializer=deep_serialize)
+    ticks: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    log: Logs = field(serializer=deep_serialize)
+    recurrent_states: PMap[int, RecurrentState] = field(serializer=deep_serialize)
+    vanilla_recurrent_states: PMap[int, VanillaRecurrentState] = field(serializer=deep_serialize)
+    lstm_states: PMap[int, LSTMState] = field(serializer=deep_serialize)
+    prngs: PMap[int, State[PRNG]] = field(serializer=deep_serialize)
+    autoregressive_predictions: PMap[int, State[jax.Array]] = field(serializer=deep_serialize)
 
 
 class GodState(PClass):

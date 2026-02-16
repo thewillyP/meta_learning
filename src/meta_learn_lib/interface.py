@@ -18,20 +18,6 @@ from meta_learn_lib.env import (
 from meta_learn_lib.lib_types import JACOBIAN, PRNG
 
 
-"""
-Who needs an interface?
-For each batch in meta_opt each optimizer needs an interface.
-For each optimizer assignment there needs to be an interface. 
-Like if i have a batched parameter, that doesn't mean I need more interfaces.
-BATCHED != MORE INTERFACES
-So actually I dont need an interface for every meta_opt batch since my parameters can be batched now.
-
-So there is one universal interface but 
-each learner and each optimizer and each inference node each gets one interface even if some fields are null. 
-
-"""
-
-
 @dataclass(frozen=True)
 class GodInterface[ENV]:
     take_prng: Callable[[ENV], tuple[PRNG, ENV]]
@@ -69,6 +55,8 @@ class GodInterface[ENV]:
     put_learning_rate: Callable[[ENV, Parameter[jax.Array]], ENV]
     get_weight_decay: Callable[[ENV], Parameter[jax.Array]]
     put_weight_decay: Callable[[ENV, Parameter[jax.Array]], ENV]
+    get_momentum: Callable[[ENV], Parameter[jax.Array]]
+    put_momentum: Callable[[ENV, Parameter[jax.Array]], ENV]
     get_kl_regularizer_beta: Callable[[ENV], Parameter[jax.Array]]
     put_kl_regularizer_beta: Callable[[ENV, Parameter[jax.Array]], ENV]
 

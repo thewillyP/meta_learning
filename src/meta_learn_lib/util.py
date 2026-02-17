@@ -9,8 +9,30 @@ import equinox as eqx
 import equinox.internal as eqxi
 import optax
 import jax.lax as lax
+from pyrsistent import PClass, thaw
+from pyrsistent._pmap import PMap as PMapClass
+from pyrsistent._pvector import PythonPVector
+
 from meta_learn_lib.config import HyperparameterConfig
 from meta_learn_lib.lib_types import LOSS, PRNG
+
+
+def deep_serialize(_, obj):
+    """Recursively serialize pyrsistent objects to Python built-ins"""
+    if isinstance(obj, PClass):
+        serialized = obj.serialize()
+        return {k: deep_serialize(_, v) for k, v in serialized.items()}
+    elif isinstance(obj, PMapClass):
+        thawed = thaw(obj)
+        return {k: deep_serialize(_, v) for k, v in thawed.items()}
+    elif isinstance(obj, PythonPVector):
+        return [deep_serialize(_, v) for v in obj]
+    elif isinstance(obj, dict):
+        return {k: deep_serialize(_, v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return type(obj)(deep_serialize(_, v) for v in obj)
+    else:
+        return obj
 
 
 def setup_flattened_union(converter, union_type):

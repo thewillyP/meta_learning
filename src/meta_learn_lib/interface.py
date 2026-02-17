@@ -21,6 +21,7 @@ from meta_learn_lib.lib_types import JACOBIAN, PRNG
 @dataclass(frozen=True)
 class GodInterface[ENV]:
     take_prng: Callable[[ENV], tuple[PRNG, ENV]]
+    put_prng: Callable[[ENV, PRNG], ENV]
     get_tick: Callable[[ENV], int]
     put_tick: Callable[[ENV, int], ENV]
     put_logs: Callable[[ENV, Logs], ENV]
@@ -65,6 +66,7 @@ class GodInterface[ENV]:
 def default_god_interface[ENV]() -> GodInterface[ENV]:
     return GodInterface[ENV](
         take_prng=lambda env: (None, env),
+        put_prng=lambda env, prng: env,
         get_tick=lambda env: None,
         put_tick=lambda env, tick: env,
         put_logs=lambda env, logs: env,

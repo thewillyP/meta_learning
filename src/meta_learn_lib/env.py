@@ -145,22 +145,30 @@ class Parameters(PClass):
     kl_regularizer_betas: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
 
 
-class States(PClass):
+class LearningStates(PClass):
     influence_tensors: PMap[int, State[JACOBIAN]] = field(serializer=deep_serialize)
     uoros: PMap[int, UOROState] = field(serializer=deep_serialize)
     opt_states: PMap[int, State[optax.OptState]] = field(serializer=deep_serialize)
-    ticks: PMap[int, jax.Array] = field(serializer=deep_serialize)
-    log: Logs = field(serializer=deep_serialize)
+
+
+class ModelStates(PClass):
     recurrent_states: PMap[int, RecurrentState] = field(serializer=deep_serialize)
     vanilla_recurrent_states: PMap[int, VanillaRecurrentState] = field(serializer=deep_serialize)
     lstm_states: PMap[int, LSTMState] = field(serializer=deep_serialize)
-    prngs: PMap[int, State[PRNG]] = field(serializer=deep_serialize)
     autoregressive_predictions: PMap[int, State[jax.Array]] = field(serializer=deep_serialize)
 
 
+class LevelMeta(PClass):
+    ticks: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    log: Logs = field(serializer=deep_serialize)
+    prngs: PMap[int, State[PRNG]] = field(serializer=deep_serialize)
+
+
 class GodState(PClass):
-    meta_states: PVector[States] = field(serializer=deep_serialize)
+    model_states: PVector[ModelStates] = field(serializer=deep_serialize)
+    learning_states: PVector[LearningStates] = field(serializer=deep_serialize)
     meta_parameters: PVector[Parameters] = field(serializer=deep_serialize)
+    level_meta: PVector[LevelMeta] = field(serializer=deep_serialize)
 
 
 class Outputs(PClass):
@@ -185,9 +193,11 @@ register_pytree(RNN, set())
 register_pytree(MLP, set())
 register_pytree(UOROState, set())
 
-# Register container types that depend on leaf types
+# Register container types
 register_pytree(Parameters, set())
-register_pytree(States, set())
+register_pytree(LearningStates, set())
+register_pytree(ModelStates, set())
+register_pytree(LevelMeta, set())
 register_pytree(Outputs, set())
 
 # Register top-level container last

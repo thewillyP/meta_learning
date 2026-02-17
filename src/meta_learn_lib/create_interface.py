@@ -11,22 +11,22 @@ from meta_learn_lib.util import to_vector
 
 def prng_factory(key: int, level: int):
     def get_prng(env: GodState) -> tuple[jax.Array, GodState]:
-        prng, new_prng = jax.random.split(env.meta_states[level].prngs[key].value)
-        return prng, env.transform(["meta_states", level, "prngs", key], lambda _: new_prng)
+        prng, new_prng = jax.random.split(env.level_meta[level].prngs[key])
+        return prng, env.transform(["level_meta", level, "prngs", key], lambda _: new_prng)
 
     return get_prng
 
 
 def get_tick(i: int, level: int):
     def get_tick_fn(env: GodState) -> int:
-        return env.meta_states[level].ticks[i]
+        return env.level_meta[level].ticks[i]
 
     return get_tick_fn
 
 
 def put_tick(i: int, level: int):
     def put_tick_fn(env: GodState, tick: int) -> GodState:
-        return env.transform(["meta_states", level, "ticks", i], lambda _: tick)
+        return env.transform(["level_meta", level, "ticks", i], lambda _: tick)
 
     return put_tick_fn
 
@@ -40,14 +40,14 @@ def get_mlp_param(i: int, level: int):
 
 def get_vanilla_rnn_state(i: int, level: int):
     def get_vanilla_rnn_state_fn(env: GodState) -> VanillaRecurrentState:
-        return env.meta_states[level].vanilla_recurrent_states[i]
+        return env.model_states[level].vanilla_recurrent_states[i]
 
     return get_vanilla_rnn_state_fn
 
 
 def put_vanilla_rnn_state(i: int, level: int):
     def put_vanilla_rnn_state_fn(env: GodState, state: VanillaRecurrentState) -> GodState:
-        return env.transform(["meta_states", level, "vanilla_recurrent_states", i], lambda _: state)
+        return env.transform(["model_states", level, "vanilla_recurrent_states", i], lambda _: state)
 
     return put_vanilla_rnn_state_fn
 
@@ -68,14 +68,14 @@ def put_vanilla_rnn_param(i: int, level: int):
 
 def get_gru_state(i: int, level: int):
     def get_gru_state_fn(env: GodState) -> RecurrentState:
-        return env.meta_states[level].recurrent_states[i]
+        return env.model_states[level].recurrent_states[i]
 
     return get_gru_state_fn
 
 
 def put_gru_state(i: int, level: int):
     def put_gru_state_fn(env: GodState, state: RecurrentState) -> GodState:
-        return env.transform(["meta_states", level, "recurrent_states", i], lambda _: state)
+        return env.transform(["model_states", level, "recurrent_states", i], lambda _: state)
 
     return put_gru_state_fn
 
@@ -96,14 +96,14 @@ def put_gru_param(i: int, level: int):
 
 def get_lstm_state(i: int, level: int):
     def get_lstm_state_fn(env: GodState) -> LSTMState:
-        return env.meta_states[level].lstm_states[i]
+        return env.model_states[level].lstm_states[i]
 
     return get_lstm_state_fn
 
 
 def put_lstm_state(i: int, level: int):
     def put_lstm_state_fn(env: GodState, state: LSTMState) -> GodState:
-        return env.transform(["meta_states", level, "lstm_states", i], lambda _: state)
+        return env.transform(["model_states", level, "lstm_states", i], lambda _: state)
 
     return put_lstm_state_fn
 
@@ -124,14 +124,14 @@ def put_lstm_param(i: int, level: int):
 
 def get_autoregressive_predictions(i: int, level: int):
     def get_autoregressive_predictions_fn(env: GodState) -> State[jax.Array]:
-        return env.meta_states[level].autoregressive_predictions[i]
+        return env.model_states[level].autoregressive_predictions[i]
 
     return get_autoregressive_predictions_fn
 
 
 def put_autoregressive_predictions(i: int, level: int):
     def put_autoregressive_predictions_fn(env: GodState, predictions: State[jax.Array]) -> GodState:
-        return env.transform(["meta_states", level, "autoregressive_predictions", i], lambda _: predictions)
+        return env.transform(["model_states", level, "autoregressive_predictions", i])
 
     return put_autoregressive_predictions_fn
 
@@ -208,113 +208,94 @@ def put_kl_regularizer_beta(i: int, level: int):
 
 def get_opt_state(i: int, level: int):
     def get_opt_state_fn(env: GodState) -> State[optax.OptState]:
-        return env.meta_states[level].opt_states[i]
+        return env.learning_states[level].opt_states[i]
 
     return get_opt_state_fn
 
 
 def put_opt_state(i: int, level: int):
     def put_opt_state_fn(env: GodState, opt_state: State[optax.OptState]) -> GodState:
-        return env.transform(["meta_states", level, "opt_states", i], lambda _: opt_state)
+        return env.transform(["learning_states", level, "opt_states", i], lambda _: opt_state)
 
     return put_opt_state_fn
 
 
 def get_forward_mode_jacobian(i: int, level: int):
     def get_forward_mode_jacobian_fn(env: GodState) -> State[JACOBIAN]:
-        return env.meta_states[level].influence_tensors[i]
+        return env.learning_states[level].influence_tensors[i]
 
     return get_forward_mode_jacobian_fn
 
 
 def put_forward_mode_jacobian(i: int, level: int):
     def put_forward_mode_jacobian_fn(env: GodState, jacobian: State[JACOBIAN]) -> GodState:
-        return env.transform(["meta_states", level, "influence_tensors", i], lambda _: jacobian)
+        return env.transform(["learning_states", level, "influence_tensors", i], lambda _: jacobian)
 
     return put_forward_mode_jacobian_fn
 
 
 def get_uoro_state(i: int, level: int):
     def get_uoro_state_fn(env: GodState) -> UOROState:
-        return env.meta_states[level].uoros[i]
+        return env.learning_states[level].uoros[i]
 
     return get_uoro_state_fn
 
 
 def put_uoro_state(i: int, level: int):
     def put_uoro_state_fn(env: GodState, uoro_state: UOROState) -> GodState:
-        return env.transform(["meta_states", level, "uoros", i], lambda _: uoro_state)
+        return env.transform(["learning_states", level, "uoros", i], lambda _: uoro_state)
 
     return put_uoro_state_fn
 
 
-def get_state(level: int):
-    def get_state_fn(env: GodState) -> jax.Array:
-        combined = (env.meta_states[: level + 1], env.meta_parameters[:level])
-        stateful, _ = eqx.partition(
-            combined,
-            lambda x: x.is_learnable if isinstance(x, Parameter) else x.is_stateful if isinstance(x, State) else True,
-            is_leaf=lambda x: x is None or isinstance(x, (Parameter, State)),
+@dataclass(frozen=True)
+class Lens:
+    get: Callable[[GodState], jax.Array]
+    put: Callable[[GodState, jax.Array], GodState]
+
+
+def make_lens(model_states: slice, learning_states: slice, params: slice) -> Lens:
+    is_leaf = lambda x: x is None or isinstance(x, (Parameter, State))
+
+    def predicate(x):
+        if isinstance(x, Parameter):
+            return x.is_learnable
+        if isinstance(x, State):
+            return x.is_stateful
+        return True
+
+    def get(env: GodState) -> jax.Array:
+        combined = (
+            env.model_states[model_states],
+            env.learning_states[learning_states],
+            env.meta_parameters[params],
         )
-        return to_vector(stateful).vector
+        filtered, _ = eqx.partition(combined, predicate, is_leaf=is_leaf)
+        return to_vector(filtered).vector
 
-    return get_state_fn
-
-
-def put_state(level: int):
-    def put_state_fn(env: GodState, state: jax.Array) -> GodState:
-        combined = (env.meta_states[: level + 1], env.meta_parameters[:level])
-        is_leaf = lambda x: x is None or isinstance(x, (Parameter, State))
-        stateful, static = eqx.partition(
-            combined,
-            lambda x: x.is_learnable if isinstance(x, Parameter) else x.is_stateful if isinstance(x, State) else True,
-            is_leaf=is_leaf,
+    def put(env: GodState, vector: jax.Array) -> GodState:
+        combined = (
+            env.model_states[model_states],
+            env.learning_states[learning_states],
+            env.meta_parameters[params],
         )
-        _stateful = to_vector(stateful).to_param(state)
-        new_states: PVector[States]
-        new_params: PVector[Parameters]
-        new_states, new_params = eqx.combine(_stateful, static, is_leaf=is_leaf)
-
-        all_states = new_states.extend(env.meta_states[level + 1 :])
-        all_params = new_params.extend(env.meta_parameters[level:])
-        return env.set(meta_states=all_states, meta_parameters=all_params)
-
-    return put_state_fn
-
-
-def get_param(level: int):
-    def get_param_fn(env: GodState) -> jax.Array:
-        combined = env.meta_parameters[level]
-        learnable, _ = eqx.partition(
-            combined,
-            lambda x: x.is_learnable if isinstance(x, Parameter) else True,
-            is_leaf=lambda x: x is None or isinstance(x, Parameter),
+        filtered, static = eqx.partition(combined, predicate, is_leaf=is_leaf)
+        new_model, new_learning, new_params = eqx.combine(to_vector(filtered).to_param(vector), static, is_leaf=is_leaf)
+        return env.set(
+            model_states=env.model_states[: model_states.start] + new_model + env.model_states[model_states.stop :],
+            learning_states=env.learning_states[: learning_states.start]
+            + new_learning
+            + env.learning_states[learning_states.stop :],
+            meta_parameters=env.meta_parameters[: params.start] + new_params + env.meta_parameters[params.stop :],
         )
-        return to_vector(learnable).vector
 
-    return get_param_fn
-
-
-def put_param(level: int):
-    def put_param_fn(env: GodState, param: jax.Array) -> GodState:
-        combined = env.meta_parameters[level]
-        is_leaf = lambda x: x is None or isinstance(x, Parameter)
-        learnable, static = eqx.partition(
-            combined,
-            lambda x: x.is_learnable if isinstance(x, Parameter) else True,
-            is_leaf=is_leaf,
-        )
-        _learnable = to_vector(learnable).to_param(param)
-        new_params: PVector[Parameters] = eqx.combine(_learnable, static, is_leaf=is_leaf)
-        return env.transform(["meta_parameters", level], lambda _: new_params)
-
-    return put_param_fn
+    return Lens(get=get, put=put)
 
 
 def put_logs(level: int):
     def put_logs_fn(env: GodState, logs: Logs) -> GodState:
         return env.transform(
-            ["meta_states", level, "log"],
+            ["level_meta", level, "log"],
             lambda old: old.set(**{k: v for k, v in logs.serialize().items() if v is not None}),
         )
 
@@ -427,7 +408,15 @@ def create_learn_interfaces(
     config: GodConfig, i: int
 ) -> tuple[list[tuple[GodInterface[GodState], GodInterface[GodState]]], int]:
 
-    def learner_to_interface(learner: GradientMethod, i: int, level: int) -> GodInterface[GodState]:
+    def learner_to_interface(learner: GradientMethod, i: int, level: int, is_val: bool) -> GodInterface[GodState]:
+
+        if is_val:
+            state_lens = make_lens(slice(i, i + 1), slice(i, i), slice(i, i))
+            param_lens = make_lens(slice(0, 1), slice(0, i), slice(0, i))
+        else:
+            state_lens = make_lens(slice(0, 1), slice(0, i), slice(0, i))
+            param_lens = make_lens(slice(i, i), slice(i, i), slice(i, i + 1))
+
         match learner:
             case RTRLConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
                 return copy.replace(
@@ -436,10 +425,10 @@ def create_learn_interfaces(
                     take_prng=prng_factory(i, level),
                     get_tick=get_tick(i, level),
                     put_tick=put_tick(i, level),
-                    get_state=get_state(level),
-                    put_state=put_state(level),
-                    get_param=get_param(level),
-                    put_param=put_param(level),
+                    get_state=state_lens.get,
+                    put_state=state_lens.put,
+                    get_param=param_lens.get,
+                    put_param=param_lens.put,
                     get_forward_mode_jacobian=get_forward_mode_jacobian(i, level),
                     put_forward_mode_jacobian=put_forward_mode_jacobian(i, level),
                 )
@@ -450,10 +439,10 @@ def create_learn_interfaces(
                     take_prng=prng_factory(i, level),
                     get_tick=get_tick(i, level),
                     put_tick=put_tick(i, level),
-                    get_state=get_state(level),
-                    put_state=put_state(level),
-                    get_param=get_param(level),
-                    put_param=put_param(level),
+                    get_state=state_lens.get,
+                    put_state=state_lens.put,
+                    get_param=param_lens.get,
+                    put_param=param_lens.put,
                     get_forward_mode_jacobian=get_forward_mode_jacobian(i, level),
                     put_forward_mode_jacobian=put_forward_mode_jacobian(i, level),
                     get_time_constant=get_time_constant(i, level),
@@ -465,10 +454,10 @@ def create_learn_interfaces(
                     take_prng=prng_factory(i, level),
                     get_tick=get_tick(i, level),
                     put_tick=put_tick(i, level),
-                    get_state=get_state(level),
-                    put_state=put_state(level),
-                    get_param=get_param(level),
-                    put_param=put_param(level),
+                    get_state=state_lens.get,
+                    put_state=state_lens.put,
+                    get_param=param_lens.get,
+                    put_param=param_lens.put,
                     get_uoro_state=get_uoro_state(i, level),
                     put_uoro_state=put_uoro_state(i, level),
                 )
@@ -479,10 +468,10 @@ def create_learn_interfaces(
                     take_prng=prng_factory(i, level),
                     get_tick=get_tick(i, level),
                     put_tick=put_tick(i, level),
-                    get_state=get_state(level),
-                    put_state=put_state(level),
-                    get_param=get_param(level),
-                    put_param=put_param(level),
+                    get_state=state_lens.get,
+                    put_state=state_lens.put,
+                    get_param=param_lens.get,
+                    put_param=param_lens.put,
                 )
 
     meta_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]] = []
@@ -490,8 +479,8 @@ def create_learn_interfaces(
         i += 2
         model_learner = meta_config.learner.model_learner
         optimizer_learner = meta_config.learner.optimizer_learner
-        model_interface = learner_to_interface(model_learner, i, level)
-        optimizer_interface = learner_to_interface(optimizer_learner, i + 1, level)
+        model_interface = learner_to_interface(model_learner, i, level, True)
+        optimizer_interface = learner_to_interface(optimizer_learner, i + 1, level, False)
         meta_interfaces.append((model_interface, optimizer_interface))
 
     return meta_interfaces, i

@@ -29,6 +29,7 @@ class GodInterface[ENV]:
     get_param: Callable[[ENV], jax.Array]
     put_param: Callable[[ENV, jax.Array], ENV]
     get_mlp_param: Callable[[ENV], MLP]
+    put_mlp_param: Callable[[ENV, MLP], ENV]
     get_vanilla_rnn_state: Callable[[ENV], VanillaRecurrentState]
     put_vanilla_rnn_state: Callable[[ENV, VanillaRecurrentState], ENV]
     get_vanilla_rnn_param: Callable[[ENV], RNN]
@@ -72,6 +73,7 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         get_param=lambda env: None,
         put_param=lambda env, param: env,
         get_mlp_param=lambda env: None,
+        put_mlp_param=lambda env, mlp_param: env,
         get_vanilla_rnn_state=lambda env: None,
         put_vanilla_rnn_state=lambda env, state: env,
         get_vanilla_rnn_param=lambda env: None,

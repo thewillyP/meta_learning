@@ -37,6 +37,13 @@ def get_mlp_param(i: int, level: int):
     return get_mlp_param_fn
 
 
+def put_mlp_param(i: int, level: int):
+    def put_mlp_param_fn(env: GodState, param: MLP) -> GodState:
+        return env.transform(["meta_parameters", level, "mlps", i], lambda _: param)
+
+    return put_mlp_param_fn
+
+
 def get_vanilla_rnn_state(i: int, level: int):
     def get_vanilla_rnn_state_fn(env: GodState) -> VanillaRecurrentState:
         return env.model_states[level].vanilla_recurrent_states[i]
@@ -320,6 +327,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         get_tick=get_tick(i, level),
                         put_tick=put_tick(i, level),
                         get_mlp_param=get_mlp_param(i, 0),
+                        put_mlp_param=put_mlp_param(i, 0),
                     )
                 case VanillaRNNLayer():
                     interface = copy.replace(
@@ -331,6 +339,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         get_vanilla_rnn_state=get_vanilla_rnn_state(i, level),
                         put_vanilla_rnn_state=put_vanilla_rnn_state(i, level),
                         get_vanilla_rnn_param=get_vanilla_rnn_param(i, 0),
+                        put_vanilla_rnn_param=put_vanilla_rnn_param(i, 0),
                         get_time_constant=get_time_constant(i, 0),
                     )
                 case GRULayer():
@@ -343,6 +352,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         get_gru_state=get_gru_state(i, level),
                         put_gru_state=put_gru_state(i, level),
                         get_gru_param=get_gru_param(i, 0),
+                        put_gru_param=put_gru_param(i, 0),
                     )
                 case LSTMLayer():
                     interface = copy.replace(
@@ -354,6 +364,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         get_lstm_state=get_lstm_state(i, level),
                         put_lstm_state=put_lstm_state(i, level),
                         get_lstm_param=get_lstm_param(i, 0),
+                        put_lstm_param=put_lstm_param(i, 0),
                     )
                 case Scan():
                     interface = copy.replace(

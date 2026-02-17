@@ -14,7 +14,7 @@ from pyrsistent._pmap import PMap as PMapClass
 from pyrsistent._pvector import PythonPVector
 
 from meta_learn_lib.config import HyperparameterConfig
-from meta_learn_lib.lib_types import LOSS, PRNG
+from meta_learn_lib.lib_types import ACTIVATION_FN, LOSS, PRNG
 
 
 def deep_serialize(_, obj):
@@ -91,7 +91,7 @@ def reshape_timeseries(arr: jax.Array, target_time_dim: int) -> tuple[jax.Array,
     return arr_padded.reshape(new_shape), last_minibatch_length
 
 
-def get_activation_fn(s: str) -> Callable[[jax.Array], jax.Array]:
+def get_activation_fn(s: ACTIVATION_FN) -> Callable[[jax.Array], jax.Array]:
     match s:
         case "tanh":
             return jax.nn.tanh

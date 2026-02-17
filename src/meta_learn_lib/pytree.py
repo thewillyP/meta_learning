@@ -57,8 +57,8 @@ def register_pytree(cls, static_fields):
 # ============================================================================
 
 # Register leaf types first
-register_pytree(Parameter, {"is_learnable", "is_batched", "min_value", "max_value"})
-register_pytree(State, {"is_stateful", "is_batched"})
+register_pytree(Parameter, {"is_learnable", "min_value", "max_value"})
+register_pytree(State, {"is_stateful"})
 register_pytree(Logs, set())
 register_pytree(RecurrentState, set())
 register_pytree(VanillaRecurrentState, {"activation_fn"})

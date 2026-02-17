@@ -15,9 +15,9 @@ from meta_learn_lib.util import deep_serialize
 # ============================================================================
 
 
+# My parameter and states are always batched per virtue of opt setup.
 class Parameter[T](PClass):
     value: T = field(serializer=deep_serialize)
-    is_batched: bool = field()
     is_learnable: bool = field()
     min_value: float = field()
     max_value: float = field()
@@ -25,7 +25,6 @@ class Parameter[T](PClass):
 
 class State[T](PClass):
     value: T = field(serializer=deep_serialize)
-    is_batched: bool = field()
     is_stateful: bool = field()
 
 

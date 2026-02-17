@@ -82,8 +82,8 @@ type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayA
 
 @dataclass(frozen=True)
 class Persistent:
-    parameter_t: int | None
-    state_t: int | None
+    ticks: int | None  # None is never reset
+    reset_states: bool  # while parameters are always stateful bc they are used in validation, this flag decides if we want to include other optimizer/learning states in the influence tensor. this is more of a override since have implicit influences so if practioner knows themselves it has no dependencies or wants to truncate, this is the flag for that
 
 
 @dataclass(frozen=True)
@@ -385,8 +385,6 @@ class MetaConfig:
     meta_opt: MetaOptimizationConfig  # number of simultaneous tasks at same level
     learner: LearnConfig
     test_seed: int
-    model_persistence: Persistent
-    learner_persistence: Persistent
 
 
 @dataclass(frozen=True)
@@ -404,6 +402,7 @@ class GodConfig:
     nodes: dict[str, Node]
 
     levels: list[MetaConfig]
+    persistence: list[Persistent]  # len(levels) + 1
 
     label_mask_value: float
     unlabeled_mask_value: float

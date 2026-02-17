@@ -1,10 +1,9 @@
 import copy
 import jax
 import equinox as eqx
-from pyrsistent.typing import PVector
 
 from meta_learn_lib.config import *
-from meta_learn_lib.env import GodState, Parameters, States
+from meta_learn_lib.env import GodState
 from meta_learn_lib.interface import *
 from meta_learn_lib.util import to_vector
 

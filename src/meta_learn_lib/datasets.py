@@ -363,7 +363,7 @@ def validate_dataloader_config(config: GodConfig) -> list[str]:
     return errors
 
 
-def create_data_sources(config: GodConfig, prng: PRNG) -> list[list[Dataset]]:
+def create_data_sources(config: GodConfig, prng: PRNG) -> tuple[list[list[Dataset]], list[tuple[int, ...]]]:
     k1, k2, prng = jax.random.split(prng, 3)
 
     def get_sources(c: list[MetaConfig], k: PRNG) -> list[tuple[MetaConfig, PRNG]]:
@@ -404,7 +404,9 @@ def create_data_sources(config: GodConfig, prng: PRNG) -> list[list[Dataset]]:
         )
         level_datasets.append(taken)
 
-    return level_datasets
+    # 3. Extract feature dimension shapes per level
+    feature_shapes = [datasets[0][0][0].shape[2:] for datasets in level_datasets]
+    return level_datasets, feature_shapes
 
 
 def create_dataloader(

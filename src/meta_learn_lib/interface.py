@@ -98,6 +98,8 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         put_learning_rate=lambda env, learning_rate: env,
         get_weight_decay=lambda env: None,
         put_weight_decay=lambda env, weight_decay: env,
+        get_momentum=lambda env: None,
+        put_momentum=lambda env, momentum: env,
         get_kl_regularizer_beta=lambda env: None,
         put_kl_regularizer_beta=lambda env, kl_regularizer_beta: env,
     )

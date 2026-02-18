@@ -50,8 +50,8 @@ def runApp(config: GodConfig) -> None:
         checkpoint_every_n_minibatches=1,
         transition_graph={
             "x": [],
-            "flatten": ["x"],
-            "rnn1": ["flatten"],
+            "concat": ["x"],
+            "rnn1": ["concat"],
             "rnn2": ["rnn1"],
         },
         readout_graph={
@@ -59,7 +59,7 @@ def runApp(config: GodConfig) -> None:
         },
         nodes={
             "x": UnlabeledSource(),
-            "flatten": Flatten(),
+            "concat": Concat(),
             "rnn1": VanillaRNNLayer(
                 nn_layer=NNLayer(
                     n=128,
@@ -307,7 +307,7 @@ def runApp(config: GodConfig) -> None:
 
     # Dataset
     dataset_prng, data_loader_prng = jax.random.split(dataset_gen_prng, 2)
-    data_sources, data_features = create_data_sources(config, dataset_prng)
+    data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
     for x in toolz.take(1, dataloader):
@@ -317,8 +317,6 @@ def runApp(config: GodConfig) -> None:
         print(tr_x.shape, tr_y.shape)
         print(vl_x.shape, vl_y.shape)
         print(te_x.shape, te_y.shape)
-
-    print(data_features)
 
     node_interfaces, count = create_node_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
@@ -376,7 +374,7 @@ def runApp(config: GodConfig) -> None:
     )
     create_env = generate_states(
         node_interfaces[0],
-        data_features[0],
+        shapes[0],
         config.transition_graph,
         config.readout_graph,
         config.nodes,

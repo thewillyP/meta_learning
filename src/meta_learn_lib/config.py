@@ -321,10 +321,6 @@ class UnlabeledSource: ...
 class LabeledSource: ...
 
 
-@dataclass(frozen=True)
-class Flatten: ...
-
-
 type Node = Union[
     NNLayer,
     VanillaRNNLayer,
@@ -336,7 +332,6 @@ type Node = Union[
     Repeat,
     Concat,
     ToEmpty,
-    Flatten,
 ]
 
 

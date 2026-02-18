@@ -103,8 +103,9 @@ def get_output_shapes(
     node_features: dict[str, tuple[int, ...]],
     node_graph: dict[str, list[str]],
     nodes: dict[str, Node],
-    feature_shape: tuple[int, ...],
+    data_shape: tuple[tuple[int, ...], tuple[int, ...]],
 ) -> dict[str, tuple[int, ...]]:
+    x_shape, y_shape = data_shape
     for node_name in TopologicalSorter(node_graph).static_order():
         match nodes[node_name]:
             case NNLayer(n, activation_fn, use_bias, layer_norm):
@@ -123,8 +124,21 @@ def get_output_shapes(
                 n_out = (n_in[0],) + sub_features[last_sub_node]
                 node_features[node_name] = n_out
                 node_features = {**node_features, **sub_features}
+            case Repeat(n):
+                # same issue as scan, just take the last one
+                n_in = [node_features[n] for n in node_graph[node_name]][-1]
+                node_features[node_name] = (n,) + n_in
+            case Concat():
+                n_in = sum([math.prod(node_features[n]) for n in node_graph[node_name]])
+                node_features[node_name] = (n_in,)
+            case ToEmpty():
+                node_features[node_name] = ()
+            case UnlabeledSource():
+                node_features[node_name] = x_shape
+            case LabeledSource():
+                node_features[node_name] = y_shape
             case _:
-                node_features[node_name] = feature_shape
+                node_features[node_name] = ()
 
     return node_features
 
@@ -214,9 +228,81 @@ def create_inference_state[ENV](
     return env
 
 
+# def create_inference_parameters[ENV](
+#     nodes: dict[str, Node],
+#     meta_interface: dict[str, GodInterface[ENV]],
+#     node_features: dict[str, tuple[int, ...]],
+#     is_persistent: Persistent,
+#     is_init: bool,
+#     env: ENV,
+#     prng: PRNG,
+# ) -> ENV:
+
+#     for node_name, node in nodes.items():
+#         interface = meta_interface[node_name]
+#         match node:
+#             case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
+#                 k1, k2, prng = jax.random.split(prng, 3)
+#                 if use_random_init:
+#                     activation = ACTIVATION(jax.random.normal(k1, (nn_layer.n,)))
+#                 else:
+#                     activation = ACTIVATION(jnp.zeros((nn_layer.n,)))
+
+#                 rnn_state = VanillaRecurrentState(
+#                     activation=State(
+#                         value=activation,
+#                         is_stateful=is_persistent.reset_states,
+#                     ),
+#                     activation_fn=nn_layer.activation_fn,
+#                 )
+#                 env = interface.put_vanilla_rnn_state(env, rnn_state)
+#                 env = interface.put_prng(env, k2)
+#             case GRULayer(n, use_bias, use_random_init):
+#                 k1, k2, prng = jax.random.split(prng, 3)
+#                 if use_random_init:
+#                     activation = ACTIVATION(jax.random.normal(k1, (n,)))
+#                 else:
+#                     activation = ACTIVATION(jnp.zeros((n,)))
+
+#                 gru_state = RecurrentState(activation=State(value=activation, is_stateful=is_persistent.reset_states))
+#                 env = interface.put_gru_state(env, gru_state)
+#                 env = interface.put_prng(env, k2)
+#             case LSTMLayer(n, use_bias, use_random_init):
+#                 k1, k2, k3, prng = jax.random.split(prng, 4)
+#                 if use_random_init:
+#                     activation = ACTIVATION(jax.random.normal(k1, (n,)))
+#                     cell = ACTIVATION(jax.random.normal(k2, (n,)))
+#                 else:
+#                     activation = ACTIVATION(jnp.zeros((n,)))
+#                     cell = ACTIVATION(jnp.zeros((n,)))
+
+#                 lstm_state = LSTMState(
+#                     h=State(value=activation, is_stateful=is_persistent.reset_states),
+#                     c=State(value=cell, is_stateful=is_persistent.reset_states),
+#                 )
+#                 env = interface.put_lstm_state(env, lstm_state)
+#                 env = interface.put_prng(env, k3)
+#             case Scan(graph, autoregressive_mask, pred_source, start_token):
+#                 k1, prng = jax.random.split(prng, 2)
+#                 shape = node_features[node_name][1:]  # remove time dimension
+#                 match start_token:
+#                     case "zeros":
+#                         token = jnp.zeros(shape)
+#                 env = interface.put_autoregressive_predictions(
+#                     env, State(value=token, is_stateful=is_persistent.reset_states)
+#                 )
+#                 env = interface.put_prng(env, k1)
+#             case _:
+#                 # could save space here on deterministic nodes
+#                 k1, prng = jax.random.split(prng, 2)
+#                 env = interface.put_prng(env, k1)
+
+#     return env
+
+
 def generate_states[ENV](
     meta_interface: dict[str, GodInterface[ENV]],
-    feature_shape: tuple[int, ...],
+    data_shape: tuple[tuple[int, ...], tuple[int, ...]],
     transition_graph: dict[str, list[str]],
     readout_graph: dict[str, list[str]],
     nodes: dict[str, Node],
@@ -225,9 +311,8 @@ def generate_states[ENV](
     batch: list[int],  # vmap this many times
     prng: PRNG,
 ) -> Callable[[ENV], ENV]:
-    node_features = get_output_shapes({}, transition_graph, nodes, feature_shape)
-    node_features = get_output_shapes(node_features, readout_graph, nodes, feature_shape)
-    print(node_features)
+    node_features = get_output_shapes({}, transition_graph, nodes, data_shape)
+    node_features = get_output_shapes(node_features, readout_graph, nodes, data_shape)
 
     def create_env(env: ENV) -> ENV:
         key = prng

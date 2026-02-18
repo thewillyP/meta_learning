@@ -3,7 +3,7 @@ import jax
 from meta_learn_lib.env import *
 
 
-def create_axes(env: GodState) -> GodState:
+def create_axes[ENV](env: ENV) -> ENV:
     is_leaf = lambda x: isinstance(x, (Parameter, State))
 
     def to_axis(x):

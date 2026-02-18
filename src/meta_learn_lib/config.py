@@ -297,6 +297,7 @@ class Scan:  # Wraps around a layer and repeats it in an unfold manner
     graph: dict[str, list[str]]
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     pred_source: str  # which node in the graph to source teacher predictions.
+    start_token: Literal["zeros"]
 
 
 @dataclass(frozen=True)

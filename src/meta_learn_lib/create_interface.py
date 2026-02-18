@@ -27,15 +27,15 @@ def put_prng(key: int, level: int):
 
 
 def get_tick(level: int):
-    def get_tick_fn(env: GodState) -> int:
-        return env.level_meta[level].tick.item()
+    def get_tick_fn(env: GodState) -> jax.Array:
+        return env.level_meta[level].tick
 
     return get_tick_fn
 
 
 def put_tick(level: int):
-    def put_tick_fn(env: GodState, tick: int) -> GodState:
-        return env.transform(["level_meta", level, "tick"], lambda _: jnp.array(tick, dtype=jnp.int32))
+    def put_tick_fn(env: GodState, tick: jax.Array) -> GodState:
+        return env.transform(["level_meta", level, "tick"], lambda _: tick)
 
     return put_tick_fn
 

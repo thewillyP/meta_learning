@@ -317,6 +317,7 @@ def put_logs(level: int):
 
 
 def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, GodInterface[GodState]]], int]:
+    i = max(i, 0) + len(config.hyperparameters)
 
     default_interface: GodInterface[GodState] = default_god_interface()
     meta_interfaces: list[dict[str, GodInterface[GodState]]] = [{} for _ in range(len(config.levels))]
@@ -338,7 +339,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         get_mlp_param=get_mlp_param(i, 0),
                         put_mlp_param=put_mlp_param(i, 0),
                     )
-                case VanillaRNNLayer():
+                case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
@@ -350,7 +351,10 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_vanilla_rnn_state=put_vanilla_rnn_state(i, level),
                         get_vanilla_rnn_param=get_vanilla_rnn_param(i, 0),
                         put_vanilla_rnn_param=put_vanilla_rnn_param(i, 0),
-                        get_time_constant=get_time_constant(i, 0),
+                        get_time_constant=get_time_constant(
+                            [*config.hyperparameters].index(time_constant),
+                            config.hyperparameters[time_constant].level,
+                        ),
                     )
                 case GRULayer():
                     interface = copy.replace(
@@ -404,7 +408,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     | SGDNormalizedConfig()
                     | AdamConfig()
                     | ExponentiatedGradientConfig()
-                    | ExponentiatedGradientAdamConfig()
+                    | ExponentiatedGradientAdamConfig() as opt
                 ):
                     interface = copy.replace(
                         default_interface,
@@ -413,12 +417,30 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_prng=put_prng(i, level),
                         get_tick=get_tick(i, level),
                         put_tick=put_tick(i, level),
-                        get_learning_rate=get_learning_rate(i, level),
-                        put_learning_rate=put_learning_rate(i, level),
-                        get_weight_decay=get_weight_decay(i, level),
-                        put_weight_decay=put_weight_decay(i, level),
-                        get_momentum=get_momentum(i, level),
-                        put_momentum=put_momentum(i, level),
+                        get_learning_rate=get_learning_rate(
+                            [*config.hyperparameters].index(opt.learning_rate),
+                            config.hyperparameters[opt.learning_rate].level,
+                        ),
+                        put_learning_rate=put_learning_rate(
+                            [*config.hyperparameters].index(opt.learning_rate),
+                            config.hyperparameters[opt.learning_rate].level,
+                        ),
+                        get_weight_decay=get_weight_decay(
+                            [*config.hyperparameters].index(opt.weight_decay),
+                            config.hyperparameters[opt.weight_decay].level,
+                        ),
+                        put_weight_decay=put_weight_decay(
+                            [*config.hyperparameters].index(opt.weight_decay),
+                            config.hyperparameters[opt.weight_decay].level,
+                        ),
+                        get_momentum=get_momentum(
+                            [*config.hyperparameters].index(opt.momentum),
+                            config.hyperparameters[opt.momentum].level,
+                        ),
+                        put_momentum=put_momentum(
+                            [*config.hyperparameters].index(opt.momentum),
+                            config.hyperparameters[opt.momentum].level,
+                        ),
                     )
                 case _:
                     interface = default_interface
@@ -431,6 +453,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
 def create_learn_interfaces(
     config: GodConfig, i: int
 ) -> tuple[list[tuple[GodInterface[GodState], GodInterface[GodState]]], int]:
+    i = max(i, 0) + len(config.hyperparameters)
 
     def learner_to_interface(learner: GradientMethod, i: int, level: int, is_val: bool) -> GodInterface[GodState]:
 
@@ -457,7 +480,7 @@ def create_learn_interfaces(
                     get_forward_mode_jacobian=get_forward_mode_jacobian(i, level),
                     put_forward_mode_jacobian=put_forward_mode_jacobian(i, level),
                 )
-            case RFLOConfig():
+            case RFLOConfig(time_constant, use_reverse_mode):
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
@@ -471,7 +494,10 @@ def create_learn_interfaces(
                     put_param=param_lens.put,
                     get_forward_mode_jacobian=get_forward_mode_jacobian(i, level),
                     put_forward_mode_jacobian=put_forward_mode_jacobian(i, level),
-                    get_time_constant=get_time_constant(i, level),
+                    get_time_constant=get_time_constant(
+                        [*config.hyperparameters].index(time_constant),
+                        config.hyperparameters[time_constant].level,
+                    ),
                 )
             case UOROConfig():
                 return copy.replace(
@@ -515,10 +541,11 @@ def create_learn_interfaces(
 
 
 def create_task_interfaces(config: GodConfig, i: int) -> tuple[list[GodInterface[GodState]], int]:
+    i = max(i, 0) + len(config.hyperparameters)
     meta_interfaces: list[GodInterface[GodState]] = []
     for level, meta_config in enumerate(config.levels):
         match meta_config.objective_fn:
-            case ELBOObjective():
+            case ELBOObjective(beta, likelihood):
                 interface = copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
@@ -526,7 +553,10 @@ def create_task_interfaces(config: GodConfig, i: int) -> tuple[list[GodInterface
                     put_prng=put_prng(i, level),
                     get_tick=get_tick(i, level),
                     put_tick=put_tick(i, level),
-                    get_kl_regularizer_beta=get_kl_regularizer_beta(i, level),
+                    get_kl_regularizer_beta=get_kl_regularizer_beta(
+                        [*config.hyperparameters].index(beta),
+                        config.hyperparameters[beta].level,
+                    ),
                 )
             case _:
                 interface = copy.replace(

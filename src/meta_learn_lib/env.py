@@ -93,7 +93,7 @@ class ModelStates(PClass):
 
 
 class LevelMeta(PClass):
-    ticks: PMap[int, State[jax.Array]] = field(serializer=deep_serialize)
+    tick: jax.Array = field(serializer=deep_serialize)
     log: Logs = field(serializer=deep_serialize)
     prngs: PMap[int, State[PRNG]] = field(serializer=deep_serialize)
 
@@ -103,6 +103,7 @@ class GodState(PClass):
     learning_states: PVector[LearningStates] = field(serializer=deep_serialize)
     meta_parameters: PVector[Parameters] = field(serializer=deep_serialize)
     level_meta: PVector[LevelMeta] = field(serializer=deep_serialize)
+    prng: PRNG = field(serializer=deep_serialize)
 
 
 class Outputs(PClass):

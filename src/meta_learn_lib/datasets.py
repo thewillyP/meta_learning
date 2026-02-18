@@ -5,7 +5,7 @@ from typing import Iterator
 from torch.utils.data import Dataset, DataLoader, IterableDataset, random_split
 import torch
 import torchvision
-from toolz import mapcat
+from toolz import mapcat, concat
 import math
 import numpy as np
 from torchvision.transforms.transforms import Lambda
@@ -344,20 +344,21 @@ def validate_dataloader_config(config: GodConfig) -> list[str]:
 
     if len(config.levels) == 0:
         errors.append("At least one level is required to create a dataloader")
+        return errors
 
-    expected = math.prod(l.meta_opt.batch for l in config.levels)
-    if config.num_tasks != expected:
-        batches = " * ".join(str(l.meta_opt.batch) for l in config.levels)
-        errors.append(
-            f"num_tasks ({config.num_tasks}) must equal product of meta_opt.batch across levels ({batches} = {expected})"
-        )
-
+    running_divisor = 1
     for i, level in enumerate(config.levels):
-        tasks_per_stream = level.dataset_validation.task_batch_size
-        num_indices = math.prod(l.meta_opt.batch for l in config.levels[: i + 1])
-        if num_indices % tasks_per_stream != 0:
+        running_divisor *= level.meta_opt.batch
+        if config.num_tasks % running_divisor != 0:
             errors.append(
-                f"Level {i}: num task indices ({num_indices}) must be divisible by task_batch_size ({tasks_per_stream})"
+                f"Level {i}: num_tasks ({config.num_tasks}) not divisible by cumulative batch product ({running_divisor})"
+            )
+            continue
+        chunk_size = config.num_tasks // running_divisor
+        tasks_per_stream = level.dataset_validation.task_batch_size
+        if chunk_size % tasks_per_stream != 0:
+            errors.append(
+                f"Level {i}: chunk size ({chunk_size}) must be divisible by task_batch_size ({tasks_per_stream})"
             )
 
     return errors
@@ -438,11 +439,12 @@ def create_dataloader(
             )
             for idx, tkey in zip(task_indices.tolist(), task_keys)
         ]
+        # might want to switch vb and multitask axes.
 
         streams = [
             batch_iterator(list(chunk), tasks_per_stream) for chunk in itertools.batched(task_iters, tasks_per_stream)
         ]
-        return batch_iterator(streams, len(streams))
+        return concat(streams)
 
     def make_level_loader(
         meta_config: MetaConfig,

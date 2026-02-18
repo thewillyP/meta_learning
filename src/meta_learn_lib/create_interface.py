@@ -11,29 +11,33 @@ from meta_learn_lib.util import to_vector
 
 def prng_factory(key: int, level: int):
     def get_prng(env: GodState) -> tuple[jax.Array, GodState]:
-        prng, new_prng = jax.random.split(env.level_meta[level].prngs[key])
-        return prng, env.transform(["level_meta", level, "prngs", key], lambda _: new_prng)
+        prng, new_prng = jax.random.split(env.level_meta[level].prngs[key].value)
+        return prng, env.transform(
+            ["level_meta", level, "prngs", key], lambda _: State(value=new_prng, is_stateful=False)
+        )
 
     return get_prng
 
 
 def put_prng(key: int, level: int):
     def put_prng_fn(env: GodState, prng: jax.Array) -> GodState:
-        return env.transform(["level_meta", level, "prngs", key], lambda _: prng)
+        return env.transform(["level_meta", level, "prngs", key], lambda _: State(value=prng, is_stateful=False))
 
     return put_prng_fn
 
 
 def get_tick(i: int, level: int):
     def get_tick_fn(env: GodState) -> int:
-        return env.level_meta[level].ticks[i].item()
+        return env.level_meta[level].ticks[i].value.item()
 
     return get_tick_fn
 
 
 def put_tick(i: int, level: int):
     def put_tick_fn(env: GodState, tick: int) -> GodState:
-        return env.transform(["level_meta", level, "ticks", i], lambda _: jnp.array(tick))
+        return env.transform(
+            ["level_meta", level, "ticks", i], lambda _: State(value=jnp.array(tick), is_stateful=False)
+        )
 
     return put_tick_fn
 

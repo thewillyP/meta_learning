@@ -121,10 +121,10 @@ class HyperparameterConfig:
     hyperparameter_parametrization: Parametrization
     min_value: float  # used for mandatory gradient projection
     max_value: float  # used for mandatory gradient projection
-    id: str  # for tracking how to optimize
+    level: int  # which meta level this hyperparameter belongs to. used for tracking how to optimize
 
 
-type HP = HyperparameterConfig | str  # str for parameter sharing
+type HP = str
 
 
 @dataclass(frozen=True)
@@ -400,6 +400,7 @@ class GodConfig:
     transition_graph: dict[str, list[str]]
     readout_graph: dict[str, list[str]]
     nodes: dict[str, Node]
+    hyperparameters: dict[HP, HyperparameterConfig]
 
     levels: list[MetaConfig]
     persistence: list[Persistent]  # len(levels) + 1

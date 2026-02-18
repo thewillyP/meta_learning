@@ -10,6 +10,7 @@ import math
 import time
 
 from meta_learn_lib.config import *
+from meta_learn_lib.create_interface import create_learn_interfaces, create_node_interfaces, create_task_interfaces
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
 
@@ -63,13 +64,7 @@ def runApp(config: GodConfig) -> None:
                     layer_norm=None,
                 ),
                 use_random_init=False,
-                time_constant=HyperparameterConfig(
-                    value=1.0,
-                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    min_value=0.0,
-                    max_value=1.0,
-                    id="meta1_rnn1_time_constant",
-                ),
+                time_constant="meta1_rnn1_time_constant",
             ),
             "rnn2": VanillaRNNLayer(
                 nn_layer=NNLayer(
@@ -79,19 +74,71 @@ def runApp(config: GodConfig) -> None:
                     layer_norm=None,
                 ),
                 use_random_init=False,
-                time_constant=HyperparameterConfig(
-                    value=1.0,
-                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    min_value=0.0,
-                    max_value=1.0,
-                    id="meta1_rnn2_time_constant",
-                ),
+                time_constant="meta1_rnn2_time_constant",
             ),
             "readout": NNLayer(
                 n=10,
                 activation_fn="identity",
                 use_bias=True,
                 layer_norm=None,
+            ),
+        },
+        hyperparameters={
+            "meta1_rnn1_time_constant": HyperparameterConfig(
+                value=1.0,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=1,
+            ),
+            "meta1_rnn2_time_constant": HyperparameterConfig(
+                value=1.0,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=1,
+            ),
+            "meta1_sgd1.lr": HyperparameterConfig(
+                value=0.001,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=1,
+            ),
+            "meta1_sgd1.wd": HyperparameterConfig(
+                value=0.00001,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=1,
+            ),
+            "meta1_sgd1.momentum": HyperparameterConfig(
+                value=0.0,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=1,
+            ),
+            "meta2_adam1.lr": HyperparameterConfig(
+                value=0.001,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=2,
+            ),
+            "meta2_adam1.wd": HyperparameterConfig(
+                value=0.0,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=2,
+            ),
+            "meta2_adam1.momentum": HyperparameterConfig(
+                value=0.9,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=2,
             ),
         },
         levels=[
@@ -112,10 +159,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(
-                    batch=1,
-                    num_steps=1,
-                ),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -131,35 +175,15 @@ def runApp(config: GodConfig) -> None:
                         "meta1_sgd1": OptimizerAssignment(
                             target=frozenset({"rnn1", "rnn2", "readout"}),
                             optimizer=SGDConfig(
-                                learning_rate=HyperparameterConfig(
-                                    value=0.001,
-                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                                    min_value=0.0,
-                                    max_value=jnp.inf,
-                                    id="meta1_sgd1.lr",
-                                ),
-                                weight_decay=HyperparameterConfig(
-                                    value=0.00001,
-                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                                    min_value=0.0,
-                                    max_value=jnp.inf,
-                                    id="meta1_sgd1.wd",
-                                ),
-                                momentum=HyperparameterConfig(
-                                    value=0.0,
-                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                                    min_value=0.0,
-                                    max_value=1.0,
-                                    id="meta1_sgd1.momentum",
-                                ),
+                                learning_rate="meta1_sgd1.lr",
+                                weight_decay="meta1_sgd1.wd",
+                                momentum="meta1_sgd1.momentum",
                             ),
                             per_parameter=False,
                         ),
                     },
                 ),
                 test_seed=0,
-                model_persistence=Persistent(parameter_t=None, state_t=1),
-                learner_persistence=Persistent(parameter_t=None, state_t=None),
             ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -178,10 +202,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(
-                    batch=1,
-                    num_steps=1,
-                ),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -201,35 +222,15 @@ def runApp(config: GodConfig) -> None:
                         "meta2_adam1": OptimizerAssignment(
                             target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
                             optimizer=AdamConfig(
-                                learning_rate=HyperparameterConfig(
-                                    value=0.001,
-                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                                    min_value=0.0,
-                                    max_value=jnp.inf,
-                                    id="meta2_adam1.lr",
-                                ),
-                                weight_decay=HyperparameterConfig(
-                                    value=0.0,
-                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                                    min_value=0.0,
-                                    max_value=jnp.inf,
-                                    id="meta2_adam1.wd",
-                                ),
-                                momentum=HyperparameterConfig(
-                                    value=0.9,
-                                    hyperparameter_parametrization=HyperparameterConfig.identity(),
-                                    min_value=0.0,
-                                    max_value=1.0,
-                                    id="meta2_adam1.momentum",
-                                ),
+                                learning_rate="meta2_adam1.lr",
+                                weight_decay="meta2_adam1.wd",
+                                momentum="meta2_adam1.momentum",
                             ),
                             per_parameter=False,
                         ),
                     },
                 ),
                 test_seed=0,
-                model_persistence=Persistent(parameter_t=None, state_t=1),
-                learner_persistence=Persistent(parameter_t=None, state_t=None),
             ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -248,10 +249,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(
-                    batch=1,
-                    num_steps=1,
-                ),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=IdentityLearnerConfig(),
@@ -266,13 +264,17 @@ def runApp(config: GodConfig) -> None:
                     optimizer={},
                 ),
                 test_seed=0,
-                model_persistence=Persistent(parameter_t=None, state_t=1),
-                learner_persistence=Persistent(parameter_t=None, state_t=None),
             ),
         ],
-        num_tasks=1,
-        unlabeled_mask_value=0.0,
+        persistence=[
+            Persistent(ticks=1, reset_states=True),
+            Persistent(ticks=None, reset_states=False),
+            Persistent(ticks=None, reset_states=False),
+            Persistent(ticks=None, reset_states=False),
+        ],
         label_mask_value=-1.0,
+        unlabeled_mask_value=0.0,
+        num_tasks=1,
     )
     if not config.clearml_run:
         return
@@ -301,7 +303,7 @@ def runApp(config: GodConfig) -> None:
 
     # Dataset
     dataset_prng, data_loader_prng = jax.random.split(dataset_gen_prng, 2)
-    data_sources = create_data_sources(config, dataset_prng)
+    data_sources, data_features = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
     for x in toolz.take(1, dataloader):
@@ -312,20 +314,12 @@ def runApp(config: GodConfig) -> None:
         print(vl_x.shape, vl_y.shape)
         print(te_x.shape, te_y.shape)
 
-    # learn_interfaces = create_learn_interfaces(config)
-    # validation_learn_interfaces = create_validation_learn_interfaces(config, learn_interfaces)
-    # inference_interface = create_transition_interfaces(config)
-    # general_interfaces = create_general_interfaces(config)
-    # data_interface = ClassificationInterface[tuple[jax.Array, jax.Array, jax.Array]](
-    #     get_input=lambda data: data[0],
-    #     get_target=lambda data: data[1],
-    #     get_sequence=lambda data: data[2],
-    # )
-    # data_interface_for_loss = ClassificationInterface[batched[tuple[jax.Array, jax.Array, jax.Array]]](
-    #     get_input=lambda data: data.b[0],
-    #     get_target=lambda data: data.b[1],
-    #     get_sequence=lambda data: data.b[2],
-    # )
+    print(data_features)
+
+    node_interfaces, count = create_node_interfaces(config, 0)
+    learn_interfaces, count = create_learn_interfaces(config, count)
+    task_interfaces, count = create_task_interfaces(config, count)
+
     # env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     # # eqx.tree_pprint(env.serialize())
     # axes = create_axes(env, inference_interface)

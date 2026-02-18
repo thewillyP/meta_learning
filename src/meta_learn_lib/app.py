@@ -3,14 +3,18 @@ import random
 import os
 import jax
 import jax.numpy as jnp
+from pyrsistent import pmap, pvector
 import torch
 import numpy as np
 import toolz
 import math
 import time
+import equinox as eqx
 
 from meta_learn_lib.config import *
+from meta_learn_lib.create_env import generate_states
 from meta_learn_lib.create_interface import create_learn_interfaces, create_node_interfaces, create_task_interfaces
+from meta_learn_lib.env import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
 
@@ -145,11 +149,11 @@ def runApp(config: GodConfig) -> None:
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=5000,
+                    num_examples_in_minibatch=100,
                     num_steps_in_timeseries=28,
-                    num_examples_total=50_000,
+                    num_examples_total=500,
                     is_test=False,
-                    task_batch_size=1,
+                    task_batch_size=2,
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -188,9 +192,9 @@ def runApp(config: GodConfig) -> None:
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=5000,
+                    num_examples_in_minibatch=100,
                     num_steps_in_timeseries=28,
-                    num_examples_total=10_000,
+                    num_examples_total=500,
                     is_test=False,
                     task_batch_size=1,
                 ),
@@ -202,7 +206,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=2),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -235,7 +239,7 @@ def runApp(config: GodConfig) -> None:
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=5000,
+                    num_examples_in_minibatch=100,
                     num_steps_in_timeseries=28,
                     num_examples_total=10_000,
                     is_test=True,
@@ -274,7 +278,7 @@ def runApp(config: GodConfig) -> None:
         ],
         label_mask_value=-1.0,
         unlabeled_mask_value=0.0,
-        num_tasks=1,
+        num_tasks=4,
     )
     if not config.clearml_run:
         return
@@ -319,6 +323,74 @@ def runApp(config: GodConfig) -> None:
     node_interfaces, count = create_node_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
     task_interfaces, count = create_task_interfaces(config, count)
+
+    env = GodState(
+        model_states=pvector(
+            [
+                ModelStates(
+                    recurrent_states=pmap({}),
+                    vanilla_recurrent_states=pmap({}),
+                    lstm_states=pmap({}),
+                    autoregressive_predictions=pmap({}),
+                )
+                for _ in range(len(config.levels) + 1)
+            ]
+        ),
+        learning_states=pvector(
+            [
+                LearningStates(
+                    influence_tensors=pmap({}),
+                    uoros=pmap({}),
+                    opt_states=pmap({}),
+                )
+                for _ in range(len(config.levels) + 1)
+            ]
+        ),
+        meta_parameters=pvector(
+            [
+                Parameters(
+                    mlps=pmap({}),
+                    rnns=pmap({}),
+                    grus=pmap({}),
+                    lstms=pmap({}),
+                    learning_rates=pmap({}),
+                    weight_decays=pmap({}),
+                    time_constants=pmap({}),
+                    momentums=pmap({}),
+                    kl_regularizer_betas=pmap({}),
+                )
+                for _ in range(len(config.levels) + 1)
+            ]
+        ),
+        level_meta=pvector(
+            [
+                LevelMeta(
+                    tick=jnp.array(0),
+                    log=Logs(),
+                    prngs=pmap({}),
+                )
+                for _ in range(len(config.levels) + 1)
+            ]
+        ),
+        prng=env_prng,
+    )
+    create_env = generate_states(
+        node_interfaces[0],
+        data_features[0],
+        config.transition_graph,
+        config.readout_graph,
+        config.nodes,
+        config.persistence[0],
+        True,
+        [
+            config.levels[0].dataset_validation.task_batch_size,
+            config.levels[0].dataset_validation.num_examples_in_minibatch,
+        ],
+        env_prng,
+    )
+    env = create_env(env)
+
+    eqx.tree_pprint(env.serialize())
 
     # env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     # # eqx.tree_pprint(env.serialize())

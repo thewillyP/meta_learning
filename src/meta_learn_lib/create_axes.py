@@ -1,28 +1,16 @@
-from typing import Any
 import jax
-import equinox as eqx
 
-from meta_learn_lib.interface import InferenceInterface
-
-
-def get_batched[ENV](env: ENV, interfaces: dict[int, InferenceInterface[ENV]]) -> tuple[Any, ...]:
-    return (
-        tuple(interface.get_rnn_state(env) for interface in interfaces.values())
-        + tuple(interface.get_lstm_state(env) for interface in interfaces.values())
-        + (interfaces[0]._get_prng(env),)
-    )
+from meta_learn_lib.env import *
 
 
-def create_axes[ENV](env: ENV, interfaces: dict[int, dict[int, InferenceInterface[ENV]]]) -> dict[int, ENV]:
-    get_axes: dict[int, ENV] = {}
-    for i, interface in interfaces.items():
-        _batched_env: ENV = jax.tree.map(lambda _: None, env)
-        batched_env = eqx.tree_at(
-            lambda env, interface=interface: get_batched(env, interface),
-            _batched_env,
-            replace=tuple(0 for _ in get_batched(env, interface)),
-            is_leaf=lambda x: x is None,
-        )
-        get_axes[i] = batched_env
+def create_axes(env: GodState) -> GodState:
+    is_leaf = lambda x: isinstance(x, (Parameter, State))
 
-    return get_axes
+    def to_axis(x):
+        if isinstance(x, Parameter):
+            return 0
+        if isinstance(x, State):
+            return 0
+        return None
+
+    return jax.tree.map(to_axis, env, is_leaf=is_leaf)

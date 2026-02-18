@@ -442,7 +442,11 @@ def create_dataloader(
         # might want to switch vb and multitask axes.
 
         streams = [
-            batch_iterator(list(chunk), tasks_per_stream) for chunk in itertools.batched(task_iters, tasks_per_stream)
+            map(
+                lambda batch: jax.tree.map(lambda x: x.swapaxes(0, 1), batch),
+                batch_iterator(list(chunk), tasks_per_stream),
+            )
+            for chunk in itertools.batched(task_iters, tasks_per_stream)
         ]
         return concat(streams)
 

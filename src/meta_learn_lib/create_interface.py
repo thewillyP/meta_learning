@@ -1,12 +1,11 @@
 import copy
 import jax
-import jax.numpy as jnp
 import equinox as eqx
 
 from meta_learn_lib.config import *
 from meta_learn_lib.env import GodState
 from meta_learn_lib.interface import *
-from meta_learn_lib.util import to_vector
+from meta_learn_lib.util import Vector, to_vector
 
 
 def prng_factory(key: int, level: int):
@@ -42,7 +41,7 @@ def put_tick(level: int):
 
 def get_mlp_param(i: int, level: int):
     def get_mlp_param_fn(env: GodState) -> MLP:
-        return env.meta_parameters[level].mlps[i]
+        return env.meta_parameters[level].mlps.get(i)
 
     return get_mlp_param_fn
 
@@ -56,7 +55,7 @@ def put_mlp_param(i: int, level: int):
 
 def get_vanilla_rnn_state(i: int, level: int):
     def get_vanilla_rnn_state_fn(env: GodState) -> VanillaRecurrentState:
-        return env.model_states[level].vanilla_recurrent_states[i]
+        return env.model_states[level].vanilla_recurrent_states.get(i)
 
     return get_vanilla_rnn_state_fn
 
@@ -70,7 +69,7 @@ def put_vanilla_rnn_state(i: int, level: int):
 
 def get_vanilla_rnn_param(i: int, level: int):
     def get_vanilla_rnn_param_fn(env: GodState) -> RNN:
-        return env.meta_parameters[level].rnns[i]
+        return env.meta_parameters[level].rnns.get(i)
 
     return get_vanilla_rnn_param_fn
 
@@ -84,7 +83,7 @@ def put_vanilla_rnn_param(i: int, level: int):
 
 def get_gru_state(i: int, level: int):
     def get_gru_state_fn(env: GodState) -> RecurrentState:
-        return env.model_states[level].recurrent_states[i]
+        return env.model_states[level].recurrent_states.get(i)
 
     return get_gru_state_fn
 
@@ -98,7 +97,7 @@ def put_gru_state(i: int, level: int):
 
 def get_gru_param(i: int, level: int):
     def get_gru_param_fn(env: GodState) -> Parameter[eqx.nn.GRUCell]:
-        return env.meta_parameters[level].grus[i]
+        return env.meta_parameters[level].grus.get(i)
 
     return get_gru_param_fn
 
@@ -112,7 +111,7 @@ def put_gru_param(i: int, level: int):
 
 def get_lstm_state(i: int, level: int):
     def get_lstm_state_fn(env: GodState) -> LSTMState:
-        return env.model_states[level].lstm_states[i]
+        return env.model_states[level].lstm_states.get(i)
 
     return get_lstm_state_fn
 
@@ -126,7 +125,7 @@ def put_lstm_state(i: int, level: int):
 
 def get_lstm_param(i: int, level: int):
     def get_lstm_param_fn(env: GodState) -> Parameter[eqx.nn.LSTMCell]:
-        return env.meta_parameters[level].lstms[i]
+        return env.meta_parameters[level].lstms.get(i)
 
     return get_lstm_param_fn
 
@@ -140,7 +139,7 @@ def put_lstm_param(i: int, level: int):
 
 def get_autoregressive_predictions(i: int, level: int):
     def get_autoregressive_predictions_fn(env: GodState) -> State[jax.Array]:
-        return env.model_states[level].autoregressive_predictions[i]
+        return env.model_states[level].autoregressive_predictions.get(i)
 
     return get_autoregressive_predictions_fn
 
@@ -154,7 +153,7 @@ def put_autoregressive_predictions(i: int, level: int):
 
 def get_time_constant(i: int, level: int):
     def get_time_constant_fn(env: GodState) -> Parameter[jax.Array]:
-        return env.meta_parameters[level].time_constants[i]
+        return env.meta_parameters[level].time_constants.get(i)
 
     return get_time_constant_fn
 
@@ -168,7 +167,7 @@ def put_time_constant(i: int, level: int):
 
 def get_learning_rate(i: int, level: int):
     def get_learning_rate_fn(env: GodState) -> Parameter[jax.Array]:
-        return env.meta_parameters[level].learning_rates[i]
+        return env.meta_parameters[level].learning_rates.get(i)
 
     return get_learning_rate_fn
 
@@ -182,7 +181,7 @@ def put_learning_rate(i: int, level: int):
 
 def get_weight_decay(i: int, level: int):
     def get_weight_decay_fn(env: GodState) -> Parameter[jax.Array]:
-        return env.meta_parameters[level].weight_decays[i]
+        return env.meta_parameters[level].weight_decays.get(i)
 
     return get_weight_decay_fn
 
@@ -196,7 +195,7 @@ def put_weight_decay(i: int, level: int):
 
 def get_momentum(i: int, level: int):
     def get_momentum_fn(env: GodState) -> Parameter[jax.Array]:
-        return env.meta_parameters[level].momentums[i]
+        return env.meta_parameters[level].momentums.get(i)
 
     return get_momentum_fn
 
@@ -210,7 +209,7 @@ def put_momentum(i: int, level: int):
 
 def get_kl_regularizer_beta(i: int, level: int):
     def get_kl_regularizer_beta_fn(env: GodState) -> Parameter[jax.Array]:
-        return env.meta_parameters[level].kl_regularizer_betas[i]
+        return env.meta_parameters[level].kl_regularizer_betas.get(i)
 
     return get_kl_regularizer_beta_fn
 
@@ -224,7 +223,7 @@ def put_kl_regularizer_beta(i: int, level: int):
 
 def get_opt_state(i: int, level: int):
     def get_opt_state_fn(env: GodState) -> State[optax.OptState]:
-        return env.learning_states[level].opt_states[i]
+        return env.learning_states[level].opt_states.get(i)
 
     return get_opt_state_fn
 
@@ -238,7 +237,7 @@ def put_opt_state(i: int, level: int):
 
 def get_forward_mode_jacobian(i: int, level: int):
     def get_forward_mode_jacobian_fn(env: GodState) -> State[JACOBIAN]:
-        return env.learning_states[level].influence_tensors[i]
+        return env.learning_states[level].influence_tensors.get(i)
 
     return get_forward_mode_jacobian_fn
 
@@ -252,7 +251,7 @@ def put_forward_mode_jacobian(i: int, level: int):
 
 def get_uoro_state(i: int, level: int):
     def get_uoro_state_fn(env: GodState) -> UOROState:
-        return env.learning_states[level].uoros[i]
+        return env.learning_states[level].uoros.get(i)
 
     return get_uoro_state_fn
 
@@ -316,6 +315,40 @@ def put_logs(level: int):
         )
 
     return put_logs_fn
+
+
+def get_parameters(
+    assignment: OptimizerAssignment,
+    meta_interfaces: dict[str, GodInterface[GodState]],
+    env: GodState,
+) -> Vector[GodState]:
+    mask = jax.tree.map(lambda _: False, env)
+
+    for name in assignment.target:
+        interface = meta_interfaces[name]
+        for get_fn, put_fn in [
+            (interface.get_mlp_param, interface.put_mlp_param),
+            (interface.get_vanilla_rnn_param, interface.put_vanilla_rnn_param),
+            (interface.get_gru_param, interface.put_gru_param),
+            (interface.get_lstm_param, interface.put_lstm_param),
+            (interface.get_learning_rate, interface.put_learning_rate),
+            (interface.get_weight_decay, interface.put_weight_decay),
+            (interface.get_momentum, interface.put_momentum),
+            (interface.get_time_constant, interface.put_time_constant),
+            (interface.get_kl_regularizer_beta, interface.put_kl_regularizer_beta),
+        ]:
+            if get_fn(env) is not None:
+                mask = put_fn(mask, True)
+
+    params, _ = eqx.partition(env, mask, is_leaf=lambda x: x is None)
+    return to_vector(params)
+
+
+def put_parameters(
+    env: GodState,
+    new_env: GodState,
+) -> GodState:
+    return eqx.combine(new_env, env)
 
 
 def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, GodInterface[GodState]]], int]:
@@ -413,6 +446,8 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
                         get_tick=get_tick(level),
+                        get_opt_state=get_opt_state(i, level),
+                        put_opt_state=put_opt_state(i, level),
                         get_learning_rate=get_learning_rate(
                             [*config.hyperparameters].index(opt.learning_rate),
                             config.hyperparameters[opt.learning_rate].level,
@@ -442,6 +477,23 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     interface = default_interface
 
             meta_interfaces[level][name] = interface
+
+    # 3. all hyperparameters
+    for name, hp in config.hyperparameters.items():
+        interface = copy.replace(
+            default_interface,
+            get_learning_rate=get_learning_rate([*config.hyperparameters].index(name), hp.level),
+            put_learning_rate=put_learning_rate([*config.hyperparameters].index(name), hp.level),
+            get_weight_decay=get_weight_decay([*config.hyperparameters].index(name), hp.level),
+            put_weight_decay=put_weight_decay([*config.hyperparameters].index(name), hp.level),
+            get_momentum=get_momentum([*config.hyperparameters].index(name), hp.level),
+            put_momentum=put_momentum([*config.hyperparameters].index(name), hp.level),
+            get_time_constant=get_time_constant([*config.hyperparameters].index(name), hp.level),
+            put_time_constant=put_time_constant([*config.hyperparameters].index(name), hp.level),
+            get_kl_regularizer_beta=get_kl_regularizer_beta([*config.hyperparameters].index(name), hp.level),
+            put_kl_regularizer_beta=put_kl_regularizer_beta([*config.hyperparameters].index(name), hp.level),
+        )
+        meta_interfaces[hp.level][name] = interface
 
     return meta_interfaces, i
 

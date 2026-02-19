@@ -45,8 +45,8 @@ class MLP(PClass):
 
 class RNN(PClass):
     w_rec: Parameter[jax.Array] = field(serializer=deep_serialize)
-    b_rec: Optional[Parameter[jax.Array]] = field(serializer=deep_serialize)
-    layer_norm: Optional[Parameter[eqx.nn.LayerNorm]] = field(serializer=deep_serialize)
+    b_rec: Parameter[jax.Array] = field(serializer=deep_serialize)
+    layer_norm: Parameter[eqx.Module] = field(serializer=deep_serialize)
 
 
 class RecurrentState(PClass):

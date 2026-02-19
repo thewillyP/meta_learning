@@ -81,12 +81,6 @@ type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayA
 
 
 @dataclass(frozen=True)
-class Persistent:
-    ticks: int | None  # None is never reset
-    reset_states: bool  # while parameters are always stateful bc they are used in validation, this flag decides if we want to include other optimizer/learning states in the influence tensor. this is more of a override since have implicit influences so if practioner knows themselves it has no dependencies or wants to truncate, this is the flag for that
-
-
-@dataclass(frozen=True)
 class HyperparameterConfig:
     @dataclass(frozen=True)
     class identity: ...
@@ -116,8 +110,11 @@ class HyperparameterConfig:
         clip: float
 
     type Parametrization = Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
+    type Kind = Literal["learning_rate", "weight_decay", "momentum", "time_constant", "kl_regularizer_beta"]
 
     value: float
+    kind: Kind
+    count: int  # how many unique parameters of this kind
     hyperparameter_parametrization: Parametrization
     min_value: float  # used for mandatory gradient projection
     max_value: float  # used for mandatory gradient projection
@@ -186,7 +183,6 @@ type Optimizer = Union[
 class OptimizerAssignment:
     target: frozenset[str]
     optimizer: Optimizer
-    per_parameter: bool  # separate hyperparameter instance per parameter vs shared
 
 
 @dataclass(frozen=True)
@@ -381,6 +377,7 @@ class MetaConfig:
     meta_opt: MetaOptimizationConfig  # number of simultaneous tasks at same level
     learner: LearnConfig
     test_seed: int
+    track_influence: bool  # while parameters are always stateful bc they are used in validation, this flag decides if we want to include other optimizer/learning states in the influence tensor. this is more of a override since have implicit influences so if practioner knows themselves it has no dependencies or wants to truncate, this is the flag for that
 
 
 @dataclass(frozen=True)
@@ -399,7 +396,7 @@ class GodConfig:
     hyperparameters: dict[HP, HyperparameterConfig]
 
     levels: list[MetaConfig]
-    persistence: list[Persistent]  # len(levels) + 1
+    reset_ticks: list[int | None]  # len(levels) + 1, None is never reset
 
     label_mask_value: float
     unlabeled_mask_value: float

@@ -480,19 +480,38 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
 
     # 3. all hyperparameters
     for name, hp in config.hyperparameters.items():
-        interface = copy.replace(
-            default_interface,
-            get_learning_rate=get_learning_rate([*config.hyperparameters].index(name), hp.level),
-            put_learning_rate=put_learning_rate([*config.hyperparameters].index(name), hp.level),
-            get_weight_decay=get_weight_decay([*config.hyperparameters].index(name), hp.level),
-            put_weight_decay=put_weight_decay([*config.hyperparameters].index(name), hp.level),
-            get_momentum=get_momentum([*config.hyperparameters].index(name), hp.level),
-            put_momentum=put_momentum([*config.hyperparameters].index(name), hp.level),
-            get_time_constant=get_time_constant([*config.hyperparameters].index(name), hp.level),
-            put_time_constant=put_time_constant([*config.hyperparameters].index(name), hp.level),
-            get_kl_regularizer_beta=get_kl_regularizer_beta([*config.hyperparameters].index(name), hp.level),
-            put_kl_regularizer_beta=put_kl_regularizer_beta([*config.hyperparameters].index(name), hp.level),
-        )
+        idx = [*config.hyperparameters].index(name)
+        match hp.kind:
+            case "learning_rate":
+                interface = copy.replace(
+                    default_interface,
+                    get_learning_rate=get_learning_rate(idx, hp.level),
+                    put_learning_rate=put_learning_rate(idx, hp.level),
+                )
+            case "weight_decay":
+                interface = copy.replace(
+                    default_interface,
+                    get_weight_decay=get_weight_decay(idx, hp.level),
+                    put_weight_decay=put_weight_decay(idx, hp.level),
+                )
+            case "momentum":
+                interface = copy.replace(
+                    default_interface,
+                    get_momentum=get_momentum(idx, hp.level),
+                    put_momentum=put_momentum(idx, hp.level),
+                )
+            case "time_constant":
+                interface = copy.replace(
+                    default_interface,
+                    get_time_constant=get_time_constant(idx, hp.level),
+                    put_time_constant=put_time_constant(idx, hp.level),
+                )
+            case "kl_regularizer_beta":
+                interface = copy.replace(
+                    default_interface,
+                    get_kl_regularizer_beta=get_kl_regularizer_beta(idx, hp.level),
+                    put_kl_regularizer_beta=put_kl_regularizer_beta(idx, hp.level),
+                )
         meta_interfaces[hp.level][name] = interface
 
     return meta_interfaces, i

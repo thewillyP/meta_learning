@@ -579,10 +579,8 @@ def create_learn_interfaces(
     meta_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]] = []
     for level, meta_config in enumerate(config.levels):
         i += 2
-        model_learner = meta_config.learner.model_learner
-        optimizer_learner = meta_config.learner.optimizer_learner
-        model_interface = learner_to_interface(model_learner, i, level, True)
-        optimizer_interface = learner_to_interface(optimizer_learner, i + 1, level, False)
+        model_interface = learner_to_interface(meta_config.learner.model_learner.method, i, level, True)
+        optimizer_interface = learner_to_interface(meta_config.learner.optimizer_learner.method, i + 1, level, False)
         meta_interfaces.append((model_interface, optimizer_interface))
 
     return meta_interfaces, i

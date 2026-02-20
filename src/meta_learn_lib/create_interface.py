@@ -317,40 +317,6 @@ def put_logs(level: int):
     return put_logs_fn
 
 
-def get_parameters(
-    assignment: OptimizerAssignment,
-    meta_interfaces: dict[str, GodInterface[GodState]],
-    env: GodState,
-) -> Vector[GodState]:
-    mask = jax.tree.map(lambda _: False, env)
-
-    for name in assignment.target:
-        interface = meta_interfaces[name]
-        for get_fn, put_fn in [
-            (interface.get_mlp_param, interface.put_mlp_param),
-            (interface.get_vanilla_rnn_param, interface.put_vanilla_rnn_param),
-            (interface.get_gru_param, interface.put_gru_param),
-            (interface.get_lstm_param, interface.put_lstm_param),
-            (interface.get_learning_rate, interface.put_learning_rate),
-            (interface.get_weight_decay, interface.put_weight_decay),
-            (interface.get_momentum, interface.put_momentum),
-            (interface.get_time_constant, interface.put_time_constant),
-            (interface.get_kl_regularizer_beta, interface.put_kl_regularizer_beta),
-        ]:
-            if get_fn(env) is not None:
-                mask = put_fn(mask, True)
-
-    params, _ = eqx.partition(env, mask, is_leaf=lambda x: x is None)
-    return to_vector(params)
-
-
-def put_parameters(
-    env: GodState,
-    new_env: GodState,
-) -> GodState:
-    return eqx.combine(new_env, env)
-
-
 def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, GodInterface[GodState]]], int]:
     i = max(i, 0) + len(config.hyperparameters)
 
@@ -433,13 +399,7 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
         for name, assignment in meta_config.learner.optimizer.items():
             i += 1
             match assignment.optimizer:
-                case (
-                    SGDConfig()
-                    | SGDNormalizedConfig()
-                    | AdamConfig()
-                    | ExponentiatedGradientConfig()
-                    | ExponentiatedGradientAdamConfig() as opt
-                ):
+                case SGDConfig() | SGDNormalizedConfig() | AdamConfig() | ExponentiatedGradientConfig() as opt:
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
@@ -485,30 +445,50 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
             case "learning_rate":
                 interface = copy.replace(
                     default_interface,
+                    put_logs=put_logs(hp.level),
+                    take_prng=prng_factory(idx, hp.level),
+                    put_prng=put_prng(idx, hp.level),
+                    get_tick=get_tick(hp.level),
                     get_learning_rate=get_learning_rate(idx, hp.level),
                     put_learning_rate=put_learning_rate(idx, hp.level),
                 )
             case "weight_decay":
                 interface = copy.replace(
                     default_interface,
+                    put_logs=put_logs(hp.level),
+                    take_prng=prng_factory(idx, hp.level),
+                    put_prng=put_prng(idx, hp.level),
+                    get_tick=get_tick(hp.level),
                     get_weight_decay=get_weight_decay(idx, hp.level),
                     put_weight_decay=put_weight_decay(idx, hp.level),
                 )
             case "momentum":
                 interface = copy.replace(
                     default_interface,
+                    put_logs=put_logs(hp.level),
+                    take_prng=prng_factory(idx, hp.level),
+                    put_prng=put_prng(idx, hp.level),
+                    get_tick=get_tick(hp.level),
                     get_momentum=get_momentum(idx, hp.level),
                     put_momentum=put_momentum(idx, hp.level),
                 )
             case "time_constant":
                 interface = copy.replace(
                     default_interface,
+                    put_logs=put_logs(hp.level),
+                    take_prng=prng_factory(idx, hp.level),
+                    put_prng=put_prng(idx, hp.level),
+                    get_tick=get_tick(hp.level),
                     get_time_constant=get_time_constant(idx, hp.level),
                     put_time_constant=put_time_constant(idx, hp.level),
                 )
             case "kl_regularizer_beta":
                 interface = copy.replace(
                     default_interface,
+                    put_logs=put_logs(hp.level),
+                    take_prng=prng_factory(idx, hp.level),
+                    put_prng=put_prng(idx, hp.level),
+                    get_tick=get_tick(hp.level),
                     get_kl_regularizer_beta=get_kl_regularizer_beta(idx, hp.level),
                     put_kl_regularizer_beta=put_kl_regularizer_beta(idx, hp.level),
                 )
@@ -520,16 +500,15 @@ def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
 def create_learn_interfaces(
     config: GodConfig, i: int
 ) -> tuple[list[tuple[GodInterface[GodState], GodInterface[GodState]]], int]:
-    i = max(i, 0) + len(config.hyperparameters)
 
     def learner_to_interface(learner: GradientMethod, i: int, level: int, is_val: bool) -> GodInterface[GodState]:
-
+        # for level 0, the val learner should actually use the non val's learner
         if is_val:
-            state_lens = make_lens(slice(i, i + 1), slice(i, i), slice(i, i))
-            param_lens = make_lens(slice(0, 1), slice(0, i), slice(0, i))
+            state_lens = make_lens(slice(level, level + 1), slice(level, level), slice(level, level))
+            param_lens = make_lens(slice(0, 1), slice(0, level), slice(0, level))
         else:
-            state_lens = make_lens(slice(0, 1), slice(0, i), slice(0, i))
-            param_lens = make_lens(slice(i, i), slice(i, i), slice(i, i + 1))
+            state_lens = make_lens(slice(0, 1), slice(0, level), slice(0, level))
+            param_lens = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
 
         match learner:
             case RTRLConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
@@ -591,6 +570,7 @@ def create_learn_interfaces(
                     put_param=param_lens.put,
                 )
 
+    i = max(i, 0) + len(config.hyperparameters)
     meta_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]] = []
     for level, meta_config in enumerate(config.levels):
         i += 2

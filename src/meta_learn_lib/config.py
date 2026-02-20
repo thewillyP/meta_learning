@@ -157,17 +157,11 @@ class AdamConfig:
 
 
 @dataclass(frozen=True)
-class ExponentiatedGradientAdamConfig:
-    learning_rate: HP
-    weight_decay: HP
-    momentum: HP
-
-
-@dataclass(frozen=True)
 class ExponentiatedGradientConfig:
     learning_rate: HP
     weight_decay: HP
     momentum: HP
+    use_adam: bool
 
 
 type Optimizer = Union[
@@ -175,7 +169,6 @@ type Optimizer = Union[
     SGDNormalizedConfig,
     AdamConfig,
     ExponentiatedGradientConfig,
-    ExponentiatedGradientAdamConfig,
 ]
 
 
@@ -241,7 +234,7 @@ type GradientMethod = Union[
 @dataclass(frozen=True)
 class GradientConfig:
     method: GradientMethod
-    add_clip: HardClip | SoftClip | None
+    add_clip: HardClip | SoftClip | None  # these are placed here because vl_gr could also want to be clipped
     scale: float
 
 

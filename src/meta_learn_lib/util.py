@@ -173,12 +173,7 @@ def to_vector[T](tree: T) -> Vector[T]:
 
 
 def hyperparameter_reparametrization(
-    reparametrization: Union[
-        HyperparameterConfig.identity,
-        HyperparameterConfig.softplus,
-        HyperparameterConfig.relu,
-        HyperparameterConfig.softrelu,
-    ],
+    reparametrization: HyperparameterConfig.Parametrization,
 ) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
     def softminus(x):
         return -jax.nn.softplus(-x)
@@ -193,25 +188,20 @@ def hyperparameter_reparametrization(
         case HyperparameterConfig.softrelu(clip):
 
             def softrelu(x, c):
-                v = x - softminus(c * x) / c
-                return v
+                return x - softminus(c * x) / c
 
             reparam_fn = lambda x: softrelu(x, clip)
-            reparam_inverse = lambda y: y  # Note: not strictly correct, as softrelu is not invertible
+            reparam_inverse = lambda y: y  # Note: softrelu is not invertible
 
         case HyperparameterConfig.relu():
-            # def straight_through_relu(x):
-            #     return x + lax.stop_gradient(jnp.maximum(x, 0.0) - x)
-
             reparam_fn = lambda x: jnp.maximum(x, 0.0)
-            # reparam_fn = straight_through_relu
-            reparam_inverse = lambda y: y  # Note: not strictly correct, as relu is not invertible
+            reparam_inverse = lambda y: y  # Note: relu is not invertible
+
         case HyperparameterConfig.silu_positive(scale):
 
             @jax.jit
             def lambertw_jax(x, max_iters=20):
                 """JAX-compatible Lambert W approximation (principal branch W₀)."""
-                # Initial guess: good heuristic for principal branch
                 w = jnp.log1p(x)
                 for _ in range(max_iters):
                     ew = jnp.exp(w)
@@ -239,15 +229,8 @@ def hyperparameter_reparametrization(
         case HyperparameterConfig.softclip(a, b, clip):
 
             def softclip(x):
-                """
-                Clipping with softplus and softminus, with paramterized corner sharpness.
-                Set either (or both) endpoint to None to indicate no clipping at that end.
-                """
-                # when clipping at both ends, make c dimensionless w.r.t. b - a / 2
-                c = clip
-                if a is not None and b is not None:
-                    c /= (b - a) / 2
-
+                """Soft clipping with parameterized corner sharpness. Set either endpoint to None to disable."""
+                c = clip / ((b - a) / 2) if a is not None and b is not None else clip
                 v = x
                 if a is not None:
                     v = v - softminus(c * (x - a)) / c
@@ -256,10 +239,7 @@ def hyperparameter_reparametrization(
                 return v
 
             reparam_fn = softclip
-            reparam_inverse = lambda y: y  # Note: not strictly correct, as softclip is not invertible
-            # reparam_inverse = lambda y: jnp.minimum(
-            #     jnp.maximum(y, a if a is not None else -jnp.inf), b if b is not None else jnp.inf
-            # )  # Note: not strictly correct, as softclip is not invertible
+            reparam_inverse = lambda y: y  # Note: softclip is not invertible
 
         case _:
             raise ValueError("Invalid hyperparameter reparametrization")

@@ -150,7 +150,7 @@ def get_opt_state[ENV](
     meta_interfaces: dict[str, GodInterface[ENV]],
     env: ENV,
     hps: dict[HP, HyperparameterConfig],
-    track_influence: bool,
+    track_influence_in: frozenset[int],
 ) -> ENV:
 
     for assignment_name, assignment in assignments.items():
@@ -169,7 +169,7 @@ def get_opt_state[ENV](
 
         batched_opt_state = jax.vmap(init_one, in_axes=(env_axes, 0))(batched_env, param_chunks)
 
-        env = interface.put_opt_state(env, State(value=batched_opt_state, is_stateful=track_influence))
+        env = interface.put_opt_state(env, State(value=batched_opt_state, is_stateful=track_influence_in))
 
     return env
 

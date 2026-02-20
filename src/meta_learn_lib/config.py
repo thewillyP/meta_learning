@@ -27,6 +27,7 @@ class SeedConfig:
 class MetaOptimizationConfig:
     batch: int  # num optimizers that run in parallel
     num_steps: int
+    reset_t: int | None  # if not None, then reset the environment every reset_t steps. if None, then never reset
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class ValidationConfig:
     num_examples_total: int  # total number of examples in dataset split
     is_test: bool  # whether this split is test or train. if test then it will source from standardized test set
     task_batch_size: int
+    reset_t: int | None
 
 
 @dataclass(frozen=True)
@@ -363,6 +365,17 @@ type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjecti
 
 
 @dataclass(frozen=True)
+class TrackLogs:
+    gradient: bool
+    hessian_contains_nans: bool
+    largest_eigenvalue: bool
+    influence_tensor: bool
+    immediate_influence_tensor: bool
+    largest_jac_eigenvalue: bool
+    jacobian: bool
+
+
+@dataclass(frozen=True)
 class MetaConfig:
     objective_fn: ObjectiveFn  # objective function used for validation inference at each meta level
     dataset_validation: ValidationConfig
@@ -370,7 +383,8 @@ class MetaConfig:
     meta_opt: MetaOptimizationConfig  # number of simultaneous tasks at same level
     learner: LearnConfig
     test_seed: int
-    track_influence: bool  # while parameters are always stateful bc they are used in validation, this flag decides if we want to include other optimizer/learning states in the influence tensor. this is more of a override since have implicit influences so if practioner knows themselves it has no dependencies or wants to truncate, this is the flag for that
+    track_influence_in: frozenset[int]  # which levels to track influence for
+    track_logs: TrackLogs
 
 
 @dataclass(frozen=True)
@@ -389,7 +403,6 @@ class GodConfig:
     hyperparameters: dict[HP, HyperparameterConfig]
 
     levels: list[MetaConfig]
-    reset_ticks: list[int | None]  # len(levels) + 1, None is never reset
 
     label_mask_value: float
     unlabeled_mask_value: float

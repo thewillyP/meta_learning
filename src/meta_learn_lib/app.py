@@ -12,7 +12,7 @@ import time
 import equinox as eqx
 
 from meta_learn_lib.config import *
-from meta_learn_lib.create_env import generate_states
+from meta_learn_lib.create_env import create_env
 from meta_learn_lib.create_interface import create_learn_interfaces, create_node_interfaces, create_task_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.lib_types import *
@@ -90,6 +90,8 @@ def runApp(config: GodConfig) -> None:
         hyperparameters={
             "meta1_rnn1_time_constant": HyperparameterConfig(
                 value=1.0,
+                kind="time_constant",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=1.0,
@@ -97,6 +99,8 @@ def runApp(config: GodConfig) -> None:
             ),
             "meta1_rnn2_time_constant": HyperparameterConfig(
                 value=1.0,
+                kind="time_constant",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=1.0,
@@ -104,6 +108,8 @@ def runApp(config: GodConfig) -> None:
             ),
             "meta1_sgd1.lr": HyperparameterConfig(
                 value=0.001,
+                kind="learning_rate",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=jnp.inf,
@@ -111,6 +117,8 @@ def runApp(config: GodConfig) -> None:
             ),
             "meta1_sgd1.wd": HyperparameterConfig(
                 value=0.00001,
+                kind="weight_decay",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=jnp.inf,
@@ -118,6 +126,8 @@ def runApp(config: GodConfig) -> None:
             ),
             "meta1_sgd1.momentum": HyperparameterConfig(
                 value=0.0,
+                kind="momentum",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=1.0,
@@ -125,6 +135,8 @@ def runApp(config: GodConfig) -> None:
             ),
             "meta2_adam1.lr": HyperparameterConfig(
                 value=0.001,
+                kind="learning_rate",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=jnp.inf,
@@ -132,6 +144,8 @@ def runApp(config: GodConfig) -> None:
             ),
             "meta2_adam1.wd": HyperparameterConfig(
                 value=0.0,
+                kind="weight_decay",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=jnp.inf,
@@ -139,6 +153,8 @@ def runApp(config: GodConfig) -> None:
             ),
             "meta2_adam1.momentum": HyperparameterConfig(
                 value=0.9,
+                kind="momentum",
+                count=1,
                 hyperparameter_parametrization=HyperparameterConfig.identity(),
                 min_value=0.0,
                 max_value=1.0,
@@ -154,6 +170,7 @@ def runApp(config: GodConfig) -> None:
                     num_examples_total=500,
                     is_test=False,
                     task_batch_size=2,
+                    reset_t=1,
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -163,7 +180,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1, reset_t=None),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -183,9 +200,18 @@ def runApp(config: GodConfig) -> None:
                                 weight_decay="meta1_sgd1.wd",
                                 momentum="meta1_sgd1.momentum",
                             ),
-                            per_parameter=False,
                         ),
                     },
+                ),
+                track_influence_in=frozenset({0}),
+                track_logs=TrackLogs(
+                    gradient=False,
+                    hessian_contains_nans=False,
+                    largest_eigenvalue=False,
+                    influence_tensor=False,
+                    immediate_influence_tensor=False,
+                    largest_jac_eigenvalue=False,
+                    jacobian=False,
                 ),
                 test_seed=0,
             ),
@@ -197,6 +223,7 @@ def runApp(config: GodConfig) -> None:
                     num_examples_total=500,
                     is_test=False,
                     task_batch_size=1,
+                    reset_t=1,
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -206,7 +233,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=2),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=2, reset_t=None),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -230,9 +257,18 @@ def runApp(config: GodConfig) -> None:
                                 weight_decay="meta2_adam1.wd",
                                 momentum="meta2_adam1.momentum",
                             ),
-                            per_parameter=False,
                         ),
                     },
+                ),
+                track_influence_in=frozenset({1}),
+                track_logs=TrackLogs(
+                    gradient=False,
+                    hessian_contains_nans=False,
+                    largest_eigenvalue=False,
+                    influence_tensor=False,
+                    immediate_influence_tensor=False,
+                    largest_jac_eigenvalue=False,
+                    jacobian=False,
                 ),
                 test_seed=0,
             ),
@@ -244,6 +280,7 @@ def runApp(config: GodConfig) -> None:
                     num_examples_total=10_000,
                     is_test=True,
                     task_batch_size=1,
+                    reset_t=None,
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -253,7 +290,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1, reset_t=None),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=IdentityLearnerConfig(),
@@ -267,14 +304,18 @@ def runApp(config: GodConfig) -> None:
                     ),
                     optimizer={},
                 ),
+                track_influence_in=frozenset(),
+                track_logs=TrackLogs(
+                    gradient=False,
+                    hessian_contains_nans=False,
+                    largest_eigenvalue=False,
+                    influence_tensor=False,
+                    immediate_influence_tensor=False,
+                    largest_jac_eigenvalue=False,
+                    jacobian=False,
+                ),
                 test_seed=0,
             ),
-        ],
-        persistence=[
-            Persistent(ticks=1, reset_states=True),
-            Persistent(ticks=None, reset_states=False),
-            Persistent(ticks=None, reset_states=False),
-            Persistent(ticks=None, reset_states=False),
         ],
         label_mask_value=-1.0,
         unlabeled_mask_value=0.0,
@@ -318,76 +359,11 @@ def runApp(config: GodConfig) -> None:
         print(vl_x.shape, vl_y.shape)
         print(te_x.shape, te_y.shape)
 
-    node_interfaces, count = create_node_interfaces(config, 0)
+    meta_interfaces, count = create_node_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
     task_interfaces, count = create_task_interfaces(config, count)
 
-    env = GodState(
-        model_states=pvector(
-            [
-                ModelStates(
-                    recurrent_states=pmap({}),
-                    vanilla_recurrent_states=pmap({}),
-                    lstm_states=pmap({}),
-                    autoregressive_predictions=pmap({}),
-                )
-                for _ in range(len(config.levels) + 1)
-            ]
-        ),
-        learning_states=pvector(
-            [
-                LearningStates(
-                    influence_tensors=pmap({}),
-                    uoros=pmap({}),
-                    opt_states=pmap({}),
-                )
-                for _ in range(len(config.levels) + 1)
-            ]
-        ),
-        meta_parameters=pvector(
-            [
-                Parameters(
-                    mlps=pmap({}),
-                    rnns=pmap({}),
-                    grus=pmap({}),
-                    lstms=pmap({}),
-                    learning_rates=pmap({}),
-                    weight_decays=pmap({}),
-                    time_constants=pmap({}),
-                    momentums=pmap({}),
-                    kl_regularizer_betas=pmap({}),
-                )
-                for _ in range(len(config.levels) + 1)
-            ]
-        ),
-        level_meta=pvector(
-            [
-                LevelMeta(
-                    tick=jnp.array(0),
-                    log=Logs(),
-                    prngs=pmap({}),
-                )
-                for _ in range(len(config.levels) + 1)
-            ]
-        ),
-        prng=env_prng,
-    )
-    create_env = generate_states(
-        node_interfaces[0],
-        shapes[0],
-        config.transition_graph,
-        config.readout_graph,
-        config.nodes,
-        config.persistence[0],
-        True,
-        [
-            config.levels[0].dataset_validation.task_batch_size,
-            config.levels[0].dataset_validation.num_examples_in_minibatch,
-        ],
-        env_prng,
-    )
-    env = create_env(env)
-
+    env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
     eqx.tree_pprint(env.serialize())
 
     # env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)

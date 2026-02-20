@@ -12,7 +12,7 @@ def prng_factory(key: int, level: int):
     def get_prng(env: GodState) -> tuple[jax.Array, GodState]:
         prng, new_prng = jax.random.split(env.level_meta[level].prngs[key].value)
         return prng, env.transform(
-            ["level_meta", level, "prngs", key], lambda _: State(value=new_prng, is_stateful=False)
+            ["level_meta", level, "prngs", key], lambda _: State(value=new_prng, is_stateful=frozenset())
         )
 
     return get_prng
@@ -20,7 +20,7 @@ def prng_factory(key: int, level: int):
 
 def put_prng(key: int, level: int):
     def put_prng_fn(env: GodState, prng: jax.Array) -> GodState:
-        return env.transform(["level_meta", level, "prngs", key], lambda _: State(value=prng, is_stateful=False))
+        return env.transform(["level_meta", level, "prngs", key], lambda _: State(value=prng, is_stateful=frozenset()))
 
     return put_prng_fn
 
@@ -276,7 +276,7 @@ def make_lens(model_states: slice, learning_states: slice, params: slice) -> Len
         if isinstance(x, Parameter):
             return x.is_learnable
         if isinstance(x, State):
-            return x.is_stateful
+            return model_states.stop - 1 in x.is_stateful
         return True
 
     def get(env: GodState) -> jax.Array:
@@ -311,7 +311,12 @@ def put_logs(level: int):
     def put_logs_fn(env: GodState, logs: Logs) -> GodState:
         return env.transform(
             ["level_meta", level, "log"],
-            lambda old: old.set(**{k: v for k, v in logs.serialize().items() if v is not None}),
+            lambda old: State(
+                value=old.value.set(
+                    **{k: v for k, v in logs.serialize().items() if v is not None},
+                ),
+                is_stateful=old.is_stateful,
+            ),
         )
 
     return put_logs_fn

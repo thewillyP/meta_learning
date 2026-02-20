@@ -25,13 +25,12 @@ class Parameter[T](PClass):
 
 class State[T](PClass):
     value: T = field(serializer=deep_serialize)
-    is_stateful: bool = field()
+    is_stateful: frozenset[int] = field()
 
 
 class Logs(PClass):
     gradient: Optional[jax.Array] = field(initial=None)
     hessian_contains_nans: Optional[bool] = field(initial=None)
-    immediate_influence_contains_nans: Optional[bool] = field(initial=None)
     largest_eigenvalue: Optional[jax.Array] = field(initial=None)
     influence_tensor: Optional[jax.Array] = field(initial=None)
     immediate_influence_tensor: Optional[jax.Array] = field(initial=None)
@@ -94,7 +93,7 @@ class ModelStates(PClass):
 
 class LevelMeta(PClass):
     tick: jax.Array = field(serializer=deep_serialize)
-    log: Logs = field(serializer=deep_serialize)
+    log: State[Logs] = field(serializer=deep_serialize)
     prngs: PMap[int, State[PRNG]] = field(serializer=deep_serialize)
 
 

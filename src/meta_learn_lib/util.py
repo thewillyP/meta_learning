@@ -18,7 +18,6 @@ from meta_learn_lib.lib_types import ACTIVATION_FN, LOSS, PRNG
 
 
 def deep_serialize(_, obj):
-    """Recursively serialize pyrsistent objects to Python built-ins"""
     if isinstance(obj, PClass):
         serialized = obj.serialize()
         return {k: deep_serialize(_, v) for k, v in serialized.items()}
@@ -29,8 +28,10 @@ def deep_serialize(_, obj):
         return [deep_serialize(_, v) for v in obj]
     elif isinstance(obj, dict):
         return {k: deep_serialize(_, v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return type(obj)(deep_serialize(_, v) for v in obj)
+    elif isinstance(obj, list):
+        return [deep_serialize(_, v) for v in obj]
+    elif isinstance(obj, tuple) and type(obj) is tuple:
+        return tuple(deep_serialize(_, v) for v in obj)
     else:
         return obj
 

@@ -276,7 +276,7 @@ def make_lens(model_states: slice, learning_states: slice, params: slice) -> Len
         if isinstance(x, Parameter):
             return x.is_learnable
         if isinstance(x, State):
-            return model_states.stop - 1 in x.is_stateful
+            return params.stop in x.is_stateful
         return True
 
     def get(env: GodState) -> jax.Array:

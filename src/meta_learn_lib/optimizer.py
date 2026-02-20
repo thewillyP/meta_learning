@@ -146,65 +146,75 @@ def get_batched_env_and_axes[ENV](
 
 
 def get_opt_state[ENV](
-    assignment: OptimizerAssignment,
+    assignments: dict[str, OptimizerAssignment],
     meta_interfaces: dict[str, GodInterface[ENV]],
     env: ENV,
-    interface: GodInterface[ENV],
     hps: dict[HP, HyperparameterConfig],
     track_influence: bool,
 ) -> ENV:
-    param_vec: Vector = get_parameters(assignment, meta_interfaces, env)
-    flat_params = param_vec.vector  # (N,)
 
-    K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
+    for assignment_name, assignment in assignments.items():
+        interface = meta_interfaces[assignment_name]
 
-    chunk_size = flat_params.shape[0] // K
-    param_chunks = flat_params[: K * chunk_size].reshape(K, chunk_size)
+        param_vec: Vector = get_parameters(assignment, meta_interfaces, env)
+        flat_params = param_vec.vector  # (N,)
 
-    def init_one(env_slice: ENV, param_chunk: jax.Array) -> optax.OptState:
-        return get_opt(assignment, env_slice, interface, hps).init(param_chunk)
+        K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
 
-    batched_opt_state = jax.vmap(init_one, in_axes=(env_axes, 0))(batched_env, param_chunks)
+        chunk_size = flat_params.shape[0] // K
+        param_chunks = flat_params[: K * chunk_size].reshape(K, chunk_size)
 
-    return interface.put_opt_state(env, State(value=batched_opt_state, is_stateful=track_influence))
+        def init_one(env_slice: ENV, param_chunk: jax.Array) -> optax.OptState:
+            return get_opt(assignment, env_slice, interface, hps).init(param_chunk)
+
+        batched_opt_state = jax.vmap(init_one, in_axes=(env_axes, 0))(batched_env, param_chunks)
+
+        env = interface.put_opt_state(env, State(value=batched_opt_state, is_stateful=track_influence))
+
+    return env
 
 
 def get_opt_step[ENV](
-    assignment: OptimizerAssignment,
+    assignments: dict[str, OptimizerAssignment],
     meta_interfaces: dict[str, GodInterface[ENV]],
     env: ENV,
     gr_env: ENV,
-    interface: GodInterface[ENV],
     hps: dict[HP, HyperparameterConfig],
 ) -> ENV:
-    param_vec: Vector = get_parameters(assignment, meta_interfaces, env)
-    gr_vec: Vector = get_parameters(assignment, meta_interfaces, gr_env)
-    flat_params = param_vec.vector  # (N,)
-    flat_gr = gr_vec.vector  # (N,)
+    for assignment_name, assignment in assignments.items():
+        interface = meta_interfaces[assignment_name]
 
-    K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
+        param_vec: Vector = get_parameters(assignment, meta_interfaces, env)
+        gr_vec: Vector = get_parameters(assignment, meta_interfaces, gr_env)
+        flat_params = param_vec.vector  # (N,)
+        flat_gr = gr_vec.vector  # (N,)
 
-    chunk_size = flat_params.shape[0] // K
-    param_chunks = flat_params[: K * chunk_size].reshape(K, chunk_size)
-    gr_chunks = flat_gr[: K * chunk_size].reshape(K, chunk_size)
-    batched_opt_state = interface.get_opt_state(env).value
+        K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
 
-    def update_one(
-        env_slice: ENV, gr_chunk: jax.Array, param_chunk: jax.Array, opt_state
-    ) -> tuple[jax.Array, optax.OptState]:
-        updates, new_opt_state = get_opt(assignment, env_slice, interface, hps).update(gr_chunk, opt_state, param_chunk)
-        match assignment.optimizer:
-            case ExponentiatedGradientConfig():
-                new_param = param_chunk * jnp.exp(updates)
-            case _:
-                new_param = optax.apply_updates(param_chunk, updates)
-        return new_param, new_opt_state
+        chunk_size = flat_params.shape[0] // K
+        param_chunks = flat_params[: K * chunk_size].reshape(K, chunk_size)
+        gr_chunks = flat_gr[: K * chunk_size].reshape(K, chunk_size)
+        batched_opt_state = interface.get_opt_state(env).value
 
-    new_param_chunks, new_opt_state = jax.vmap(update_one, in_axes=(env_axes, 0, 0, 0))(
-        batched_env, gr_chunks, param_chunks, batched_opt_state
-    )
+        def update_one(
+            env_slice: ENV, gr_chunk: jax.Array, param_chunk: jax.Array, opt_state
+        ) -> tuple[jax.Array, optax.OptState]:
+            updates, new_opt_state = get_opt(assignment, env_slice, interface, hps).update(
+                gr_chunk, opt_state, param_chunk
+            )
+            match assignment.optimizer:
+                case ExponentiatedGradientConfig():
+                    new_param = param_chunk * jnp.exp(updates)
+                case _:
+                    new_param = optax.apply_updates(param_chunk, updates)
+            return new_param, new_opt_state
 
-    new_params = new_param_chunks.reshape(-1)
-    env = interface.put_opt_state(env, interface.get_opt_state(env).set(value=new_opt_state))
-    env = put_parameters(env, param_vec.to_param(new_params))
+        new_param_chunks, new_opt_state = jax.vmap(update_one, in_axes=(env_axes, 0, 0, 0))(
+            batched_env, gr_chunks, param_chunks, batched_opt_state
+        )
+
+        new_params = new_param_chunks.reshape(-1)
+        env = interface.put_opt_state(env, interface.get_opt_state(env).set(value=new_opt_state))
+        env = put_parameters(env, param_vec.to_param(new_params))
+
     return env

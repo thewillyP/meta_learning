@@ -331,21 +331,21 @@ def create_learner_states[ENV](
     match method:
         case RTRLConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig() | RFLOConfig():
             k1, k2, prng = jax.random.split(prng, 3)
-            param = interface.get_param(env)
-
-            def infl_fn(param: jax.Array) -> jax.Array:
-                _env = interface.put_param(env, param)
-                _env = factory(_env, k1)
-                state = interface.get_state(_env)
-                return state
-
             new_env = factory(env, k1)
-            new_state = interface.get_state(new_env)
-            if new_state.shape[0] > param.shape[0]:
+            param = interface.get_param(new_env)
+            state = interface.get_state(new_env)
+
+            def infl_fn(p: jax.Array) -> jax.Array:
+                _env = interface.put_param(new_env, p)
+                _env = factory(_env, k1)
+                s = interface.get_state(_env)
+                return s
+
+            if state.shape[0] > param.shape[0]:
                 dhdp = eqx.filter_jacfwd(infl_fn)(param)
             else:
                 dhdp = eqx.filter_jacrev(infl_fn)(param)
-            env = interface.put_forward_mode_jacobian(new_env, dhdp)
+            env = interface.put_forward_mode_jacobian(new_env, State(value=dhdp, is_stateful=track_influence_in))
             env = interface.put_prng(env, k2)
         case UOROConfig():
             k0, k1, k2, k3, prng = jax.random.split(prng, 5)
@@ -399,7 +399,7 @@ def create_learner_states[ENV](
 
 def vmap_factory[ENV](
     factory: Callable[[ENV, PRNG], ENV],
-    batch: list[int],  # vmap this many times
+    batch: list[int],
 ) -> Callable[[ENV, PRNG], ENV]:
     def vmap_env(env: ENV, prng: PRNG) -> ENV:
         k1, k2, prng = jax.random.split(prng, 3)
@@ -407,112 +407,136 @@ def vmap_factory[ENV](
         new_axes = create_axes(factory(env, k1))
         axes = diff_axes(old_axes, new_axes)
         batched_keys = jax.random.split(k2, math.prod(batch)).reshape(*batch)
+        test = factory(env, k1)
+        eqx.tree_pprint(test.serialize())
+        print("AXES:", jax.tree_util.tree_leaves(axes))
         b_fn = functools.reduce(
-            lambda f, _: eqx.filter_vmap(f, in_axes=(None, 0), out_axes=axes), batch, lambda k: factory(env, k)
+            lambda f, _: eqx.filter_vmap(f, in_axes=(None, 0), out_axes=axes),
+            batch,
+            lambda e, k: factory(e, k),
         )
-        return b_fn(batched_keys)
+        return b_fn(env, batched_keys)
 
     return vmap_env
 
 
-def generate_states[ENV](
+def reset_validation[ENV](
     factory: Callable[[ENV, PRNG], ENV],
     meta_interface: dict[str, GodInterface[ENV]],
-    learn_interfaces: tuple[GodInterface[ENV], GodInterface[ENV]],
+    vl_learner: GodInterface[ENV],
+    meta_config: MetaConfig,
+    nodes: dict[str, Node],
+    readout_graph: dict[str, list[str]],
+    node_features: dict[str, tuple[int, ...]],
+    is_init: bool,  # if need to reset things like RL ENV
+) -> Callable[[ENV, PRNG], ENV]:
+
+    def create_env(env: ENV, prng: PRNG) -> ENV:
+
+        # 1. Create inference state
+        k1, prng = jax.random.split(prng, 2)
+        f1 = lambda e, k: create_inference_state(
+            nodes, meta_interface, node_features, meta_config.dataset_validation.track_influence_in, is_init, e, k
+        )
+        batch_size = [
+            meta_config.dataset_validation.task_batch_size,
+            meta_config.dataset_validation.num_examples_in_minibatch,
+        ]
+        # env = vmap_factory(f1, batch_size)(env, k1)
+        env = f1(env, k1)
+
+        # 3. use it for learning states
+        k1, k2, prng = jax.random.split(prng, 3)
+
+        env = create_learner_states(
+            factory,
+            meta_config.learner.model_learner.method,
+            vl_learner,
+            readout_graph,
+            nodes,
+            meta_interface,
+            meta_config.dataset_validation.track_influence_in,
+            env,
+            k2,
+        )
+
+        return env
+
+    return create_env
+
+
+def reset_states[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    meta_interface: dict[str, GodInterface[ENV]],
+    meta_learner: GodInterface[ENV],
     meta_config: MetaConfig,
     hyperparameters: dict[HP, HyperparameterConfig],
     nodes: dict[str, Node],
     transition_graph: dict[str, list[str]],
     readout_graph: dict[str, list[str]],
     node_features: dict[str, tuple[int, ...]],
-    create_inference_param: bool,  # its shared across levels. can be used to not gen params too to just gen hidden states
-    state_only: bool,
-    is_init: bool,  # if need to reset things like RL ENV
+    create_inference_param: bool,
 ) -> Callable[[ENV, PRNG], ENV]:
 
     learnables: frozenset[str] = frozenset().union(*[v.target for v in meta_config.learner.optimizer.values()])
-    vl_learner, meta_learner = learn_interfaces
     node_graph = transition_graph | readout_graph
 
     def create_env(env: ENV, prng: PRNG) -> ENV:
 
-        if state_only:
-            # 1. Create inference state
+        # 1. Create parameters
+        if create_inference_param:
             k1, prng = jax.random.split(prng, 2)
-            f1 = lambda e, k: create_inference_state(
-                nodes, meta_interface, node_features, meta_config.track_influence_in, is_init, e, k
-            )
-            batch_size = [
-                meta_config.dataset_validation.task_batch_size,
-                meta_config.dataset_validation.num_examples_in_minibatch,
-            ]
-            env = vmap_factory(f1, batch_size)(env, k1)
-        else:
-            # 2. Create parameters
-            if create_inference_param:
-                k2, prng = jax.random.split(prng, 2)
-                env = create_inference_parameters(nodes, node_graph, meta_interface, node_features, learnables, env, k2)
+            env = create_inference_parameters(nodes, node_graph, meta_interface, node_features, learnables, env, k1)
 
-            # 3. Create hyperparameters
-            k3, prng = jax.random.split(prng, 2)
-            env = create_hyperparameters(hyperparameters, meta_interface, learnables, env, k3)
+        # 2. Create hyperparameters
+        k2, prng = jax.random.split(prng, 2)
+        env = create_hyperparameters(hyperparameters, meta_interface, learnables, env, k2)
 
-            # 3. use it for learning states
-            k1, k2, prng = jax.random.split(prng, 3)
-
-            # order important, meta learner init must come first before vl learner since vl learner needs to know the shape of full env after factory applied, but meta doesnt.
-            env = create_learner_states(
-                factory,
-                meta_config.learner.optimizer_learner.method,
-                meta_learner,
-                readout_graph,
-                nodes,
-                meta_interface,
-                meta_config.track_influence_in,
-                env,
-                k1,
-            )
-            env = create_learner_states(
-                lambda e, k: e,
-                meta_config.learner.model_learner.method,
-                vl_learner,
-                readout_graph,
-                nodes,
-                meta_interface,
-                meta_config.track_influence_in,
-                env,
-                k2,
-            )
-
-            # 4. use it for optimizer states
-            env = get_opt_state(
-                meta_config.learner.optimizer,
-                meta_interface,
-                env,
-                hyperparameters,
-                meta_config.track_influence_in,
-            )
-
-        # 5. Create the logs
-        logs = Logs(
-            gradient=jnp.zeros_like(meta_learner.get_param(env)) if meta_config.track_logs.gradient else None,
-            hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
-            largest_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_eigenvalue else None,
-            influence_tensor=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0]))
-            if meta_config.track_logs.influence_tensor
-            else None,
-            immediate_influence_tensor=jnp.zeros(
-                (meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0])
-            )
-            if meta_config.track_logs.immediate_influence_tensor
-            else None,
-            largest_jac_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_jac_eigenvalue else None,
-            jacobian=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_state(env).shape[0]))
-            if meta_config.track_logs.jacobian
-            else None,
+        # 3. use it for optimizer states
+        env = get_opt_state(
+            meta_config.learner.optimizer,
+            meta_interface,
+            env,
+            hyperparameters,
+            meta_config.meta_opt.track_influence_in,
         )
 
-        env = meta_learner.put_logs(env, logs)
+        # 3. use it for learning states
+        k3, prng = jax.random.split(prng, 2)
+
+        # I need to compose the reset_validation with the factory accum!
+        env = create_learner_states(
+            factory,
+            meta_config.learner.optimizer_learner.method,
+            meta_learner,
+            readout_graph,
+            nodes,
+            meta_interface,
+            meta_config.meta_opt.track_influence_in,
+            env,
+            k3,
+        )
+
+        # 5. Create the logs
+        # logs = Logs(
+        #     gradient=jnp.zeros_like(meta_learner.get_param(env)) if meta_config.track_logs.gradient else None,
+        #     hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
+        #     largest_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_eigenvalue else None,
+        #     influence_tensor=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0]))
+        #     if meta_config.track_logs.influence_tensor
+        #     else None,
+        #     immediate_influence_tensor=jnp.zeros(
+        #         (meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0])
+        #     )
+        #     if meta_config.track_logs.immediate_influence_tensor
+        #     else None,
+        #     largest_jac_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_jac_eigenvalue else None,
+        #     jacobian=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_state(env).shape[0]))
+        #     if meta_config.track_logs.jacobian
+        #     else None,
+        # )
+
+        # env = meta_learner.put_logs(env, logs)
 
         return env
 
@@ -564,7 +588,8 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
             [
                 LevelMeta(
                     tick=jnp.array(0),
-                    log=State(value=Logs(), is_stateful=frozenset()),
+                    # log=State(value=Logs(), is_stateful=frozenset()),
+                    log=None,
                     prngs=pmap({}),
                 )
                 for _ in range(len(config.levels) + 1)
@@ -585,7 +610,6 @@ def create_env(
 ) -> GodState:
     is_inits = [True] * len(config.levels)
     create_inference_params = [True] + [False] * (len(config.levels) - 1)
-    is_state_onlys = [False] * len(config.levels)
 
     k1, k2, prng = jax.random.split(prng, 3)
     env = create_empty_env(config, k1)
@@ -595,7 +619,6 @@ def create_env(
         meta_interfaces,
         learn_interfaces,
         is_inits,
-        is_state_onlys,
         create_inference_params,
     )
     return creator(env, k2)
@@ -607,7 +630,6 @@ def env_creator(
     meta_interfaces: list[dict[str, GodInterface[GodState]]],
     _learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
     is_inits: list[bool],
-    is_state_onlys: list[bool],
     create_inference_params: list[bool],
 ) -> Callable[[GodState, PRNG], GodState]:
 
@@ -623,15 +645,24 @@ def env_creator(
         learn_interface: tuple[GodInterface[GodState], GodInterface[GodState]],
         meta_config: MetaConfig,
         create_inference_param: bool,
-        is_state_only: bool,
         is_init: bool,
     ) -> GodState:
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+        val_interface, nest_interface = learn_interface
 
-        generator = generate_states(
-            factory,
+        generator = reset_states(
+            reset_validation(
+                accum,
+                meta_interface,
+                val_interface,
+                meta_config,
+                config.nodes,
+                config.readout_graph,
+                node_features,
+                is_init,
+            ),
             meta_interface,
-            learn_interface,
+            nest_interface,
             meta_config,
             config.hyperparameters,
             config.nodes,
@@ -639,15 +670,14 @@ def env_creator(
             config.readout_graph,
             node_features,
             create_inference_param,
-            is_state_only,
-            is_init,
         )
-        generatored = vmap_factory(generator, [meta_config.meta_opt.batch])
-        return generatored
+        return generator
+        # generatored = vmap_factory(generator, [meta_config.meta_opt.batch])
+        # return generatored
 
     creator = functools.reduce(
         lambda acc, args: fold(acc, *args),
-        zip(shapes, meta_interfaces, learn_interface, config.levels, create_inference_params, is_state_onlys, is_inits),
+        zip(shapes, meta_interfaces, learn_interface, config.levels, create_inference_params, is_inits),
         factory,
     )
 

@@ -28,6 +28,7 @@ class MetaOptimizationConfig:
     batch: int  # num optimizers that run in parallel
     num_steps: int
     reset_t: int | None  # if not None, then reset the environment every reset_t steps. if None, then never reset
+    track_influence_in: frozenset[int]  # which levels to track influence for
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class ValidationConfig:
     is_test: bool  # whether this split is test or train. if test then it will source from standardized test set
     task_batch_size: int
     reset_t: int | None
+    track_influence_in: frozenset[int]  # which levels to track influence for
 
 
 @dataclass(frozen=True)
@@ -383,7 +385,6 @@ class MetaConfig:
     meta_opt: MetaOptimizationConfig  # number of simultaneous tasks at same level
     learner: LearnConfig
     test_seed: int
-    track_influence_in: frozenset[int]  # which levels to track influence for
     track_logs: TrackLogs
 
 

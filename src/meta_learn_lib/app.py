@@ -171,6 +171,7 @@ def runApp(config: GodConfig) -> None:
                     is_test=False,
                     task_batch_size=2,
                     reset_t=1,
+                    track_influence_in=frozenset({0}),
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -180,7 +181,9 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1, reset_t=None),
+                meta_opt=MetaOptimizationConfig(
+                    batch=1, num_steps=1, reset_t=None, track_influence_in=frozenset({0, 1})
+                ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -203,7 +206,6 @@ def runApp(config: GodConfig) -> None:
                         ),
                     },
                 ),
-                track_influence_in=frozenset({0}),
                 track_logs=TrackLogs(
                     gradient=False,
                     hessian_contains_nans=False,
@@ -224,6 +226,7 @@ def runApp(config: GodConfig) -> None:
                     is_test=False,
                     task_batch_size=1,
                     reset_t=1,
+                    track_influence_in=frozenset({1}),
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -233,7 +236,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=2, reset_t=None),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=2, reset_t=None, track_influence_in=frozenset({1})),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -260,7 +263,6 @@ def runApp(config: GodConfig) -> None:
                         ),
                     },
                 ),
-                track_influence_in=frozenset({1}),
                 track_logs=TrackLogs(
                     gradient=False,
                     hessian_contains_nans=False,
@@ -281,6 +283,7 @@ def runApp(config: GodConfig) -> None:
                     is_test=True,
                     task_batch_size=1,
                     reset_t=None,
+                    track_influence_in=frozenset({2}),
                 ),
                 dataset_source=MNISTTaskFamily(
                     patch_h=1,
@@ -290,7 +293,7 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1, reset_t=None),
+                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1, reset_t=None, track_influence_in=frozenset({2})),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=IdentityLearnerConfig(),
@@ -304,7 +307,6 @@ def runApp(config: GodConfig) -> None:
                     ),
                     optimizer={},
                 ),
-                track_influence_in=frozenset(),
                 track_logs=TrackLogs(
                     gradient=False,
                     hessian_contains_nans=False,

@@ -3,9 +3,7 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from itertools import islice
 from pyrsistent import pmap
-from pyrsistent.typing import PMap
 from graphlib import TopologicalSorter
 import functools
 from pyrsistent import pmap, pvector
@@ -407,9 +405,6 @@ def vmap_factory[ENV](
         new_axes = create_axes(factory(env, k1))
         axes = diff_axes(old_axes, new_axes)
         batched_keys = jax.random.split(k2, math.prod(batch)).reshape(*batch)
-        test = factory(env, k1)
-        eqx.tree_pprint(test.serialize())
-        print("AXES:", jax.tree_util.tree_leaves(axes))
         b_fn = functools.reduce(
             lambda f, _: eqx.filter_vmap(f, in_axes=(None, 0), out_axes=axes),
             batch,
@@ -445,7 +440,7 @@ def reset_validation[ENV](
         # env = vmap_factory(f1, batch_size)(env, k1)
         env = f1(env, k1)
 
-        # 3. use it for learning states
+        # 2. use it for learning states
         k1, k2, prng = jax.random.split(prng, 3)
 
         env = create_learner_states(
@@ -504,7 +499,6 @@ def reset_states[ENV](
         # 3. use it for learning states
         k3, prng = jax.random.split(prng, 2)
 
-        # I need to compose the reset_validation with the factory accum!
         env = create_learner_states(
             factory,
             meta_config.learner.optimizer_learner.method,
@@ -517,26 +511,26 @@ def reset_states[ENV](
             k3,
         )
 
-        # 5. Create the logs
-        # logs = Logs(
-        #     gradient=jnp.zeros_like(meta_learner.get_param(env)) if meta_config.track_logs.gradient else None,
-        #     hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
-        #     largest_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_eigenvalue else None,
-        #     influence_tensor=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0]))
-        #     if meta_config.track_logs.influence_tensor
-        #     else None,
-        #     immediate_influence_tensor=jnp.zeros(
-        #         (meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0])
-        #     )
-        #     if meta_config.track_logs.immediate_influence_tensor
-        #     else None,
-        #     largest_jac_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_jac_eigenvalue else None,
-        #     jacobian=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_state(env).shape[0]))
-        #     if meta_config.track_logs.jacobian
-        #     else None,
-        # )
+        # 4. Create the logs
+        logs = Logs(
+            gradient=jnp.zeros_like(meta_learner.get_param(env)) if meta_config.track_logs.gradient else None,
+            hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
+            largest_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_eigenvalue else None,
+            influence_tensor=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0]))
+            if meta_config.track_logs.influence_tensor
+            else None,
+            immediate_influence_tensor=jnp.zeros(
+                (meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0])
+            )
+            if meta_config.track_logs.immediate_influence_tensor
+            else None,
+            largest_jac_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_jac_eigenvalue else None,
+            jacobian=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_state(env).shape[0]))
+            if meta_config.track_logs.jacobian
+            else None,
+        )
 
-        # env = meta_learner.put_logs(env, logs)
+        env = meta_learner.put_logs(env, logs)
 
         return env
 
@@ -588,8 +582,7 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
             [
                 LevelMeta(
                     tick=jnp.array(0),
-                    # log=State(value=Logs(), is_stateful=frozenset()),
-                    log=None,
+                    log=State(value=Logs(), is_stateful=frozenset()),
                     prngs=pmap({}),
                 )
                 for _ in range(len(config.levels) + 1)

@@ -513,6 +513,7 @@ def create_learn_interfaces(
             param_lens1 = make_lens(slice(0, 1), slice(0, level), slice(0, level))
             param_lens2 = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
 
+            # want to take wrt to both state + param bc transition outputs state wrt to param and Identity can be appended to this to get total deriv
             def get_param(env: GodState) -> jax.Array:
                 return to_vector((param_lens1.get(env), param_lens2.get(env))).vector
 

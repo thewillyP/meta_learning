@@ -446,7 +446,7 @@ def reset_validation[ENV](
             factory,
             meta_config.learner.model_learner.method,
             vl_learner,
-            meta_config.dataset_validation.track_influence_in,
+            frozenset(),  # bc validation states never reincorporated back into transition, only readout
             env,
             k2,
         )

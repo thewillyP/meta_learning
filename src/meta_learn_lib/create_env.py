@@ -372,7 +372,9 @@ def create_learner_states[ENV](
 
             def zero_readout(x):
                 if isinstance(x, Parameter) and not x.parametrizes_transition:
-                    return jax.tree.map(lambda v: jnp.zeros_like(v), x)
+                    arrays, non_arrays = eqx.partition(x, eqx.is_inexact_array)
+                    zeroed = jax.tree.map(lambda v: jnp.zeros_like(v), arrays)
+                    return eqx.combine(zeroed, non_arrays)
                 return x
 
             b_env = jax.tree.map(zero_readout, b_env, is_leaf=lambda x: isinstance(x, Parameter))
@@ -613,15 +615,12 @@ def env_creator(
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
     meta_interfaces: list[dict[str, GodInterface[GodState]]],
-    _learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
+    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
     is_inits: list[bool],
     create_inference_params: list[bool],
 ) -> Callable[[GodState, PRNG], GodState]:
 
     factory = lambda e, k: e
-
-    learn_interface = _learn_interfaces[:]
-    learn_interface[0] = (_learn_interfaces[0][1], _learn_interfaces[0][1])
 
     def fold(
         accum: Callable[[GodState, PRNG], GodState],
@@ -661,7 +660,7 @@ def env_creator(
 
     creator = functools.reduce(
         lambda acc, args: fold(acc, *args),
-        zip(shapes, meta_interfaces, learn_interface, config.levels, create_inference_params, is_inits),
+        zip(shapes, meta_interfaces, learn_interfaces, config.levels, create_inference_params, is_inits),
         factory,
     )
 

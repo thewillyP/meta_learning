@@ -191,12 +191,14 @@ def create_inference_parameters[ENV](
                     is_learnable=is_learnable,
                     min_value=-math.inf,
                     max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
                 )
                 b_rec: jax.Array = Parameter(
                     value=jnp.zeros((nn_layer.n,)),
                     is_learnable=nn_layer.use_bias,
                     min_value=-math.inf,
                     max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
                 )
 
                 match nn_layer.layer_norm:
@@ -206,6 +208,7 @@ def create_inference_parameters[ENV](
                             is_learnable=is_learnable,
                             min_value=-math.inf,
                             max_value=math.inf,
+                            parametrizes_transition=node_name not in readout_graph,
                         )
                     case None:
                         layer = Parameter(
@@ -213,6 +216,7 @@ def create_inference_parameters[ENV](
                             is_learnable=False,
                             min_value=-math.inf,
                             max_value=math.inf,
+                            parametrizes_transition=node_name not in readout_graph,
                         )
 
                 rnn_param = RNN(w_rec=w_rec, b_rec=b_rec, layer_norm=layer)
@@ -227,6 +231,7 @@ def create_inference_parameters[ENV](
                     is_learnable=is_learnable,
                     min_value=-math.inf,
                     max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
                 )
                 env = interface.put_gru_param(env, gru)
                 env = interface.put_prng(env, k2)
@@ -240,6 +245,7 @@ def create_inference_parameters[ENV](
                     is_learnable=is_learnable,
                     min_value=-math.inf,
                     max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
                 )
                 env = interface.put_lstm_param(env, lstm)
                 env = interface.put_prng(env, k2)
@@ -328,9 +334,6 @@ def create_learner_states[ENV](
     factory: Callable[[ENV, PRNG], ENV],
     method: GradientMethod,
     interface: GodInterface[ENV],
-    readout_graph: dict[str, list[str]],
-    nodes: dict[str, Node],
-    meta_interface: dict[str, GodInterface[ENV]],
     track_influence_in: frozenset[int],
     env: ENV,
     prng: PRNG,
@@ -416,7 +419,6 @@ def reset_validation[ENV](
     vl_learner: GodInterface[ENV],
     meta_config: MetaConfig,
     nodes: dict[str, Node],
-    readout_graph: dict[str, list[str]],
     node_features: dict[str, tuple[int, ...]],
     is_init: bool,  # if need to reset things like RL ENV
 ) -> Callable[[ENV, PRNG], ENV]:
@@ -442,9 +444,6 @@ def reset_validation[ENV](
             factory,
             meta_config.learner.model_learner.method,
             vl_learner,
-            readout_graph,
-            nodes,
-            meta_interface,
             meta_config.dataset_validation.track_influence_in,
             env,
             k2,
@@ -469,14 +468,15 @@ def reset_states[ENV](
 ) -> Callable[[ENV, PRNG], ENV]:
 
     learnables: frozenset[str] = frozenset().union(*[v.target for v in meta_config.learner.optimizer.values()])
-    node_graph = transition_graph | readout_graph
 
     def create_env(env: ENV, prng: PRNG) -> ENV:
 
         # 1. Create parameters
         if create_inference_param:
             k1, prng = jax.random.split(prng, 2)
-            env = create_inference_parameters(nodes, node_graph, meta_interface, node_features, learnables, env, k1)
+            env = create_inference_parameters(
+                nodes, transition_graph, readout_graph, meta_interface, node_features, learnables, env, k1
+            )
 
         # 2. Create hyperparameters
         k2, prng = jax.random.split(prng, 2)
@@ -498,9 +498,6 @@ def reset_states[ENV](
             factory,
             meta_config.learner.optimizer_learner.method,
             meta_learner,
-            readout_graph,
-            nodes,
-            meta_interface,
             meta_config.meta_opt.track_influence_in,
             env,
             k3,
@@ -645,7 +642,6 @@ def env_creator(
                 val_interface,
                 meta_config,
                 config.nodes,
-                config.readout_graph,
                 node_features,
                 is_init,
             ),

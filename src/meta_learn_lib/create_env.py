@@ -134,13 +134,16 @@ def create_inference_state[ENV](
 
 def create_inference_parameters[ENV](
     nodes: dict[str, Node],
-    node_graph: dict[str, list[str]],
+    transition_graph: dict[str, list[str]],
+    readout_graph: dict[str, list[str]],
     meta_interface: dict[str, GodInterface[ENV]],
     node_features: dict[str, tuple[int, ...]],
     learnables: frozenset[str],
     env: ENV,
     prng: PRNG,
 ) -> ENV:
+
+    node_graph = transition_graph | readout_graph
 
     for node_name, node in nodes.items():
         interface = meta_interface[node_name]
@@ -171,6 +174,7 @@ def create_inference_parameters[ENV](
                             is_learnable=is_learnable,
                             min_value=-math.inf,
                             max_value=math.inf,
+                            parametrizes_transition=node_name not in readout_graph,
                         )
                     ),
                 )
@@ -268,6 +272,7 @@ def create_hyperparameters[ENV](
                         is_learnable=is_learnable,
                         min_value=hp_config.min_value,
                         max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
                     )
                     env = interface.put_learning_rate(env, lrs)
                     env = interface.put_prng(env, k1)
@@ -278,6 +283,7 @@ def create_hyperparameters[ENV](
                         is_learnable=is_learnable,
                         min_value=hp_config.min_value,
                         max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
                     )
                     env = interface.put_weight_decay(env, wds)
                     env = interface.put_prng(env, k1)
@@ -288,6 +294,7 @@ def create_hyperparameters[ENV](
                         is_learnable=is_learnable,
                         min_value=hp_config.min_value,
                         max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
                     )
                     env = interface.put_momentum(env, ms)
                     env = interface.put_prng(env, k1)
@@ -298,6 +305,7 @@ def create_hyperparameters[ENV](
                         is_learnable=is_learnable,
                         min_value=hp_config.min_value,
                         max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
                     )
                     env = interface.put_time_constant(env, tcs)
                     env = interface.put_prng(env, k1)
@@ -308,6 +316,7 @@ def create_hyperparameters[ENV](
                         is_learnable=is_learnable,
                         min_value=hp_config.min_value,
                         max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
                     )
                     env = interface.put_kl_regularizer_beta(env, kl_betas)
                     env = interface.put_prng(env, k1)
@@ -355,29 +364,15 @@ def create_learner_states[ENV](
             # A: random init, shape = (|h|,)
             a = jax.random.normal(k1, state.shape)
 
-            # B: start fully random, then zero out readout node params
+            # B: start fully random, then zero out nonrecurrent params
             b_env = interface.put_param(env, jax.random.normal(k2, param.shape))
 
-            for node_name in readout_graph.keys():
-                node = nodes[node_name]
-                node_interface = meta_interface[node_name]
-                match node:
-                    case NNLayer():
-                        mlp = node_interface.get_mlp_param(b_env)
-                        zeroed = jax.tree.map(lambda x: jnp.zeros_like(x) if eqx.is_array(x) else x, mlp)
-                        b_env = node_interface.put_mlp_param(b_env, zeroed)
-                    case VanillaRNNLayer():
-                        rnn = node_interface.get_vanilla_rnn_param(b_env)
-                        zeroed = jax.tree.map(lambda x: jnp.zeros_like(x) if eqx.is_array(x) else x, rnn)
-                        b_env = node_interface.put_vanilla_rnn_param(b_env, zeroed)
-                    case GRULayer():
-                        gru = node_interface.get_gru_param(b_env)
-                        zeroed = jax.tree.map(lambda x: jnp.zeros_like(x) if eqx.is_array(x) else x, gru)
-                        b_env = node_interface.put_gru_param(b_env, zeroed)
-                    case LSTMLayer():
-                        lstm = node_interface.get_lstm_param(b_env)
-                        zeroed = jax.tree.map(lambda x: jnp.zeros_like(x) if eqx.is_array(x) else x, lstm)
-                        b_env = node_interface.put_lstm_param(b_env, zeroed)
+            def zero_readout(x):
+                if isinstance(x, Parameter) and not x.parametrizes_transition:
+                    return jax.tree.map(lambda v: jnp.zeros_like(v), x)
+                return x
+
+            b_env = jax.tree.map(zero_readout, b_env, is_leaf=lambda x: isinstance(x, Parameter))
 
             b = interface.get_param(b_env)
 

@@ -21,6 +21,7 @@ class Parameter[T](PClass):
     is_learnable: bool = field()
     min_value: float = field()
     max_value: float = field()
+    parametrizes_transition: bool = field()
 
 
 class State[T](PClass):

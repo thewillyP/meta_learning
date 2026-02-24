@@ -123,6 +123,7 @@ class HyperparameterConfig:
     min_value: float  # used for mandatory gradient projection
     max_value: float  # used for mandatory gradient projection
     level: int  # which meta level this hyperparameter belongs to. used for tracking how to optimize
+    parametrizes_transition: bool  # whether this hp influences transitional dynamics vs readout
 
 
 type HP = str

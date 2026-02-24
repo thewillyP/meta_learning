@@ -96,6 +96,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=1.0,
                 level=1,
+                parametrizes_transition=True,
             ),
             "meta1_rnn2_time_constant": HyperparameterConfig(
                 value=1.0,
@@ -105,6 +106,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=1.0,
                 level=1,
+                parametrizes_transition=True,
             ),
             "meta1_sgd1.lr": HyperparameterConfig(
                 value=0.001,
@@ -114,6 +116,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=jnp.inf,
                 level=1,
+                parametrizes_transition=True,
             ),
             "meta1_sgd1.wd": HyperparameterConfig(
                 value=0.00001,
@@ -123,6 +126,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=jnp.inf,
                 level=1,
+                parametrizes_transition=True,
             ),
             "meta1_sgd1.momentum": HyperparameterConfig(
                 value=0.0,
@@ -132,6 +136,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=1.0,
                 level=1,
+                parametrizes_transition=True,
             ),
             "meta2_adam1.lr": HyperparameterConfig(
                 value=0.001,
@@ -141,6 +146,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=jnp.inf,
                 level=2,
+                parametrizes_transition=True,
             ),
             "meta2_adam1.wd": HyperparameterConfig(
                 value=0.0,
@@ -150,6 +156,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=jnp.inf,
                 level=2,
+                parametrizes_transition=True,
             ),
             "meta2_adam1.momentum": HyperparameterConfig(
                 value=0.9,
@@ -159,6 +166,7 @@ def runApp(config: GodConfig) -> None:
                 min_value=0.0,
                 max_value=1.0,
                 level=2,
+                parametrizes_transition=True,
             ),
         },
         levels=[

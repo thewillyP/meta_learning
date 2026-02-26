@@ -10,7 +10,7 @@ from pyrsistent import pmap, pvector
 
 
 from meta_learn_lib.config import *
-from meta_learn_lib.create_axes import create_axes, diff_axes
+from meta_learn_lib.create_axes import create_axes, diff_axes, diff_axes_new
 from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
@@ -397,20 +397,138 @@ def create_learner_states[ENV](
 
 def vmap_factory[ENV](
     factory: Callable[[ENV, PRNG], ENV],
-    batch: list[int],
+    batches: list[int],
 ) -> Callable[[ENV, PRNG], ENV]:
     def vmap_env(env: ENV, prng: PRNG) -> ENV:
         k1, k2, prng = jax.random.split(prng, 3)
-        old_axes = create_axes(env)
-        new_axes = create_axes(factory(env, k1))
-        axes = diff_axes(old_axes, new_axes)
-        batched_keys = jax.random.split(k2, math.prod(batch)).reshape(*batch)
+        new_env = factory(env, k1)
+
+        axes = diff_axes(env, new_env)
+        _, static = eqx.partition(new_env, eqx.is_array)
+
+        def f_init(e, k):
+            e = factory(e, k)
+            arr, _ = eqx.partition(e, eqx.is_array)
+            return arr
+
+        batched_keys = jax.random.split(k2, math.prod(batches)).reshape(*batches)
         b_fn = functools.reduce(
             lambda f, _: eqx.filter_vmap(f, in_axes=(None, 0), out_axes=axes),
-            batch,
-            lambda e, k: factory(e, k),
+            batches,
+            f_init,
         )
-        return b_fn(env, batched_keys)
+        arr = b_fn(env, batched_keys)
+        return eqx.combine(arr, static)
+
+    return vmap_env
+
+
+from pyrsistent import PVector
+from pyrsistent import PMap as PMapType
+
+_FIELDS = {
+    "GodState": ["learning_states", "level_meta", "meta_parameters", "model_states", "prng"],
+    "LearningStates": ["influence_tensors", "opt_states", "uoros"],
+    "LevelMeta": ["log", "prngs", "tick"],
+    "Parameters": [
+        "grus",
+        "kl_regularizer_betas",
+        "learning_rates",
+        "lstms",
+        "mlps",
+        "momentums",
+        "rnns",
+        "time_constants",
+        "weight_decays",
+    ],
+    "ModelStates": ["autoregressive_predictions", "lstm_states", "recurrent_states", "vanilla_recurrent_states"],
+    "VanillaRecurrentState": ["activation"],
+    "RNN": ["b_rec", "layer_norm", "w_rec"],
+    "MLP": ["model"],
+}
+
+
+def debug_diff_axes(old_env, new_env):
+    is_leaf = lambda x: isinstance(x, (Parameter, State))
+    old_leaves = {id(leaf) for leaf in jax.tree.leaves(old_env, is_leaf=is_leaf)}
+
+    def _walk(prefix, node):
+        cls_name = type(node).__name__
+
+        if isinstance(node, (Parameter, State, jax.Array)) or cls_name == "PRNGKeyArray":
+            same = id(node) in old_leaves
+            shape = node.shape if hasattr(node, "shape") else "?"
+            print(f"{'SAME' if same else 'DIFF'} | {prefix} | {cls_name} | shape={shape}")
+            return
+
+        if cls_name in _FIELDS:
+            for field in _FIELDS[cls_name]:
+                _walk(f"{prefix}.{field}", getattr(node, field))
+            return
+
+        if isinstance(node, PMapType):
+            for k in sorted(node.keys()):
+                _walk(f"{prefix}[{k}]", node[k])
+            return
+
+        if isinstance(node, PVector):
+            for i, child in enumerate(node):
+                _walk(f"{prefix}[{i}]", child)
+            return
+
+        if hasattr(node, "__dict__") and len(vars(node)) > 0:
+            for k, v in vars(node).items():
+                _walk(f"{prefix}.{k}", v)
+            return
+
+        if isinstance(node, (list, tuple)):
+            for i, child in enumerate(node):
+                _walk(f"{prefix}[{i}]", child)
+            return
+
+        same = id(node) in old_leaves
+        shape = node.shape if hasattr(node, "shape") else "?"
+        print(f"{'SAME' if same else 'DIFF'} | {prefix} | {cls_name} | shape={shape}")
+
+    _walk("env", new_env)
+
+
+def vmap_factory2[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    batches: list[int],
+) -> Callable[[ENV, PRNG], ENV]:
+    def vmap_env(env: ENV, prng: PRNG) -> ENV:
+        k1, k2, prng = jax.random.split(prng, 3)
+        print(f"BEFORE: meta_parameters[1] id = {id(env.meta_parameters[1])}")
+        new_env = factory(env, k1)
+        print(f"AFTER old: meta_parameters[1] id = {id(env.meta_parameters[1])}")
+        print(f"AFTER new: meta_parameters[1] id = {id(new_env.meta_parameters[1])}")
+
+        # DEBUG: check if level 1 hyperparameters preserve identity
+        is_leaf = lambda x: isinstance(x, Parameter)
+        old_params = jax.tree.leaves(env.meta_parameters[1], is_leaf=is_leaf)
+        new_params = jax.tree.leaves(new_env.meta_parameters[1], is_leaf=is_leaf)
+        print(f"level 1 hp count: old={len(old_params)} new={len(new_params)}")
+        for i, (o, n) in enumerate(zip(old_params, new_params)):
+            print(f"  param {i}: same_id={id(o) == id(n)}")
+
+        # debug_diff_axes(env, new_env)
+        axes = diff_axes_new(env, new_env)
+        _, static = eqx.partition(new_env, eqx.is_array)
+
+        def f_init(e, k):
+            e = factory(e, k)
+            arr, _ = eqx.partition(e, eqx.is_array)
+            return arr
+
+        batched_keys = jax.random.split(k2, math.prod(batches)).reshape(*batches)
+        b_fn = functools.reduce(
+            lambda f, _: eqx.filter_vmap(f, in_axes=(None, 0), out_axes=axes),
+            batches,
+            f_init,
+        )
+        arr = b_fn(env, batched_keys)
+        return eqx.combine(arr, static)
 
     return vmap_env
 
@@ -436,8 +554,7 @@ def reset_validation[ENV](
             meta_config.dataset_validation.task_batch_size,
             meta_config.dataset_validation.num_examples_in_minibatch,
         ]
-        # env = vmap_factory(f1, batch_size)(env, k1)
-        env = f1(env, k1)
+        env = vmap_factory(f1, batch_size)(env, k1)
 
         # 2. use it for learning states
         k1, k2, prng = jax.random.split(prng, 3)
@@ -654,9 +771,7 @@ def env_creator(
             node_features,
             create_inference_param,
         )
-        return generator
-        # generatored = vmap_factory(generator, [meta_config.meta_opt.batch])
-        # return generatored
+        return vmap_factory2(generator, [meta_config.meta_opt.batch])
 
     creator = functools.reduce(
         lambda acc, args: fold(acc, *args),

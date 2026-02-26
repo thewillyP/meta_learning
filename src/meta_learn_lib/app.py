@@ -138,36 +138,36 @@ def runApp(config: GodConfig) -> None:
                 level=1,
                 parametrizes_transition=True,
             ),
-            "meta2_adam1.lr": HyperparameterConfig(
-                value=0.001,
-                kind="learning_rate",
-                count=1,
-                hyperparameter_parametrization=HyperparameterConfig.identity(),
-                min_value=0.0,
-                max_value=jnp.inf,
-                level=2,
-                parametrizes_transition=True,
-            ),
-            "meta2_adam1.wd": HyperparameterConfig(
-                value=0.0,
-                kind="weight_decay",
-                count=1,
-                hyperparameter_parametrization=HyperparameterConfig.identity(),
-                min_value=0.0,
-                max_value=jnp.inf,
-                level=2,
-                parametrizes_transition=True,
-            ),
-            "meta2_adam1.momentum": HyperparameterConfig(
-                value=0.9,
-                kind="momentum",
-                count=1,
-                hyperparameter_parametrization=HyperparameterConfig.identity(),
-                min_value=0.0,
-                max_value=1.0,
-                level=2,
-                parametrizes_transition=True,
-            ),
+            # "meta2_adam1.lr": HyperparameterConfig(
+            #     value=0.001,
+            #     kind="learning_rate",
+            #     count=1,
+            #     hyperparameter_parametrization=HyperparameterConfig.identity(),
+            #     min_value=0.0,
+            #     max_value=jnp.inf,
+            #     level=2,
+            #     parametrizes_transition=True,
+            # ),
+            # "meta2_adam1.wd": HyperparameterConfig(
+            #     value=0.0,
+            #     kind="weight_decay",
+            #     count=1,
+            #     hyperparameter_parametrization=HyperparameterConfig.identity(),
+            #     min_value=0.0,
+            #     max_value=jnp.inf,
+            #     level=2,
+            #     parametrizes_transition=True,
+            # ),
+            # "meta2_adam1.momentum": HyperparameterConfig(
+            #     value=0.9,
+            #     kind="momentum",
+            #     count=1,
+            #     hyperparameter_parametrization=HyperparameterConfig.identity(),
+            #     min_value=0.0,
+            #     max_value=1.0,
+            #     level=2,
+            #     parametrizes_transition=True,
+            # ),
         },
         levels=[
             MetaConfig(
@@ -190,7 +190,10 @@ def runApp(config: GodConfig) -> None:
                     normalize=True,
                 ),
                 meta_opt=MetaOptimizationConfig(
-                    batch=1, num_steps=1, reset_t=None, track_influence_in=frozenset({0, 1})
+                    batch=2,
+                    num_steps=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({0, 1}),
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
@@ -225,63 +228,63 @@ def runApp(config: GodConfig) -> None:
                 ),
                 test_seed=0,
             ),
-            MetaConfig(
-                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
-                dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=100,
-                    num_steps_in_timeseries=28,
-                    num_examples_total=500,
-                    is_test=False,
-                    task_batch_size=1,
-                    reset_t=1,
-                    track_influence_in=frozenset({1}),
-                ),
-                dataset_source=MNISTTaskFamily(
-                    patch_h=1,
-                    patch_w=28,
-                    label_last_only=True,
-                    add_spurious_pixel_to_train=False,
-                    domain=frozenset({"mnist"}),
-                    normalize=True,
-                ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=2, reset_t=None, track_influence_in=frozenset({1})),
-                learner=LearnConfig(
-                    model_learner=GradientConfig(
-                        method=BPTTConfig(),
-                        add_clip=HardClip(1.0),
-                        scale=1.0,
-                    ),
-                    optimizer_learner=GradientConfig(
-                        method=RTRLConfig(
-                            start_at_step=0,
-                            hessian_damping=0.1,
-                            use_reverse_mode=False,
-                        ),
-                        add_clip=None,
-                        scale=1.0,
-                    ),
-                    optimizer={
-                        "meta2_adam1": OptimizerAssignment(
-                            target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
-                            optimizer=AdamConfig(
-                                learning_rate="meta2_adam1.lr",
-                                weight_decay="meta2_adam1.wd",
-                                momentum="meta2_adam1.momentum",
-                            ),
-                        ),
-                    },
-                ),
-                track_logs=TrackLogs(
-                    gradient=False,
-                    hessian_contains_nans=False,
-                    largest_eigenvalue=False,
-                    influence_tensor=False,
-                    immediate_influence_tensor=False,
-                    largest_jac_eigenvalue=False,
-                    jacobian=False,
-                ),
-                test_seed=0,
-            ),
+            # MetaConfig(
+            #     objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            #     dataset_validation=ValidationConfig(
+            #         num_examples_in_minibatch=100,
+            #         num_steps_in_timeseries=28,
+            #         num_examples_total=500,
+            #         is_test=False,
+            #         task_batch_size=2,
+            #         reset_t=1,
+            #         track_influence_in=frozenset({1}),
+            #     ),
+            #     dataset_source=MNISTTaskFamily(
+            #         patch_h=1,
+            #         patch_w=28,
+            #         label_last_only=True,
+            #         add_spurious_pixel_to_train=False,
+            #         domain=frozenset({"mnist"}),
+            #         normalize=True,
+            #     ),
+            #     meta_opt=MetaOptimizationConfig(batch=1, num_steps=2, reset_t=None, track_influence_in=frozenset({1})),
+            #     learner=LearnConfig(
+            #         model_learner=GradientConfig(
+            #             method=BPTTConfig(),
+            #             add_clip=HardClip(1.0),
+            #             scale=1.0,
+            #         ),
+            #         optimizer_learner=GradientConfig(
+            #             method=RTRLConfig(
+            #                 start_at_step=0,
+            #                 hessian_damping=0.1,
+            #                 use_reverse_mode=False,
+            #             ),
+            #             add_clip=None,
+            #             scale=1.0,
+            #         ),
+            #         optimizer={
+            #             "meta2_adam1": OptimizerAssignment(
+            #                 target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
+            #                 optimizer=AdamConfig(
+            #                     learning_rate="meta2_adam1.lr",
+            #                     weight_decay="meta2_adam1.wd",
+            #                     momentum="meta2_adam1.momentum",
+            #                 ),
+            #             ),
+            #         },
+            #     ),
+            #     track_logs=TrackLogs(
+            #         gradient=False,
+            #         hessian_contains_nans=False,
+            #         largest_eigenvalue=False,
+            #         influence_tensor=False,
+            #         immediate_influence_tensor=False,
+            #         largest_jac_eigenvalue=False,
+            #         jacobian=False,
+            #     ),
+            #     test_seed=0,
+            # ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
@@ -301,7 +304,12 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1, reset_t=None, track_influence_in=frozenset({2})),
+                meta_opt=MetaOptimizationConfig(
+                    batch=1,
+                    num_steps=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({2}),
+                ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=IdentityLearnerConfig(),
@@ -361,13 +369,13 @@ def runApp(config: GodConfig) -> None:
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    for x in toolz.take(1, dataloader):
-        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
-        # print(tr_x, tr_y)
-        # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
-        print(tr_x.shape, tr_y.shape)
-        print(vl_x.shape, vl_y.shape)
-        print(te_x.shape, te_y.shape)
+    # for x in toolz.take(1, dataloader):
+    #     (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+    #     # print(tr_x, tr_y)
+    #     # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+    #     print(tr_x.shape, tr_y.shape)
+    #     print(vl_x.shape, vl_y.shape)
+    #     print(te_x.shape, te_y.shape)
 
     meta_interfaces, count = create_node_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)

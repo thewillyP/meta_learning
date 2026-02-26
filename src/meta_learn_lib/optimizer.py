@@ -8,6 +8,17 @@ from meta_learn_lib.interface import *
 from meta_learn_lib.util import Vector, hyperparameter_reparametrization, to_vector
 
 
+def project_parameters[ENV](env: ENV) -> ENV:
+    is_leaf = lambda x: x is None or isinstance(x, Parameter)
+
+    def clamp(x):
+        if isinstance(x, Parameter) and x.is_learnable:
+            return jax.tree.map(lambda v: jnp.clip(v, x.min_value, x.max_value), x)
+        return x
+
+    return jax.tree.map(clamp, env, is_leaf=is_leaf)
+
+
 def get_parameters[ENV](
     assignment: OptimizerAssignment,
     meta_interfaces: dict[str, GodInterface[ENV]],
@@ -217,6 +228,4 @@ def get_opt_step[ENV](
         env = interface.put_opt_state(env, interface.get_opt_state(env).set(value=new_opt_state))
         env = put_parameters(env, param_vec.to_param(new_params))
 
-    # forgot to project parameters to min and max values
-
-    return env
+    return project_parameters(env)

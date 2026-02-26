@@ -339,7 +339,7 @@ def create_learner_states[ENV](
     prng: PRNG,
 ) -> ENV:
     match method:
-        case RTRLConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig() | RFLOConfig():
+        case RTRLConfig() | RTRLFiniteHvpConfig() | RFLOConfig():
             k1, k2, prng = jax.random.split(prng, 3)
             new_env = factory(env, k1)
             param = interface.get_param(new_env)

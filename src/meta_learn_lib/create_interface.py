@@ -529,7 +529,7 @@ def create_learn_interfaces(
             param_lens = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
 
         match learner:
-            case RTRLConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
+            case RTRLConfig() | RTRLFiniteHvpConfig():
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),

@@ -197,12 +197,12 @@ def runApp(config: GodConfig) -> None:
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
-                        method=BPTTConfig(),
+                        method=BPTTConfig(None),
                         add_clip=None,
                         scale=1.0,
                     ),
                     optimizer_learner=GradientConfig(
-                        method=BPTTConfig(),
+                        method=BPTTConfig(None),
                         add_clip=HardClip(1.0),
                         scale=1.0,
                     ),
@@ -255,7 +255,7 @@ def runApp(config: GodConfig) -> None:
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
-                        method=BPTTConfig(),
+                        method=BPTTConfig(None),
                         add_clip=HardClip(1.0),
                         scale=1.0,
                     ),

@@ -186,28 +186,19 @@ class OptimizerAssignment:
 @dataclass(frozen=True)
 class RTRLConfig:
     start_at_step: int
-    hessian_damping: float
     use_reverse_mode: bool
-
-
-@dataclass(frozen=True)
-class RTRLHessianDecompConfig:
-    epsilon: float
-    start_at_step: int
-    hessian_damping: float
-    use_reverse_mode: bool
+    damping: float
 
 
 @dataclass(frozen=True)
 class RTRLFiniteHvpConfig:
     epsilon: float
-    start_at_step: int
-    hessian_damping: float
-    use_reverse_mode: bool
+    rtrl_config: RTRLConfig
 
 
 @dataclass(frozen=True)
-class BPTTConfig: ...
+class BPTTConfig:
+    truncate_at: int | None  # if None, then perform full bptt
 
 
 @dataclass(frozen=True)
@@ -227,7 +218,6 @@ class UOROConfig:
 
 type GradientMethod = Union[
     RTRLConfig,
-    RTRLHessianDecompConfig,
     RTRLFiniteHvpConfig,
     BPTTConfig,
     IdentityLearnerConfig,

@@ -10,7 +10,7 @@ from pyrsistent import pmap, pvector
 
 
 from meta_learn_lib.config import *
-from meta_learn_lib.create_axes import create_axes, diff_axes
+from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
@@ -372,7 +372,9 @@ def create_learner_states[ENV](
 
             def zero_readout(x):
                 if isinstance(x, Parameter) and not x.parametrizes_transition:
-                    return jax.tree.map(lambda v: jnp.zeros_like(v), x)
+                    arrays, non_arrays = eqx.partition(x, eqx.is_inexact_array)
+                    zeroed = jax.tree.map(lambda v: jnp.zeros_like(v), arrays)
+                    return eqx.combine(zeroed, non_arrays)
                 return x
 
             b_env = jax.tree.map(zero_readout, b_env, is_leaf=lambda x: isinstance(x, Parameter))
@@ -395,20 +397,27 @@ def create_learner_states[ENV](
 
 def vmap_factory[ENV](
     factory: Callable[[ENV, PRNG], ENV],
-    batch: list[int],
+    batches: list[int],
 ) -> Callable[[ENV, PRNG], ENV]:
     def vmap_env(env: ENV, prng: PRNG) -> ENV:
         k1, k2, prng = jax.random.split(prng, 3)
-        old_axes = create_axes(env)
-        new_axes = create_axes(factory(env, k1))
-        axes = diff_axes(old_axes, new_axes)
-        batched_keys = jax.random.split(k2, math.prod(batch)).reshape(*batch)
+        new_env = factory(env, k1)
+        axes = diff_axes(env, new_env)
+        _, static = eqx.partition(new_env, eqx.is_array)
+
+        def f_init(e, k):
+            e = factory(e, k)
+            arr, _ = eqx.partition(e, eqx.is_array)
+            return arr
+
+        batched_keys = jax.random.split(k2, math.prod(batches)).reshape(*batches)
         b_fn = functools.reduce(
             lambda f, _: eqx.filter_vmap(f, in_axes=(None, 0), out_axes=axes),
-            batch,
-            lambda e, k: factory(e, k),
+            batches,
+            f_init,
         )
-        return b_fn(env, batched_keys)
+        arr = b_fn(env, batched_keys)
+        return eqx.combine(arr, static)
 
     return vmap_env
 
@@ -434,8 +443,7 @@ def reset_validation[ENV](
             meta_config.dataset_validation.task_batch_size,
             meta_config.dataset_validation.num_examples_in_minibatch,
         ]
-        # env = vmap_factory(f1, batch_size)(env, k1)
-        env = f1(env, k1)
+        env = vmap_factory(f1, batch_size)(env, k1)
 
         # 2. use it for learning states
         k1, k2, prng = jax.random.split(prng, 3)
@@ -444,7 +452,7 @@ def reset_validation[ENV](
             factory,
             meta_config.learner.model_learner.method,
             vl_learner,
-            meta_config.dataset_validation.track_influence_in,
+            frozenset(),  # bc validation states never reincorporated back into transition, only readout
             env,
             k2,
         )
@@ -613,15 +621,12 @@ def env_creator(
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
     meta_interfaces: list[dict[str, GodInterface[GodState]]],
-    _learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
+    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
     is_inits: list[bool],
     create_inference_params: list[bool],
 ) -> Callable[[GodState, PRNG], GodState]:
 
     factory = lambda e, k: e
-
-    learn_interface = _learn_interfaces[:]
-    learn_interface[0] = (_learn_interfaces[0][1], _learn_interfaces[0][1])
 
     def fold(
         accum: Callable[[GodState, PRNG], GodState],
@@ -655,13 +660,11 @@ def env_creator(
             node_features,
             create_inference_param,
         )
-        return generator
-        # generatored = vmap_factory(generator, [meta_config.meta_opt.batch])
-        # return generatored
+        return vmap_factory(generator, [meta_config.meta_opt.batch])
 
     creator = functools.reduce(
         lambda acc, args: fold(acc, *args),
-        zip(shapes, meta_interfaces, learn_interface, config.levels, create_inference_params, is_inits),
+        zip(shapes, meta_interfaces, learn_interfaces, config.levels, create_inference_params, is_inits),
         factory,
     )
 

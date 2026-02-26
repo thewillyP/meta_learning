@@ -510,7 +510,20 @@ def create_learn_interfaces(
         # for level 0, the val learner should actually use the non val's learner
         if is_val:
             state_lens = make_lens(slice(level, level + 1), slice(level, level), slice(level, level))
-            param_lens = make_lens(slice(0, 1), slice(0, level), slice(0, level))
+            param_lens1 = make_lens(slice(0, 1), slice(0, level), slice(0, level))
+            param_lens2 = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
+
+            # want to take wrt to both state + param bc transition outputs state wrt to param and Identity can be appended to this to get total deriv
+            def get_param(env: GodState) -> jax.Array:
+                return to_vector((param_lens1.get(env), param_lens2.get(env))).vector
+
+            def put_param(env: GodState, vector: jax.Array) -> GodState:
+                new_param1, new_param2 = to_vector((param_lens1.get(env), param_lens2.get(env))).to_param(vector)
+                env = param_lens1.put(env, new_param1)
+                env = param_lens2.put(env, new_param2)
+                return env
+
+            param_lens = Lens(get=get_param, put=put_param)
         else:
             state_lens = make_lens(slice(0, 1), slice(0, level), slice(0, level))
             param_lens = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))

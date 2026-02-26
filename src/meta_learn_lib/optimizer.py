@@ -217,4 +217,6 @@ def get_opt_step[ENV](
         env = interface.put_opt_state(env, interface.get_opt_state(env).set(value=new_opt_state))
         env = put_parameters(env, param_vec.to_param(new_params))
 
+    # forgot to project parameters to min and max values
+
     return env

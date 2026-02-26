@@ -190,7 +190,10 @@ def runApp(config: GodConfig) -> None:
                     normalize=True,
                 ),
                 meta_opt=MetaOptimizationConfig(
-                    batch=1, num_steps=1, reset_t=None, track_influence_in=frozenset({0, 1})
+                    batch=2,
+                    num_steps=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({0, 1}),
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
@@ -232,7 +235,7 @@ def runApp(config: GodConfig) -> None:
                     num_steps_in_timeseries=28,
                     num_examples_total=500,
                     is_test=False,
-                    task_batch_size=1,
+                    task_batch_size=2,
                     reset_t=1,
                     track_influence_in=frozenset({1}),
                 ),
@@ -244,7 +247,12 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=2, reset_t=None, track_influence_in=frozenset({1})),
+                meta_opt=MetaOptimizationConfig(
+                    batch=1,
+                    num_steps=2,
+                    reset_t=None,
+                    track_influence_in=frozenset({1}),
+                ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(),
@@ -301,7 +309,12 @@ def runApp(config: GodConfig) -> None:
                     domain=frozenset({"mnist"}),
                     normalize=True,
                 ),
-                meta_opt=MetaOptimizationConfig(batch=1, num_steps=1, reset_t=None, track_influence_in=frozenset({2})),
+                meta_opt=MetaOptimizationConfig(
+                    batch=1,
+                    num_steps=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({2}),
+                ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=IdentityLearnerConfig(),
@@ -361,13 +374,13 @@ def runApp(config: GodConfig) -> None:
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    for x in toolz.take(1, dataloader):
-        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
-        # print(tr_x, tr_y)
-        # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
-        print(tr_x.shape, tr_y.shape)
-        print(vl_x.shape, vl_y.shape)
-        print(te_x.shape, te_y.shape)
+    # for x in toolz.take(1, dataloader):
+    #     (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+    #     # print(tr_x, tr_y)
+    #     # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+    #     print(tr_x.shape, tr_y.shape)
+    #     print(vl_x.shape, vl_y.shape)
+    #     print(te_x.shape, te_y.shape)
 
     meta_interfaces, count = create_node_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)

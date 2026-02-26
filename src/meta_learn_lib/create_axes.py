@@ -12,13 +12,26 @@ def create_axes[ENV](env: ENV) -> ENV:
     return jax.tree.map(to_axis, env, is_leaf=is_leaf)
 
 
-def diff_axes[ENV](old_env: ENV, new_env: ENV) -> ENV:
+def diff_axes(old_env, new_env):
     is_leaf = lambda x: isinstance(x, (Parameter, State))
-    old_paths = {p for p, _ in jax.tree_util.tree_leaves_with_path(old_env, is_leaf=is_leaf)}
 
-    def to_axis(path, x):
-        if not isinstance(x, (Parameter, State)):
-            return None
-        return None if path in old_paths else 0
+    # Collect ids of ALL leaves reachable from old_env
+    old_leaf_ids = set()
+    for leaf in jax.tree.leaves(old_env, is_leaf=is_leaf):
+        if isinstance(leaf, (Parameter, State)):
+            # Use ids of the *inner* arrays, not the dataclass wrapper,
+            # because pyrsistent may copy the wrapper but share arrays
+            for arr in jax.tree.leaves(leaf):
+                old_leaf_ids.add(id(arr))
 
-    return jax.tree_util.tree_map_with_path(to_axis, new_env, is_leaf=is_leaf)
+    def to_axis(x):
+        if isinstance(x, (Parameter, State)):
+            inner_arrays = jax.tree.leaves(x)
+            if not inner_arrays:
+                return None
+            # If ALL inner arrays existed before, this leaf is unchanged
+            all_old = all(id(a) in old_leaf_ids for a in inner_arrays)
+            return None if all_old else 0
+        return None
+
+    return jax.tree.map(to_axis, new_env, is_leaf=is_leaf)

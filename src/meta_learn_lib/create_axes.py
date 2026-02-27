@@ -12,7 +12,7 @@ def create_axes[ENV](env: ENV) -> ENV:
     return jax.tree.map(to_axis, env, is_leaf=is_leaf)
 
 
-def diff_axes(old_env, new_env):
+def diff_axes[ENV](old_env: ENV, new_env: ENV) -> ENV:
     is_leaf = lambda x: isinstance(x, (Parameter, State))
 
     # Collect ids of ALL leaves reachable from old_env
@@ -35,3 +35,8 @@ def diff_axes(old_env, new_env):
         return None
 
     return jax.tree.map(to_axis, new_env, is_leaf=is_leaf)
+
+
+def create_inference_axes(env: GodState, level: int) -> GodState:
+    axes = jax.tree.map(lambda _: None, env)
+    return axes.set(model_states=axes.model_states.set(level, 0))

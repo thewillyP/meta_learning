@@ -49,13 +49,13 @@ def runApp(config: GodConfig) -> None:
         epochs=100,
         checkpoint_every_n_minibatches=1,
         transition_graph={
-            "x": [],
-            "concat": ["x"],
-            "rnn1": ["concat"],
-            "rnn2": ["rnn1"],
+            "x": {},
+            "concat": {"x"},
+            "rnn1": {"concat"},
+            "rnn2": {"rnn1"},
         },
         readout_graph={
-            "readout": ["rnn2"],
+            "readout": {"rnn2"},
         },
         nodes={
             "x": UnlabeledSource(),

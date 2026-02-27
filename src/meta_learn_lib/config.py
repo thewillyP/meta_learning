@@ -278,7 +278,7 @@ class LSTMLayer:
 
 @dataclass(frozen=True)
 class Scan:  # Wraps around a layer and repeats it in an unfold manner
-    graph: dict[str, list[str]]
+    graph: dict[str, set[str]]
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     pred_source: str  # which node in the graph to source teacher predictions.
     start_token: Literal["zeros"]
@@ -389,8 +389,8 @@ class GodConfig:
     epochs: int
     checkpoint_every_n_minibatches: int
 
-    transition_graph: dict[str, list[str]]
-    readout_graph: dict[str, list[str]]
+    transition_graph: dict[str, set[str]]
+    readout_graph: dict[str, set[str]]
     nodes: dict[str, Node]
     hyperparameters: dict[HP, HyperparameterConfig]
 

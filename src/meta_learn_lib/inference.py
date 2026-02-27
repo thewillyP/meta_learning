@@ -1,10 +1,10 @@
-from graphlib import TopologicalSorter
 from typing import Callable
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from pyrsistent import pmap
 from pyrsistent.typing import PMap
+from toposort import toposort_flatten
 
 from meta_learn_lib.config import *
 from meta_learn_lib.env import *
@@ -45,12 +45,12 @@ def make_scan_reader[ENV](sub_from_env: PMap[str, Callable[[ENV], Outputs]]) -> 
 
 
 def get_reader[ENV](
-    node_graph: dict[str, list[str]],
+    node_graph: dict[str, set[str]],
     nodes: dict[str, Node],
     meta_interface: dict[str, GodInterface[ENV]],
 ) -> PMap[str, Callable[[ENV], Outputs]]:
     from_env: PMap[str, Callable[[ENV], Outputs]] = pmap()
-    for node_name in TopologicalSorter(node_graph).static_order():
+    for node_name in toposort_flatten(node_graph):
         match nodes[node_name]:
             case NNLayer():
                 from_env = from_env.set(node_name, lambda env: Outputs())
@@ -71,7 +71,7 @@ def get_reader[ENV](
 
 
 def get_inference[ENV](
-    node_graph: dict[str, list[str]],
+    node_graph: dict[str, set[str]],
     nodes: dict[str, Node],
     meta_interface: dict[str, GodInterface[ENV]],
     from_env: PMap[str, Callable[[ENV], Outputs]],
@@ -79,7 +79,7 @@ def get_inference[ENV](
     def infer(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, PMap[str, Outputs]]:
         outputs: PMap[str, Outputs] = pmap()
         x_data, y_data = data
-        for node_name in TopologicalSorter(node_graph).static_order():
+        for node_name in toposort_flatten(node_graph):
             match nodes[node_name]:
                 case NNLayer():
                     deps = [
@@ -155,7 +155,7 @@ def get_inference[ENV](
                     ]
                     x = to_vector(deps).vector
                     y = from_env[pred_source](env) if pred_source in from_env else outputs[pred_source].prediction
-                    last_sub_node = list(TopologicalSorter(graph).static_order())[-1]
+                    last_sub_node = toposort_flatten(graph)[-1]
                     token = meta_interface[node_name].get_autoregressive_predictions(env).value
 
                     fn = get_inference(graph, nodes, meta_interface)
@@ -225,7 +225,7 @@ def create_inference_and_readout[ENV](
         return env
 
     def readout_inference(env: ENV, data: tuple[jax.Array, jax.Array]) -> Outputs:
-        last_node = list(TopologicalSorter(config.readout_graph).static_order())[-1]
+        last_node = toposort_flatten(config.readout_graph)[-1]
         _, outputs = _readout_inference(env, data)
         return outputs[last_node]
 

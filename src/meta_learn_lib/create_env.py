@@ -4,9 +4,9 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 from pyrsistent import pmap
-from graphlib import TopologicalSorter
 import functools
 from pyrsistent import pmap, pvector
+from toposort import toposort_flatten
 
 
 from meta_learn_lib.config import *
@@ -20,12 +20,12 @@ from meta_learn_lib.util import get_activation_fn, hyperparameter_reparametrizat
 
 def get_output_shapes(
     node_features: dict[str, tuple[int, ...]],
-    node_graph: dict[str, list[str]],
+    node_graph: dict[str, set[str]],
     nodes: dict[str, Node],
     data_shape: tuple[tuple[int, ...], tuple[int, ...]],
 ) -> dict[str, tuple[int, ...]]:
     x_shape, y_shape = data_shape
-    for node_name in TopologicalSorter(node_graph).static_order():
+    for node_name in toposort_flatten(node_graph):
         match nodes[node_name]:
             case NNLayer(n, activation_fn, use_bias, layer_norm):
                 node_features[node_name] = (n,)
@@ -39,7 +39,7 @@ def get_output_shapes(
                 # Because I dont know how to concatenate your multiple dependencies, im just going to take the last one
                 scan_x_shape = [node_features[n] for n in node_graph[node_name] if n != pred_source][-1]
                 scan_y_shape = node_features[pred_source]
-                last_sub_node = list(TopologicalSorter(graph).static_order())[-1]
+                last_sub_node = toposort_flatten(graph)[-1]
                 node_features = get_output_shapes(node_features, graph, nodes, (scan_x_shape[1:], scan_y_shape[1:]))
                 n_out = (scan_x_shape[0],) + node_features[last_sub_node]
                 node_features[node_name] = n_out
@@ -134,8 +134,8 @@ def create_inference_state[ENV](
 
 def create_inference_parameters[ENV](
     nodes: dict[str, Node],
-    transition_graph: dict[str, list[str]],
-    readout_graph: dict[str, list[str]],
+    transition_graph: dict[str, set[str]],
+    readout_graph: dict[str, set[str]],
     meta_interface: dict[str, GodInterface[ENV]],
     node_features: dict[str, tuple[int, ...]],
     learnables: frozenset[str],
@@ -469,8 +469,8 @@ def reset_states[ENV](
     meta_config: MetaConfig,
     hyperparameters: dict[HP, HyperparameterConfig],
     nodes: dict[str, Node],
-    transition_graph: dict[str, list[str]],
-    readout_graph: dict[str, list[str]],
+    transition_graph: dict[str, set[str]],
+    readout_graph: dict[str, set[str]],
     node_features: dict[str, tuple[int, ...]],
     create_inference_param: bool,
 ) -> Callable[[ENV, PRNG], ENV]:

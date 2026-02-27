@@ -472,15 +472,20 @@ def create_dataloader(
 
         if len(xss) == 0:
             f = lambda c, ck: make_task_loader(c, meta_config, datasets, ck)
+            f_val = lambda c, k: make_task_loader(c, meta_config, datasets, k)
         else:
             x, *xs = xss
             mc, ds = x
             f = lambda c, ck: make_level_loader(mc, ds, xs, c, ck)
+            f_val = lambda c, k: batch_iterator(
+                [
+                    make_task_loader(sub, meta_config, datasets, sk)
+                    for sub, sk in zip(jnp.split(c, mc.meta_opt.batch), jax.random.split(k, mc.meta_opt.batch))
+                ],
+                mc.meta_opt.batch,
+            )
 
-        children = [
-            zip(f(chunk, ckey), mapcat(lambda k, c=chunk: make_task_loader(c, meta_config, datasets, k), vks))
-            for chunk, ckey, vks in partition
-        ]
+        children = [zip(f(chunk, ckey), mapcat(lambda k, c=chunk: f_val(c, k), vks)) for chunk, ckey, vks in partition]
         train_loader = batch_iterator(children, len(children))
 
         return DataLoader(

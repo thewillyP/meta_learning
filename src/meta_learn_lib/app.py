@@ -262,8 +262,8 @@ def runApp(config: GodConfig) -> None:
                     optimizer_learner=GradientConfig(
                         method=RTRLConfig(
                             start_at_step=0,
-                            hessian_damping=0.1,
                             use_reverse_mode=False,
+                            damping=1e-4,
                         ),
                         add_clip=None,
                         scale=1.0,

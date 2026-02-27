@@ -429,7 +429,8 @@ def reset_validation[ENV](
     meta_config: MetaConfig,
     nodes: dict[str, Node],
     node_features: dict[str, tuple[int, ...]],
-    is_init: bool,  # if need to reset things like RL ENV
+    is_init: bool,
+    prev_batch: int | None,
 ) -> Callable[[ENV, PRNG], ENV]:
 
     def create_env(env: ENV, prng: PRNG) -> ENV:
@@ -443,6 +444,8 @@ def reset_validation[ENV](
             meta_config.dataset_validation.task_batch_size,
             meta_config.dataset_validation.num_examples_in_minibatch,
         ]
+        if prev_batch is not None:
+            batch_size = [prev_batch] + batch_size
         env = vmap_factory(f1, batch_size)(env, k1)
 
         # 2. use it for learning states
@@ -629,14 +632,15 @@ def env_creator(
     factory = lambda e, k: e
 
     def fold(
-        accum: Callable[[GodState, PRNG], GodState],
+        acc_and_prev_batch: tuple[Callable[[GodState, PRNG], GodState], int | None],
         shape: tuple[tuple[int, ...], tuple[int, ...]],
         meta_interface: dict[str, GodInterface[GodState]],
         learn_interface: tuple[GodInterface[GodState], GodInterface[GodState]],
         meta_config: MetaConfig,
         create_inference_param: bool,
         is_init: bool,
-    ) -> GodState:
+    ) -> tuple[Callable[[GodState, PRNG], GodState], int]:
+        accum, prev_batch = acc_and_prev_batch
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
         val_interface, nest_interface = learn_interface
 
@@ -649,6 +653,7 @@ def env_creator(
                 config.nodes,
                 node_features,
                 is_init,
+                prev_batch,
             ),
             meta_interface,
             nest_interface,
@@ -660,12 +665,13 @@ def env_creator(
             node_features,
             create_inference_param,
         )
-        return vmap_factory(generator, [meta_config.meta_opt.batch])
+        new_factory = vmap_factory(generator, [meta_config.meta_opt.batch])
+        return (new_factory, meta_config.meta_opt.batch)
 
-    creator = functools.reduce(
+    creator, _ = functools.reduce(
         lambda acc, args: fold(acc, *args),
         zip(shapes, meta_interfaces, learn_interfaces, config.levels, create_inference_params, is_inits),
-        factory,
+        (factory, None),
     )
 
     return creator

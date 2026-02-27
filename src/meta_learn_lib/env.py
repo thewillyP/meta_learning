@@ -107,5 +107,6 @@ class GodState(PClass):
 
 
 class Outputs(PClass):
-    prediction: PREDICTION = field(serializer=deep_serialize)
-    logit: LOGITS = field(serializer=deep_serialize)
+    prediction: PREDICTION | None = field(serializer=deep_serialize, initial=None)
+    mu: jax.Array | None = field(serializer=deep_serialize, initial=None)
+    sigma: jax.Array | None = field(serializer=deep_serialize, initial=None)

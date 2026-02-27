@@ -13,7 +13,7 @@ import equinox as eqx
 
 from meta_learn_lib.config import *
 from meta_learn_lib.create_env import create_env
-from meta_learn_lib.create_interface import create_learn_interfaces, create_node_interfaces, create_task_interfaces
+from meta_learn_lib.create_interface import create_learn_interfaces, create_meta_interfaces, create_task_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
@@ -374,15 +374,15 @@ def runApp(config: GodConfig) -> None:
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    # for x in toolz.take(1, dataloader):
-    #     (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
-    #     # print(tr_x, tr_y)
-    #     # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
-    #     print(tr_x.shape, tr_y.shape)
-    #     print(vl_x.shape, vl_y.shape)
-    #     print(te_x.shape, te_y.shape)
+    for x in toolz.take(1, dataloader):
+        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+        # print(tr_x, tr_y)
+        # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+        print(tr_x.shape, tr_y.shape)
+        print(vl_x.shape, vl_y.shape)
+        print(te_x.shape, te_y.shape)
 
-    meta_interfaces, count = create_node_interfaces(config, 0)
+    meta_interfaces, count = create_meta_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
     task_interfaces, count = create_task_interfaces(config, count)
 

@@ -322,7 +322,7 @@ def put_logs(level: int):
     return put_logs_fn
 
 
-def create_node_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, GodInterface[GodState]]], int]:
+def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, GodInterface[GodState]]], int]:
     i = max(i, 0) + len(config.hyperparameters)
 
     default_interface: GodInterface[GodState] = default_god_interface()

@@ -604,9 +604,6 @@ def create_env(
     learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
     prng: PRNG,
 ) -> GodState:
-    is_inits = [True] * len(config.levels)
-    create_inference_params = [True] + [False] * (len(config.levels) - 1)
-
     k1, k2, prng = jax.random.split(prng, 3)
     env = create_empty_env(config, k1)
     creator = env_creator(
@@ -614,25 +611,56 @@ def create_env(
         shapes,
         meta_interfaces,
         learn_interfaces,
-        is_inits,
-        create_inference_params,
+        is_inits=[True] * len(config.levels),
     )
     return creator(env, k2)
 
 
-def env_creator(
+def env_validation_resetters(
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
     meta_interfaces: list[dict[str, GodInterface[GodState]]],
     learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
     is_inits: list[bool],
-    create_inference_params: list[bool],
-) -> Callable[[GodState, PRNG], GodState]:
+) -> list[Callable[[GodState, PRNG], GodState]]:
 
-    factory = lambda e, k: e
+    resetters: list[Callable[[GodState, PRNG], GodState]] = []
+    prev_batch: int | None = None
+
+    for i, (shape, meta_interface, learn_interface, meta_config, is_init) in enumerate(
+        zip(shapes, meta_interfaces, learn_interfaces, config.levels, is_inits)
+    ):
+        node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+
+        resetter = reset_validation(
+            lambda e, k: e,
+            meta_interface,
+            learn_interface,
+            meta_config,
+            config.nodes,
+            node_features,
+            is_init,
+            prev_batch,
+        )
+        resetters.append(resetter)
+        prev_batch = meta_config.meta_opt.batch
+
+    return resetters
+
+
+def env_resetters(
+    config: GodConfig,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[GodState]]],
+    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
+    is_inits: list[bool],
+) -> list[Callable[[GodState, PRNG], GodState]]:
+    create_inference_params = [True] + [False] * (len(config.levels) - 1)
+    factory: Callable[[GodState, PRNG], GodState] = lambda e, k: e
 
     def fold(
-        acc_and_prev_batch: tuple[Callable[[GodState, PRNG], GodState], int | None],
+        accum: Callable[[GodState, PRNG], GodState],
+        prev_batch: int | None,
         shape: tuple[tuple[int, ...], tuple[int, ...]],
         meta_interface: dict[str, GodInterface[GodState]],
         learn_interface: tuple[GodInterface[GodState], GodInterface[GodState]],
@@ -640,7 +668,6 @@ def env_creator(
         create_inference_param: bool,
         is_init: bool,
     ) -> tuple[Callable[[GodState, PRNG], GodState], int]:
-        accum, prev_batch = acc_and_prev_batch
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
         val_interface, nest_interface = learn_interface
 
@@ -668,10 +695,44 @@ def env_creator(
         new_factory = vmap_factory(generator, [meta_config.meta_opt.batch])
         return (new_factory, meta_config.meta_opt.batch)
 
-    creator, _ = functools.reduce(
-        lambda acc, args: fold(acc, *args),
-        zip(shapes, meta_interfaces, learn_interfaces, config.levels, create_inference_params, is_inits),
-        (factory, None),
-    )
+    resetters: list[Callable[[GodState, PRNG], GodState]] = []
+    accum: Callable[[GodState, PRNG], GodState] = factory
+    prev_batch: int | None = None
+    for (
+        shape,
+        meta_interface,
+        learn_interface,
+        meta_config,
+        create_inference_param,
+        is_init,
+    ) in zip(
+        shapes,
+        meta_interfaces,
+        learn_interfaces,
+        config.levels,
+        create_inference_params,
+        is_inits,
+    ):
+        accum, prev_batch = fold(
+            accum,
+            prev_batch,
+            shape,
+            meta_interface,
+            learn_interface,
+            meta_config,
+            create_inference_param,
+            is_init,
+        )
+        resetters.append(accum)
 
-    return creator
+    return resetters
+
+
+def env_creator(
+    config: GodConfig,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[GodState]]],
+    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
+    is_inits: list[bool],
+) -> Callable[[GodState, PRNG], GodState]:
+    return env_resetters(config, shapes, meta_interfaces, learn_interfaces, is_inits)[-1]

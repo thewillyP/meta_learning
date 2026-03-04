@@ -11,6 +11,7 @@ LABEL = NewType("LABEL", jax.Array)  # is a vector
 REC_STATE = NewType("REC_STATE", jax.Array)  # is a vector
 REC_PARAM = NewType("REC_PARAM", jax.Array)  # is a vector
 LOSS = NewType("LOSS", jax.Array)  # is a scalar
+type STAT = dict[str, jax.Array]
 
 LOGITS = NewType("LOGITS", jax.Array)
 PREDICTION = NewType("PREDICTION", jax.Array)

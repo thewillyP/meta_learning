@@ -774,13 +774,13 @@ def create_transition_fns[ENV](
     meta_interfaces: list[dict[str, GodInterface[ENV]]],
     val_learn_interfaces: list[GodInterface[ENV]],
     transitions: list[Callable[[ENV, tuple[jax.Array, jax.Array]], ENV]],
-) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], ENV]]:
+) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, STAT]]]:
 
     def make_composed(check, advance, transition):
-        def composed(env: ENV, data: tuple[jax.Array, jax.Array]) -> ENV:
+        def composed(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, STAT]:
             env = check(env)
             env = advance(env)
-            return transition(env, data)
+            return transition(env, data), {}
 
         return composed
 

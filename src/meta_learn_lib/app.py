@@ -246,7 +246,6 @@ def runApp(config: GodConfig) -> None:
                     optimizer_learner=GradientConfig(
                         method=RTRLConfig(
                             start_at_step=0,
-                            use_reverse_mode=False,
                             damping=1e-4,
                         ),
                         add_clip=None,
@@ -382,35 +381,6 @@ def runApp(config: GodConfig) -> None:
 
     transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
     loss_fns = create_readout_loss_fns(config, task_interfaces, readouts)
-
-    # env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
-    # # eqx.tree_pprint(env.serialize())
-    # axes = create_axes(env, inference_interface)
-    # transitions, readouts = create_inferences(config, inference_interface, data_interface, axes)
-    # resets = make_resets(
-    #     # lambda prng: reinitialize_env(env, config, n_in_shape, prng),
-    #     lambda prng: create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, prng),
-    #     inference_interface,
-    #     general_interfaces,
-    #     validation_learn_interfaces,
-    #     virtual_minibatches,
-    #     learn_interfaces[0],
-    # )
-    # env0 = copy.deepcopy(env)
-    # test_reset = hard_reset_inference(
-    #     lambda: env0,
-    #     inference_interface[min(inference_interface.keys())],
-    # )
-    # model_statistics_fns = make_statistics_fns(
-    #     config,
-    #     readouts,
-    #     data_interface_for_loss,
-    #     lambda out: out.b,
-    #     general_interfaces,
-    #     virtual_minibatches,
-    #     last_unpadded_lengths,
-    #     lambda e: get_logs(config, e),
-    # )
 
     # meta_learner = create_meta_learner(
     #     config,

@@ -542,7 +542,7 @@ def create_learn_interfaces(
                     get_forward_mode_jacobian=get_forward_mode_jacobian(i, level),
                     put_forward_mode_jacobian=put_forward_mode_jacobian(i, level),
                 )
-            case RFLOConfig(time_constant, use_reverse_mode):
+            case RFLOConfig(time_constant):
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),

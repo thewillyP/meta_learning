@@ -6,7 +6,7 @@ import optax
 from meta_learn_lib.config import *
 from meta_learn_lib.env import Outputs
 from meta_learn_lib.interface import GodInterface
-from meta_learn_lib.lib_types import LOSS
+from meta_learn_lib.lib_types import LOSS, STAT
 from meta_learn_lib.util import accuracy_hard, accuracy_soft
 
 
@@ -35,7 +35,7 @@ def create_loss_fn[ENV](
     label_mask_value: float,
     unlabeled_mask_value: float,
     task_interface: GodInterface[ENV],
-) -> Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, dict[str, jax.Array]]]:
+) -> Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]:
 
     match objective_fn:
         case CrossEntropyObjective(mode):
@@ -45,9 +45,7 @@ def create_loss_fn[ENV](
                 case "cross_entropy":
                     _loss_fn = lambda logits, y: optax.safe_softmax_cross_entropy(logits, y)
 
-            def loss_fn(
-                env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]
-            ) -> tuple[LOSS, dict[str, jax.Array]]:
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 _, target = data
                 pred = outputs.prediction
                 mask = target != label_mask_value
@@ -63,9 +61,7 @@ def create_loss_fn[ENV](
 
         case RegressionObjective():
 
-            def loss_fn(
-                env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]
-            ) -> tuple[LOSS, dict[str, jax.Array]]:
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 _, target = data
                 pred = outputs.prediction
                 mask = target != label_mask_value
@@ -75,9 +71,7 @@ def create_loss_fn[ENV](
 
         case BernoulliObjective():
 
-            def loss_fn(
-                env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]
-            ) -> tuple[LOSS, dict[str, jax.Array]]:
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 _, target = data
                 pred = outputs.prediction
                 mask = target != label_mask_value
@@ -88,9 +82,7 @@ def create_loss_fn[ENV](
         case ELBOObjective(beta_hp, likelihood, posterior, prior):
             inner_loss_fn = create_loss_fn(likelihood, unlabeled_mask_value, unlabeled_mask_value, task_interface)
 
-            def loss_fn(
-                env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]
-            ) -> tuple[LOSS, dict[str, jax.Array]]:
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 x, _ = data
                 recon_loss, stats = inner_loss_fn(env, outputs, (x, x))
 
@@ -110,10 +102,10 @@ def create_readout_loss_fns[ENV](
     config: GodConfig,
     task_interfaces: list[GodInterface[ENV]],
     readouts: list[Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]],
-) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[LOSS, dict[str, jax.Array]]]]:
+) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]]:
 
     def compose(loss_fn, readout):
-        def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, dict[str, jax.Array]]:
+        def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
             outputs = readout(env, data)
             return loss_fn(env, outputs, data)
 

@@ -186,7 +186,6 @@ class OptimizerAssignment:
 @dataclass(frozen=True)
 class RTRLConfig:
     start_at_step: int
-    use_reverse_mode: bool
     damping: float
 
 
@@ -208,12 +207,15 @@ class IdentityLearnerConfig: ...
 @dataclass(frozen=True)
 class RFLOConfig:
     time_constant: HP
-    use_reverse_mode: bool
+    damping: float
 
 
 @dataclass(frozen=True)
 class UOROConfig:
+    type Distribution = Literal["uniform", "normal"]
     std: float
+    distribution: Distribution
+    damping: float
 
 
 type GradientMethod = Union[

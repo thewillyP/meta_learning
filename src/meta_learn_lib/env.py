@@ -110,3 +110,5 @@ class Outputs(PClass):
     prediction: PREDICTION | None = field(serializer=deep_serialize, initial=None)
     mu: jax.Array | None = field(serializer=deep_serialize, initial=None)
     log_sigma: jax.Array | None = field(serializer=deep_serialize, initial=None)
+    z: jax.Array | None = field(serializer=deep_serialize, initial=None)
+    log_q_z: jax.Array | None = field(serializer=deep_serialize, initial=None)

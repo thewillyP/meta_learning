@@ -10,6 +10,26 @@ from meta_learn_lib.lib_types import LOSS
 from meta_learn_lib.util import accuracy_hard, accuracy_soft
 
 
+def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
+    match prior:
+        case ELBOObjective.GaussianPrior(mu, log_sigma):
+            return -0.5 * jnp.sum(jnp.log(2 * jnp.pi) + 2 * log_sigma + (z - mu) ** 2 / jnp.exp(2 * log_sigma))
+
+
+def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: Outputs) -> jax.Array:
+    match (posterior, prior):
+        case (ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(prior_mu, prior_log_sigma)):
+            mu = outputs.mu
+            log_sigma = outputs.log_sigma
+            return 0.5 * jnp.sum(
+                2 * (prior_log_sigma - log_sigma)
+                + (jnp.exp(2 * log_sigma) + (mu - prior_mu) ** 2) / jnp.exp(2 * prior_log_sigma)
+                - 1
+            )
+        case _:
+            return outputs.log_q_z - log_p_z(prior, outputs.z)
+
+
 def create_loss_fn[ENV](
     objective_fn: ObjectiveFn,
     label_mask_value: float,
@@ -65,7 +85,7 @@ def create_loss_fn[ENV](
                 loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
                 return loss, {"loss": loss}
 
-        case ELBOObjective(beta_hp, likelihood):
+        case ELBOObjective(beta_hp, likelihood, posterior, prior):
             inner_loss_fn = create_loss_fn(likelihood, unlabeled_mask_value, unlabeled_mask_value, task_interface)
 
             def loss_fn(
@@ -75,13 +95,11 @@ def create_loss_fn[ENV](
                 recon_loss, stats = inner_loss_fn(env, outputs, (x, x))
 
                 beta = task_interface.get_kl_regularizer_beta(env).value
-                mu = outputs.mu
-                log_sigma = outputs.log_sigma
-                kl = -0.5 * jnp.sum(1.0 + 2.0 * log_sigma - mu**2 - jnp.exp(2.0 * log_sigma))
+                kl_value = kl(posterior, prior, outputs)
 
-                loss = LOSS(recon_loss + beta * kl)
+                loss = LOSS(recon_loss + beta * kl_value)
                 stats["recon_loss"] = jax.lax.stop_gradient(recon_loss)
-                stats["kl"] = jax.lax.stop_gradient(kl)
+                stats["kl"] = jax.lax.stop_gradient(kl_value)
                 stats["elbo_loss"] = jax.lax.stop_gradient(loss)
                 return loss, stats
 

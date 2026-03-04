@@ -354,8 +354,21 @@ class BernoulliObjective: ...
 
 @dataclass(frozen=True)
 class ELBOObjective:
+    @dataclass(frozen=True)
+    class GaussianPosterior: ...
+
+    @dataclass(frozen=True)
+    class GaussianPrior:
+        mu: float
+        log_sigma: float
+
+    type Posterior = GaussianPosterior
+    type Prior = GaussianPrior
+
     beta: HP
-    likelihood: BernoulliObjective | RegressionObjective
+    likelihood: RegressionObjective | BernoulliObjective
+    posterior: Posterior
+    prior: Prior
 
 
 type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective]

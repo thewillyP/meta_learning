@@ -19,25 +19,7 @@ from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
-
-
-# from meta_learn_lib.create_axes import create_axes
-# from meta_learn_lib.create_env import create_env
-# from meta_learn_lib.create_interface import (
-#     create_general_interfaces,
-#     create_learn_interfaces,
-#     create_transition_interfaces,
-#     create_validation_learn_interfaces,
-# )
-
-# from meta_learn_lib.env import GodState
-# from meta_learn_lib.inference import create_inferences, hard_reset_inference, make_resets
-# from meta_learn_lib.interface import ClassificationInterface
-# from meta_learn_lib.learning import create_meta_learner, identity
-# from meta_learn_lib.log import get_logs
-# from meta_learn_lib.logger import Logger, ThreadedLogger
-# from meta_learn_lib.loss_function import make_statistics_fns
-# from meta_learn_lib.util import create_fractional_list
+from meta_learn_lib.loss_function import create_readout_loss_fns
 
 
 def runApp(config: GodConfig) -> None:
@@ -399,6 +381,7 @@ def runApp(config: GodConfig) -> None:
     )
 
     transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
+    loss_fns = create_readout_loss_fns(config, task_interfaces, readouts)
 
     # env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     # # eqx.tree_pprint(env.serialize())

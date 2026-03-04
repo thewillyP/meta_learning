@@ -349,12 +349,16 @@ class CrossEntropyObjective:
 
 
 @dataclass(frozen=True)
+class BernoulliObjective: ...
+
+
+@dataclass(frozen=True)
 class ELBOObjective:
     beta: HP
-    likelihood: CrossEntropyObjective | RegressionObjective
+    likelihood: BernoulliObjective | RegressionObjective
 
 
-type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjective]
+type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective]
 
 
 @dataclass(frozen=True)

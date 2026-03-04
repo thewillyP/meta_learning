@@ -15,7 +15,7 @@ from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.optimizer import get_opt_state
-from meta_learn_lib.util import get_activation_fn, hyperparameter_reparametrization
+from meta_learn_lib.util import filter_cond, get_activation_fn, hyperparameter_reparametrization
 
 
 def get_output_shapes(
@@ -617,19 +617,19 @@ def create_env(
     return creator(env, k2)
 
 
-def env_validation_resetters(
+def env_validation_resetters[ENV](
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
-    meta_interfaces: list[dict[str, GodInterface[GodState]]],
-    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
-    is_inits: list[bool],
-) -> list[Callable[[GodState, PRNG], GodState]]:
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    val_learn_interfaces: list[GodInterface[ENV]],
+) -> list[Callable[[ENV, PRNG], ENV]]:
 
-    resetters: list[Callable[[GodState, PRNG], GodState]] = []
+    resetters: list[Callable[[ENV, PRNG], ENV]] = []
     prev_batch: int | None = None
+    is_inits = [False] * len(config.levels)
 
     for i, (shape, meta_interface, learn_interface, meta_config, is_init) in enumerate(
-        zip(shapes, meta_interfaces, learn_interfaces, config.levels, is_inits)
+        zip(shapes, meta_interfaces, val_learn_interfaces, config.levels, is_inits)
     ):
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
 
@@ -649,26 +649,26 @@ def env_validation_resetters(
     return resetters
 
 
-def env_resetters(
+def env_resetters[ENV](
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
-    meta_interfaces: list[dict[str, GodInterface[GodState]]],
-    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    learn_interfaces: list[tuple[GodInterface[ENV], GodInterface[ENV]]],
     is_inits: list[bool],
-) -> list[Callable[[GodState, PRNG], GodState]]:
+) -> list[Callable[[ENV, PRNG], ENV]]:
     create_inference_params = [True] + [False] * (len(config.levels) - 1)
-    factory: Callable[[GodState, PRNG], GodState] = lambda e, k: e
+    factory: Callable[[ENV, PRNG], ENV] = lambda e, k: e
 
     def fold(
-        accum: Callable[[GodState, PRNG], GodState],
+        accum: Callable[[ENV, PRNG], ENV],
         prev_batch: int | None,
         shape: tuple[tuple[int, ...], tuple[int, ...]],
-        meta_interface: dict[str, GodInterface[GodState]],
-        learn_interface: tuple[GodInterface[GodState], GodInterface[GodState]],
+        meta_interface: dict[str, GodInterface[ENV]],
+        learn_interface: tuple[GodInterface[ENV], GodInterface[ENV]],
         meta_config: MetaConfig,
         create_inference_param: bool,
         is_init: bool,
-    ) -> tuple[Callable[[GodState, PRNG], GodState], int]:
+    ) -> tuple[Callable[[ENV, PRNG], ENV], int]:
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
         val_interface, nest_interface = learn_interface
 
@@ -696,8 +696,8 @@ def env_resetters(
         new_factory = vmap_factory(generator, [meta_config.meta_opt.batch])
         return (new_factory, meta_config.meta_opt.batch)
 
-    resetters: list[Callable[[GodState, PRNG], GodState]] = []
-    accum: Callable[[GodState, PRNG], GodState] = factory
+    resetters: list[Callable[[ENV, PRNG], ENV]] = []
+    accum: Callable[[ENV, PRNG], ENV] = factory
     prev_batch: int | None = None
     for (
         shape,
@@ -729,11 +729,70 @@ def env_resetters(
     return resetters
 
 
-def env_creator(
+def env_creator[ENV](
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
-    meta_interfaces: list[dict[str, GodInterface[GodState]]],
-    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    learn_interfaces: list[tuple[GodInterface[ENV], GodInterface[ENV]]],
     is_inits: list[bool],
-) -> Callable[[GodState, PRNG], GodState]:
+) -> Callable[[ENV, PRNG], ENV]:
     return env_resetters(config, shapes, meta_interfaces, learn_interfaces, is_inits)[-1]
+
+
+def make_tick_advancer[ENV](learn_interface: GodInterface[ENV]):
+    def advance(env: ENV) -> ENV:
+        return learn_interface.advance_tick(env)
+
+    return advance
+
+
+def make_reset_checker[ENV](
+    learn_interface: GodInterface[ENV],
+    resetter: Callable[[ENV, PRNG], ENV],
+    reset_t: int | None,
+):
+    def check_reset(env: ENV) -> ENV:
+        if reset_t is None:
+            return env
+        tick = learn_interface.get_tick(env)
+
+        def do_reset(e):
+            prng, e = learn_interface.take_prng(e)
+            return resetter(e, prng)
+
+        def no_reset(e):
+            return e
+
+        return filter_cond(tick % reset_t == 0, do_reset, no_reset, env)
+
+    return check_reset
+
+
+def create_transition_fns[ENV](
+    config: GodConfig,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    val_learn_interfaces: list[GodInterface[ENV]],
+    transitions: list[Callable[[ENV, tuple[jax.Array, jax.Array]], ENV]],
+) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], ENV]]:
+
+    def make_composed(check, advance, transition):
+        def composed(env: ENV, data: tuple[jax.Array, jax.Array]) -> ENV:
+            env = check(env)
+            env = advance(env)
+            return transition(env, data)
+
+        return composed
+
+    resetters = env_validation_resetters(config, shapes, meta_interfaces, val_learn_interfaces)
+
+    return [
+        make_composed(
+            make_reset_checker(val_interface, resetter, meta_config.dataset_validation.reset_t),
+            make_tick_advancer(val_interface),
+            transition,
+        )
+        for val_interface, resetter, meta_config, transition in zip(
+            val_learn_interfaces, resetters, config.levels, transitions
+        )
+    ]

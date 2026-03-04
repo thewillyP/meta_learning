@@ -25,18 +25,26 @@ def put_prng(key: int, level: int):
     return put_prng_fn
 
 
-def get_tick(level: int):
+def get_tick(i: int, level: int):
     def get_tick_fn(env: GodState) -> jax.Array:
-        return env.level_meta[level].tick
+        return env.level_meta[level].ticks.get(i).value
 
     return get_tick_fn
 
 
-def put_tick(level: int):
+def put_tick(i: int, level: int):
     def put_tick_fn(env: GodState, tick: jax.Array) -> GodState:
-        return env.transform(["level_meta", level, "tick"], lambda _: tick)
+        return env.transform(["level_meta", level, "ticks", i], lambda _: State(value=tick, is_stateful=frozenset()))
 
     return put_tick_fn
+
+
+def advance_tick(i: int, level: int):
+    def advance_tick_fn(env: GodState) -> GodState:
+        t = get_tick(i, level)(env)
+        return put_tick(i, level)(env, t + 1)
+
+    return advance_tick_fn
 
 
 def get_mlp_param(i: int, level: int):
@@ -340,7 +348,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_logs=put_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
-                        get_tick=get_tick(level),
                         get_mlp_param=get_mlp_param(i, 0),
                         put_mlp_param=put_mlp_param(i, 0),
                     )
@@ -350,7 +357,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_logs=put_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
-                        get_tick=get_tick(level),
                         get_vanilla_rnn_state=get_vanilla_rnn_state(i, level),
                         put_vanilla_rnn_state=put_vanilla_rnn_state(i, level),
                         get_vanilla_rnn_param=get_vanilla_rnn_param(i, 0),
@@ -366,7 +372,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_logs=put_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
-                        get_tick=get_tick(level),
                         get_gru_state=get_gru_state(i, level),
                         put_gru_state=put_gru_state(i, level),
                         get_gru_param=get_gru_param(i, 0),
@@ -378,7 +383,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_logs=put_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
-                        get_tick=get_tick(level),
                         get_lstm_state=get_lstm_state(i, level),
                         put_lstm_state=put_lstm_state(i, level),
                         get_lstm_param=get_lstm_param(i, 0),
@@ -390,7 +394,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_logs=put_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
-                        get_tick=get_tick(level),
                         get_autoregressive_predictions=get_autoregressive_predictions(i, level),
                         put_autoregressive_predictions=put_autoregressive_predictions(i, level),
                     )
@@ -410,7 +413,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_logs=put_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
-                        get_tick=get_tick(level),
                         get_opt_state=get_opt_state(i, level),
                         put_opt_state=put_opt_state(i, level),
                         get_learning_rate=get_learning_rate(
@@ -453,7 +455,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     put_logs=put_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
-                    get_tick=get_tick(hp.level),
                     get_learning_rate=get_learning_rate(idx, hp.level),
                     put_learning_rate=put_learning_rate(idx, hp.level),
                 )
@@ -463,7 +464,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     put_logs=put_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
-                    get_tick=get_tick(hp.level),
                     get_weight_decay=get_weight_decay(idx, hp.level),
                     put_weight_decay=put_weight_decay(idx, hp.level),
                 )
@@ -473,7 +473,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     put_logs=put_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
-                    get_tick=get_tick(hp.level),
                     get_momentum=get_momentum(idx, hp.level),
                     put_momentum=put_momentum(idx, hp.level),
                 )
@@ -483,7 +482,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     put_logs=put_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
-                    get_tick=get_tick(hp.level),
                     get_time_constant=get_time_constant(idx, hp.level),
                     put_time_constant=put_time_constant(idx, hp.level),
                 )
@@ -493,7 +491,6 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     put_logs=put_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
-                    get_tick=get_tick(hp.level),
                     get_kl_regularizer_beta=get_kl_regularizer_beta(idx, hp.level),
                     put_kl_regularizer_beta=put_kl_regularizer_beta(idx, hp.level),
                 )
@@ -535,7 +532,9 @@ def create_learn_interfaces(
                     put_logs=put_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
-                    get_tick=get_tick(level),
+                    get_tick=get_tick(i, level),
+                    put_tick=put_tick(i, level),
+                    advance_tick=advance_tick(i, level),
                     get_state=state_lens.get,
                     put_state=state_lens.put,
                     get_param=param_lens.get,
@@ -549,7 +548,9 @@ def create_learn_interfaces(
                     put_logs=put_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
-                    get_tick=get_tick(level),
+                    get_tick=get_tick(i, level),
+                    put_tick=put_tick(i, level),
+                    advance_tick=advance_tick(i, level),
                     get_state=state_lens.get,
                     put_state=state_lens.put,
                     get_param=param_lens.get,
@@ -567,7 +568,9 @@ def create_learn_interfaces(
                     put_logs=put_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
-                    get_tick=get_tick(level),
+                    get_tick=get_tick(i, level),
+                    put_tick=put_tick(i, level),
+                    advance_tick=advance_tick(i, level),
                     get_state=state_lens.get,
                     put_state=state_lens.put,
                     get_param=param_lens.get,
@@ -581,7 +584,9 @@ def create_learn_interfaces(
                     put_logs=put_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
-                    get_tick=get_tick(level),
+                    get_tick=get_tick(i, level),
+                    put_tick=put_tick(i, level),
+                    advance_tick=advance_tick(i, level),
                     get_state=state_lens.get,
                     put_state=state_lens.put,
                     get_param=param_lens.get,
@@ -610,7 +615,6 @@ def create_task_interfaces(config: GodConfig, i: int) -> tuple[list[GodInterface
                     put_logs=put_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
-                    get_tick=get_tick(level),
                     get_kl_regularizer_beta=get_kl_regularizer_beta(
                         [*config.hyperparameters].index(beta),
                         config.hyperparameters[beta].level,
@@ -622,7 +626,6 @@ def create_task_interfaces(config: GodConfig, i: int) -> tuple[list[GodInterface
                     put_logs=put_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
-                    get_tick=get_tick(level),
                 )
         meta_interfaces.append(interface)
 

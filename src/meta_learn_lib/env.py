@@ -93,9 +93,9 @@ class ModelStates(PClass):
 
 
 class LevelMeta(PClass):
-    tick: jax.Array = field(serializer=deep_serialize)
     log: State[Logs] = field(serializer=deep_serialize)
     prngs: PMap[int, State[PRNG]] = field(serializer=deep_serialize)
+    ticks: PMap[int, State[jax.Array]] = field(serializer=deep_serialize)  # batched
 
 
 class GodState(PClass):

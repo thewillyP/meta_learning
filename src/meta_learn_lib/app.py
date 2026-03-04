@@ -12,9 +12,11 @@ import time
 import equinox as eqx
 
 from meta_learn_lib.config import *
+from meta_learn_lib.create_axes import create_inference_axes
 from meta_learn_lib.create_env import create_env
 from meta_learn_lib.create_interface import create_learn_interfaces, create_meta_interfaces, create_task_interfaces
 from meta_learn_lib.env import *
+from meta_learn_lib.inference import create_inference_and_readout
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
 
@@ -388,6 +390,9 @@ def runApp(config: GodConfig) -> None:
 
     env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
     eqx.tree_pprint(env.serialize())
+
+    inference_axes = map(lambda i: create_inference_axes(env, i), range(len(config.levels)))
+    inferences = map(lambda i, a: create_inference_and_readout(config, i, a), meta_interfaces, inference_axes)
 
     # env = create_env(config, n_in_shape, learn_interfaces, validation_learn_interfaces, env_prng)
     # # eqx.tree_pprint(env.serialize())

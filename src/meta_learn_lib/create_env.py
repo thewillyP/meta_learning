@@ -392,6 +392,7 @@ def create_learner_states[ENV](
             env = factory(env, k1)
             env = interface.put_prng(env, k2)
 
+    env = interface.put_tick(env, 0)
     return env
 
 
@@ -584,9 +585,9 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
         level_meta=pvector(
             [
                 LevelMeta(
-                    tick=jnp.array(0),
                     log=State(value=Logs(), is_stateful=frozenset()),
                     prngs=pmap({}),
+                    ticks=pmap({}),
                 )
                 for _ in range(len(config.levels) + 1)
             ]

@@ -23,6 +23,8 @@ class GodInterface[ENV]:
     take_prng: Callable[[ENV], tuple[PRNG, ENV]]
     put_prng: Callable[[ENV, PRNG], ENV]
     get_tick: Callable[[ENV], jax.Array]
+    put_tick: Callable[[ENV, jax.Array], ENV]
+    advance_tick: Callable[[ENV], ENV]
     put_logs: Callable[[ENV, Logs], ENV]
     get_state: Callable[[ENV], jax.Array]
     put_state: Callable[[ENV, jax.Array], ENV]
@@ -67,6 +69,8 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         take_prng=lambda env: (None, env),
         put_prng=lambda env, prng: env,
         get_tick=lambda env: None,
+        put_tick=lambda env, tick: env,
+        advance_tick=lambda env: env,
         put_logs=lambda env, logs: env,
         get_state=lambda env: None,
         put_state=lambda env, state: env,

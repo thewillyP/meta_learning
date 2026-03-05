@@ -17,6 +17,7 @@ from meta_learn_lib.create_env import create_env, create_transition_fns, env_val
 from meta_learn_lib.create_interface import create_learn_interfaces, create_meta_interfaces, create_task_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
+from meta_learn_lib.learning import create_meta_learner, create_validation_learners
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
 from meta_learn_lib.loss_function import create_readout_loss_fns
@@ -122,36 +123,36 @@ def runApp(config: GodConfig) -> None:
                 level=1,
                 parametrizes_transition=True,
             ),
-            "meta2_adam1.lr": HyperparameterConfig(
-                value=0.001,
-                kind="learning_rate",
-                count=1,
-                hyperparameter_parametrization=HyperparameterConfig.identity(),
-                min_value=0.0,
-                max_value=jnp.inf,
-                level=2,
-                parametrizes_transition=True,
-            ),
-            "meta2_adam1.wd": HyperparameterConfig(
-                value=0.0,
-                kind="weight_decay",
-                count=1,
-                hyperparameter_parametrization=HyperparameterConfig.identity(),
-                min_value=0.0,
-                max_value=jnp.inf,
-                level=2,
-                parametrizes_transition=True,
-            ),
-            "meta2_adam1.momentum": HyperparameterConfig(
-                value=0.9,
-                kind="momentum",
-                count=1,
-                hyperparameter_parametrization=HyperparameterConfig.identity(),
-                min_value=0.0,
-                max_value=1.0,
-                level=2,
-                parametrizes_transition=True,
-            ),
+            # "meta2_adam1.lr": HyperparameterConfig(
+            #     value=0.001,
+            #     kind="learning_rate",
+            #     count=1,
+            #     hyperparameter_parametrization=HyperparameterConfig.identity(),
+            #     min_value=0.0,
+            #     max_value=jnp.inf,
+            #     level=2,
+            #     parametrizes_transition=True,
+            # ),
+            # "meta2_adam1.wd": HyperparameterConfig(
+            #     value=0.0,
+            #     kind="weight_decay",
+            #     count=1,
+            #     hyperparameter_parametrization=HyperparameterConfig.identity(),
+            #     min_value=0.0,
+            #     max_value=jnp.inf,
+            #     level=2,
+            #     parametrizes_transition=True,
+            # ),
+            # "meta2_adam1.momentum": HyperparameterConfig(
+            #     value=0.9,
+            #     kind="momentum",
+            #     count=1,
+            #     hyperparameter_parametrization=HyperparameterConfig.identity(),
+            #     min_value=0.0,
+            #     max_value=1.0,
+            #     level=2,
+            #     parametrizes_transition=True,
+            # ),
         },
         levels=[
             MetaConfig(
@@ -212,67 +213,67 @@ def runApp(config: GodConfig) -> None:
                 ),
                 test_seed=0,
             ),
-            MetaConfig(
-                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
-                dataset_validation=ValidationConfig(
-                    num_examples_in_minibatch=100,
-                    num_steps_in_timeseries=28,
-                    num_examples_total=500,
-                    is_test=False,
-                    task_batch_size=2,
-                    reset_t=1,
-                    track_influence_in=frozenset({1}),
-                ),
-                dataset_source=MNISTTaskFamily(
-                    patch_h=1,
-                    patch_w=28,
-                    label_last_only=True,
-                    add_spurious_pixel_to_train=False,
-                    domain=frozenset({"mnist"}),
-                    normalize=True,
-                ),
-                meta_opt=MetaOptimizationConfig(
-                    batch=1,
-                    num_steps=2,
-                    reset_t=None,
-                    track_influence_in=frozenset({1}),
-                ),
-                learner=LearnConfig(
-                    model_learner=GradientConfig(
-                        method=BPTTConfig(None),
-                        add_clip=HardClip(1.0),
-                        scale=1.0,
-                    ),
-                    optimizer_learner=GradientConfig(
-                        method=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                        ),
-                        add_clip=None,
-                        scale=1.0,
-                    ),
-                    optimizer={
-                        "meta2_adam1": OptimizerAssignment(
-                            target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
-                            optimizer=AdamConfig(
-                                learning_rate="meta2_adam1.lr",
-                                weight_decay="meta2_adam1.wd",
-                                momentum="meta2_adam1.momentum",
-                            ),
-                        ),
-                    },
-                ),
-                track_logs=TrackLogs(
-                    gradient=False,
-                    hessian_contains_nans=False,
-                    largest_eigenvalue=False,
-                    influence_tensor=False,
-                    immediate_influence_tensor=False,
-                    largest_jac_eigenvalue=False,
-                    jacobian=False,
-                ),
-                test_seed=0,
-            ),
+            # MetaConfig(
+            #     objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            #     dataset_validation=ValidationConfig(
+            #         num_examples_in_minibatch=100,
+            #         num_steps_in_timeseries=28,
+            #         num_examples_total=500,
+            #         is_test=False,
+            #         task_batch_size=2,
+            #         reset_t=1,
+            #         track_influence_in=frozenset({1}),
+            #     ),
+            #     dataset_source=MNISTTaskFamily(
+            #         patch_h=1,
+            #         patch_w=28,
+            #         label_last_only=True,
+            #         add_spurious_pixel_to_train=False,
+            #         domain=frozenset({"mnist"}),
+            #         normalize=True,
+            #     ),
+            #     meta_opt=MetaOptimizationConfig(
+            #         batch=1,
+            #         num_steps=2,
+            #         reset_t=None,
+            #         track_influence_in=frozenset({1}),
+            #     ),
+            #     learner=LearnConfig(
+            #         model_learner=GradientConfig(
+            #             method=BPTTConfig(None),
+            #             add_clip=HardClip(1.0),
+            #             scale=1.0,
+            #         ),
+            #         optimizer_learner=GradientConfig(
+            #             method=RTRLConfig(
+            #                 start_at_step=0,
+            #                 damping=1e-4,
+            #             ),
+            #             add_clip=None,
+            #             scale=1.0,
+            #         ),
+            #         optimizer={
+            #             "meta2_adam1": OptimizerAssignment(
+            #                 target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
+            #                 optimizer=AdamConfig(
+            #                     learning_rate="meta2_adam1.lr",
+            #                     weight_decay="meta2_adam1.wd",
+            #                     momentum="meta2_adam1.momentum",
+            #                 ),
+            #             ),
+            #         },
+            #     ),
+            #     track_logs=TrackLogs(
+            #         gradient=False,
+            #         hessian_contains_nans=False,
+            #         largest_eigenvalue=False,
+            #         influence_tensor=False,
+            #         immediate_influence_tensor=False,
+            #         largest_jac_eigenvalue=False,
+            #         jacobian=False,
+            #     ),
+            #     test_seed=0,
+            # ),
             MetaConfig(
                 objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
                 dataset_validation=ValidationConfig(
@@ -325,7 +326,7 @@ def runApp(config: GodConfig) -> None:
         ],
         label_mask_value=-1.0,
         unlabeled_mask_value=0.0,
-        num_tasks=4,
+        num_tasks=8,
     )
     if not config.clearml_run:
         return
@@ -357,13 +358,20 @@ def runApp(config: GodConfig) -> None:
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
+    # for x in toolz.take(1, dataloader):
+    #     (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+    #     # print(tr_x, tr_y)
+    #     # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+    #     print(tr_x.shape, tr_y.shape)
+    #     print(vl_x.shape, vl_y.shape)
+    #     print(te_x.shape, te_y.shape)
+
     for x in toolz.take(1, dataloader):
-        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+        (((tr_x, tr_y), _), (vl_x, vl_y)) = x
         # print(tr_x, tr_y)
         # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
         print(tr_x.shape, tr_y.shape)
         print(vl_x.shape, vl_y.shape)
-        print(te_x.shape, te_y.shape)
 
     meta_interfaces, count = create_meta_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
@@ -382,18 +390,31 @@ def runApp(config: GodConfig) -> None:
     transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
     loss_fns = create_readout_loss_fns(config, task_interfaces, readouts)
 
-    # meta_learner = create_meta_learner(
-    #     config,
-    #     [v for _, v in sorted(transitions.items())],
-    #     [v for _, v in sorted(model_statistics_fns.items())],
-    #     [v for _, v in sorted(resets.items())],
-    #     test_reset,
-    #     [v for _, v in sorted(learn_interfaces.items())],
-    #     [v for _, v in sorted(validation_learn_interfaces.items())],
-    #     [v for _, v in sorted(general_interfaces.items())],
-    #     [v for _, v in sorted(virtual_minibatches.items())],
-    #     [v for _, v in sorted(last_unpadded_lengths.items())],
-    # )
+    meta_learner = create_meta_learner(
+        config,
+        shapes,
+        transition_fns,
+        loss_fns,
+        list(val_learn_interfaces),
+        list(nest_learn_interfaces),
+        meta_interfaces,
+        env,
+    )
+
+    x, dataloader = toolz.peek(dataloader)
+    # arr, static = eqx.partition(env, eqx.is_array)
+
+    # def update_fn(data, arr):
+    #     env = eqx.combine(arr, static)
+    #     env, stat = meta_learner(env, data)
+    #     arr, _ = eqx.partition(env, eqx.is_array)
+    #     return arr, stat
+
+    # meta_learner_compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
+
+    meta_learner_compiled = (
+        eqx.filter_jit(lambda d, e: meta_learner(e, d), donate="all-except-first").lower(x, env).compile()
+    )
 
     # (((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask)), dataloader = (
     #     toolz.peek(dataloader)

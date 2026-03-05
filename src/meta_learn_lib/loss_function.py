@@ -104,10 +104,11 @@ def create_readout_loss_fns[ENV](
     readouts: list[Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]],
 ) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]]:
 
-    def compose(loss_fn, readout):
+    def compose(loss_fn, readout, level):
         def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
             outputs = readout(env, data)
-            return loss_fn(env, outputs, data)
+            loss, stat = loss_fn(env, outputs, data)
+            return loss, {f"level{level}/{k}": v for k, v in stat.items()}
 
         return fn
 
@@ -120,6 +121,7 @@ def create_readout_loss_fns[ENV](
                 task_interface,
             ),
             readout,
+            level,
         )
-        for meta_config, task_interface, readout in zip(config.levels, task_interfaces, readouts)
+        for level, (meta_config, task_interface, readout) in enumerate(zip(config.levels, task_interfaces, readouts))
     ]

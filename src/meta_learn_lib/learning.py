@@ -2,23 +2,20 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import PyTree
-import optax
 import equinox as eqx
-import toolz
-import matfree
-import matfree.decomp
-import matfree.eig
 
 from meta_learn_lib.config import *
+from meta_learn_lib.create_axes import diff_axes
+from meta_learn_lib.create_env import env_resetters, make_reset_checker, make_tick_advancer
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
-from meta_learn_lib.util import filter_cond, jacobian_matrix_product, to_vector
+from meta_learn_lib.optimizer import get_opt_step
+from meta_learn_lib.util import filter_cond, jacobian_matrix_product
 
 
 def rtrl[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[GRADIENT, STAT]],
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     _config: RTRLConfig | RTRLFiniteHvpConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
@@ -34,6 +31,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
 
         def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
             env = eqx.combine(arr, static)
+            tr_data, vl_data = data
 
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
@@ -43,13 +41,13 @@ def rtrl[ENV, TR_DATA, VL_DATA](
 
             def state_fn(state: jax.Array) -> tuple[jax.Array, None]:
                 _env = learn_interface.put_state(env, state)
-                _env, _ = transition(_env, data)
+                _env, _ = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 return state, None
 
             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
                 _env = learn_interface.put_param(env, param)
-                _env, stat = transition(_env, data)
+                _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
                 return state, (_arr, stat)
@@ -78,7 +76,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 lambda _: influence_tensor_s.value,
                 None,
             )
-            credit_gr, readout_stat = readout_gr(env, data)
+            credit_gr, readout_stat = readout_gr(env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
@@ -94,8 +92,8 @@ def rtrl[ENV, TR_DATA, VL_DATA](
 
 
 def uoro[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[GRADIENT, STAT]],
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     config: UOROConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
@@ -103,7 +101,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
         std = config.std
-        state_shape = learn_interface.get_state(env).shape
+        state_shape = learn_interface.get_state(env_init).shape
         match config.distribution:
             case "uniform":
                 distribution = lambda key: jax.random.uniform(key, state_shape, minval=-std, maxval=std)
@@ -112,6 +110,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
         def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
             env = eqx.combine(arr, static)
+            tr_data, vl_data = data
             key, env = learn_interface.take_prng(env)
             random_vector = distribution(key)
             mu = config.damping
@@ -123,13 +122,13 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
             def state_fn(state: jax.Array) -> jax.Array:
                 _env = learn_interface.put_state(env, state)
-                _env, _ = transition(_env, data)
+                _env, _ = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 return state
 
             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
                 _env = learn_interface.put_param(env, param)
-                _env, stat = transition(_env, data)
+                _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
                 return state, (_arr, stat)
@@ -144,7 +143,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             A_new: jax.Array = rho0 * immediateJacobian__A_projection + rho1 * random_vector
             B_new: jax.Array = B_s.value / rho0 + immediateInfluence__random_projection / rho1
 
-            credit_gr, readout_stat = readout_gr(env, data)
+            credit_gr, readout_stat = readout_gr(env, vl_data)
             grad = (credit_gr[: A_new.shape[0]] @ A_new) * B_new + credit_gr[A_new.shape[0] :]
 
             env = learn_interface.put_uoro_state(
@@ -163,8 +162,8 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
 
 def rflo[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[GRADIENT, STAT]],
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     config: RFLOConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
@@ -173,6 +172,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
 
         def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
             env = eqx.combine(arr, static)
+            tr_data, vl_data = data
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
             mu = config.damping
@@ -181,7 +181,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
 
             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
                 _env = learn_interface.put_param(env, param)
-                _env, stat = transition(_env, data)
+                _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
                 return state, (_arr, stat)
@@ -195,7 +195,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
             influence_tensor: JACOBIAN
             influence_tensor = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
 
-            credit_gr, readout_stat = readout_gr(env, data)
+            credit_gr, readout_stat = readout_gr(env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
@@ -211,8 +211,8 @@ def rflo[ENV, TR_DATA, VL_DATA](
 
 
 def bptt[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, STAT]],
-    readout: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[LOSS, STAT]],
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout: Callable[[ENV, VL_DATA], tuple[LOSS, STAT]],
     learn_interface: GodInterface[ENV],
     config: BPTTConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
@@ -223,6 +223,7 @@ def bptt[ENV, TR_DATA, VL_DATA](
 
             def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[STAT, LOSS]]:
                 _env = eqx.combine(arr, static)
+                tr_data, vl_data = data
 
                 t = learn_interface.get_tick(_env)
                 s = filter_cond(
@@ -233,8 +234,8 @@ def bptt[ENV, TR_DATA, VL_DATA](
                 )
                 _env = learn_interface.put_state(_env, s)
 
-                _env, trans_stat = transition(_env, data)
-                loss, readout_stat = readout(_env, data)
+                _env, trans_stat = transition(_env, tr_data)
+                loss, readout_stat = readout(_env, vl_data)
                 arr, _ = eqx.partition(_env, eqx.is_array)
                 return arr, (trans_stat | readout_stat, loss)
 
@@ -242,7 +243,7 @@ def bptt[ENV, TR_DATA, VL_DATA](
             env = eqx.combine(arr, static)
             return jnp.sum(losses), (env, stats)
 
-        param = learn_interface.get_param(env)
+        param = learn_interface.get_param(env_init)
         grad, (env, stats) = eqx.filter_grad(loss_fn, has_aux=True)(param, ds_init)
         return env, GRADIENT(grad), stats
 
@@ -250,8 +251,8 @@ def bptt[ENV, TR_DATA, VL_DATA](
 
 
 def identity[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, STAT]],
-    readout: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[LOSS, STAT]],
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout: Callable[[ENV, VL_DATA], tuple[LOSS, STAT]],
     learn_interface: GodInterface[ENV],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
@@ -260,8 +261,9 @@ def identity[ENV, TR_DATA, VL_DATA](
 
         def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[STAT, LOSS]]:
             env = eqx.combine(arr, static)
-            env, trans_stat = transition(env, data)
-            loss, readout_stat = readout(env, data)
+            tr_data, vl_data = data
+            env, trans_stat = transition(env, tr_data)
+            loss, readout_stat = readout(env, vl_data)
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (trans_stat | readout_stat, loss)
 
@@ -274,307 +276,144 @@ def identity[ENV, TR_DATA, VL_DATA](
     return gradient_fn
 
 
-# # add inference to the the validation lista and the size will work out
-# def create_meta_learner[ENV, DATA](
-#     config: GodConfig,
-#     transition_fns: list[Callable[[ENV, DATA], ENV]],
-#     readout_fns: list[Callable[[ENV, tuple[DATA, jax.Array]], tuple[tuple[STAT, ...], LOSS]]],
-#     resets: list[Callable[[ENV], ENV]],
-#     test_reset: Callable[[ENV], ENV],
-#     learn_interfaces: list[LearnInterface[ENV]],
-#     validation_learn_interfaces: list[LearnInterface[ENV]],
-#     general_interfaces: list[GeneralInterface[ENV]],
-#     virtual_minibatches: list[int],
-#     last_unpadded_lengths: list[int],
-# ):
-#     """from here on out the types stop making sense because I have to rely on dynamic typing to get the algorithm to work. just make sure the data is in the correct shape and everything should work out thats the only assumption I need to make"""
+def create_validation_learners[ENV, TR_DATA, VL_DATA](
+    transition_fns: list[Callable[[ENV, TR_DATA], tuple[ENV, STAT]]],
+    readout_fns: list[Callable[[ENV, VL_DATA], tuple[LOSS, STAT]]],
+    val_learn_interfaces: list[GodInterface[ENV]],
+    config: GodConfig,
+) -> list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[GRADIENT, STAT]]]:
 
-#     gr_fns = []
-#     for (
-#         learn_interface,
-#         general_interface,
-#         data_config,
-#         virtual_minibatch,
-#         last_unpadded_length,
-#         transition_fn,
-#         statistic_fn,
-#     ) in zip(
-#         [learn_interfaces[0]] + validation_learn_interfaces,
-#         general_interfaces,
-#         config.data.values(),
-#         virtual_minibatches,
-#         last_unpadded_lengths,
-#         transition_fns,
-#         readout_fns,
-#     ):
-#         readout_gr = take_jacobian(statistic_fn, learn_interface)
+    def identity_transition(env: ENV, data: TR_DATA) -> tuple[ENV, STAT]:
+        return env, {}
 
-#         match config.learners[0].learner:
-#             case RTRLConfig() as rtrl_config:
+    def shim_expand_time(
+        grad_fn: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]],
+    ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+        def wrapper(env: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+            data_with_time = jax.tree.map(lambda x: jnp.expand_dims(x, axis=0), data)
+            env, gradient, stat = grad_fn(env, data_with_time)
+            stat = jax.tree.map(lambda x: x[0], stat)
+            return env, gradient, stat
 
-#                 def _learner(
-#                     env: ENV,
-#                     data: tuple[traverse[DATA], jax.Array],
-#                     transition_fn=transition_fn,
-#                     statistic_fn=statistic_fn,
-#                     readout_gr=readout_gr,
-#                     learn_interface=learn_interface,
-#                     rtrl_config=rtrl_config,
-#                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-#                     tr_data, mask = data
-#                     return rtrl(
-#                         lambda e, d: (transition_fn(e, d), ()),
-#                         statistic_fn,
-#                         readout_gr,
-#                         learn_interface,
-#                         lambda x: x,
-#                         lambda x: (x, mask),
-#                         rtrl_config,
-#                     )(env, tr_data)
+        return wrapper
 
-#             case RTRLHessianDecompConfig() as rtrl_config:
+    def drop_env(
+        fn: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]],
+    ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[GRADIENT, STAT]]:
+        def wrapper(env: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[GRADIENT, STAT]:
+            _, gradient, stat = fn(env, data)
+            return gradient, stat
 
-#                 def _learner(
-#                     env: ENV,
-#                     data: tuple[traverse[DATA], jax.Array],
-#                     transition_fn=transition_fn,
-#                     statistic_fn=statistic_fn,
-#                     readout_gr=readout_gr,
-#                     learn_interface=learn_interface,
-#                     rtrl_config=rtrl_config,
-#                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-#                     tr_data, mask = data
-#                     return rtrl_hessian_decomp(
-#                         lambda e, d: (transition_fn(e, d), ()),
-#                         statistic_fn,
-#                         readout_gr,
-#                         learn_interface,
-#                         lambda x: x,
-#                         lambda x: (x, mask),
-#                         rtrl_config,
-#                     )(env, tr_data)
+        return wrapper
 
-#             case RTRLFiniteHvpConfig() as rtrl_config:
+    transitions = [identity_transition] + transition_fns[1:]
 
-#                 def _learner(
-#                     env: ENV,
-#                     data: tuple[traverse[DATA], jax.Array],
-#                     transition_fn=transition_fn,
-#                     statistic_fn=statistic_fn,
-#                     readout_gr=readout_gr,
-#                     learn_interface=learn_interface,
-#                     rtrl_config=rtrl_config,
-#                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-#                     tr_data, mask = data
-#                     return rtrl_finite_hvp(
-#                         lambda e, d: (transition_fn(e, d), ()),
-#                         statistic_fn,
-#                         readout_gr,
-#                         learn_interface,
-#                         lambda x: x,
-#                         lambda x: (x, mask),
-#                         rtrl_config,
-#                     )(env, tr_data)
+    gradient_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]] = []
+    for transition, readout_fn, interface, meta_config in zip(
+        transitions,
+        readout_fns,
+        val_learn_interfaces,
+        config.levels,
+    ):
+        method = meta_config.learner.model_learner.method
+        readout_gr = drop_env(
+            shim_expand_time(bptt(identity_transition, readout_fn, interface, BPTTConfig(truncate_at=None)))
+        )
 
-#             case BPTTConfig():
+        match method:
+            case BPTTConfig():
+                fn = bptt(transition, readout_fn, interface, method)
+            case IdentityLearnerConfig():
+                fn = identity(transition, readout_fn, interface)
+            case RTRLConfig() | RTRLFiniteHvpConfig():
+                fn = rtrl(transition, readout_gr, interface, method)
+            case UOROConfig():
+                fn = uoro(transition, readout_gr, interface, method)
+            case RFLOConfig():
+                fn = rflo(transition, readout_gr, interface, method)
 
-#                 def _learner(
-#                     env: ENV,
-#                     data: tuple[traverse[DATA], jax.Array],
-#                     transition_fn=transition_fn,
-#                     statistic_fn=statistic_fn,
-#                     learn_interface=learn_interface,
-#                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-#                     tr_data, mask = data
-#                     return bptt(
-#                         lambda e, d: (transition_fn(e, d), ()),
-#                         statistic_fn,
-#                         learn_interface,
-#                         lambda x: x,
-#                         lambda x: (x, mask),
-#                     )(env, tr_data)
+        gradient_fns.append(fn)
 
-#             case IdentityConfig():
+    gradient_fns[0] = shim_expand_time(gradient_fns[0])
 
-#                 def _learner(
-#                     env: ENV,
-#                     data: tuple[traverse[DATA], jax.Array],
-#                     transition_fn=transition_fn,
-#                     statistic_fn=statistic_fn,
-#                     learn_interface=learn_interface,
-#                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-#                     tr_data, mask = data
-#                     return identity(
-#                         lambda e, d: (transition_fn(e, d), ()),
-#                         statistic_fn,
-#                         learn_interface,
-#                         lambda x: x,
-#                         lambda x: (x, mask),
-#                     )(env, tr_data)
-#             case RFLOConfig() as rflo_config:
+    return [drop_env(fn) for fn in gradient_fns]
 
-#                 def _learner(
-#                     env: ENV,
-#                     data: tuple[traverse[DATA], jax.Array],
-#                     transition_fn=transition_fn,
-#                     statistic_fn=statistic_fn,
-#                     readout_gr=readout_gr,
-#                     learn_interface=learn_interface,
-#                     rflo_config=rflo_config,
-#                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-#                     tr_data, mask = data
-#                     return rflo(
-#                         lambda e, d: (transition_fn(e, d), ()),
-#                         statistic_fn,
-#                         readout_gr,
-#                         learn_interface,
-#                         lambda x: x,
-#                         lambda x: (x, mask),
-#                         rflo_config,
-#                     )(env, tr_data)
-#             case UOROConfig(std):
 
-#                 def _learner(
-#                     env: ENV,
-#                     data: tuple[traverse[DATA], jax.Array],
-#                     transition_fn=transition_fn,
-#                     statistic_fn=statistic_fn,
-#                     readout_gr=readout_gr,
-#                     learn_interface=learn_interface,
-#                     std=std,
-#                 ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
-#                     tr_data, mask = data
-#                     return uoro(
-#                         lambda e, d: (transition_fn(e, d), ()),
-#                         statistic_fn,
-#                         readout_gr,
-#                         learn_interface,
-#                         lambda x: x,
-#                         lambda x: (x, mask),
-#                         std,
-#                     )(env, tr_data)
+def create_meta_learner[ENV](
+    config: GodConfig,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    transition_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, STAT]]],
+    readout_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]],
+    val_learn_interfaces: list[GodInterface[ENV]],
+    nest_learn_interfaces: list[GodInterface[ENV]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    env: ENV,
+) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
-#         learner = average_gradients(
-#             gr_fn=_learner,
-#             num_times_to_avg_in_timeseries=data_config.num_times_to_avg_in_timeseries,
-#             general_interface=general_interface,
-#             virtual_minibatches=virtual_minibatch,
-#             last_unpadded_length=last_unpadded_length,
-#             get_traverse=lambda data: data[0],
-#             put_traverse=lambda tr, data: (tr, data[1]),
-#         )
+    validation_learners = create_validation_learners(transition_fns, readout_fns, val_learn_interfaces, config)
+    learn_interface_pairs = list(zip(val_learn_interfaces, nest_learn_interfaces))
+    resetters = env_resetters(config, shapes, meta_interfaces, learn_interface_pairs, [False] * len(config.levels))
 
-#         gr_fns.append(learner)
+    def make_optimized_transition(
+        inner: Callable[[ENV, tuple], tuple[ENV, STAT]],
+        readout_gr: Callable[[ENV, tuple], tuple[GRADIENT, STAT]],
+        readout: Callable[[ENV, tuple], tuple[LOSS, STAT]],
+        check: Callable[[ENV], ENV],
+        advance: Callable[[ENV], ENV],
+        assignments: dict[str, OptimizerAssignment],
+        interfaces: dict[str, GodInterface[ENV]],
+        nest_interface: GodInterface[ENV],
+        method: GradientMethod,
+    ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
-#     readouts = []
-#     for transition, statistics in zip(transition_fns, readout_fns):
+        match method:
+            case RTRLConfig() | RTRLFiniteHvpConfig():
+                grad_fn = rtrl(inner, readout_gr, nest_interface, method)
+            case BPTTConfig():
+                grad_fn = bptt(inner, readout, nest_interface, method)
+            case IdentityLearnerConfig():
+                grad_fn = identity(inner, readout, nest_interface)
+            case UOROConfig():
+                grad_fn = uoro(inner, readout_gr, nest_interface, method)
+            case RFLOConfig():
+                grad_fn = rflo(inner, readout_gr, nest_interface, method)
 
-#         def make_readout(transition=transition, statistics=statistics):
-#             def readout(env: ENV, ds: tuple[traverse[DATA], jax.Array]) -> tuple[tuple[STAT, ...], LOSS]:
-#                 _ds, mask = ds
-#                 arr, static = eqx.partition(env, eqx.is_array)
+        def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
+            env = check(env)
+            env = advance(env)
+            env, gradient, stat = grad_fn(env, data)
+            gr_env = nest_interface.put_param(env, gradient)
+            env = get_opt_step(assignments, interfaces, env, gr_env, config.hyperparameters)
+            return env, stat
 
-#                 def step(_arr, data: DATA) -> tuple[PyTree, tuple[tuple[STAT, ...], LOSS]]:
-#                     __env = eqx.combine(_arr, static)
-#                     __env = transition(__env, data)
-#                     read_stat, loss = statistics(__env, (data, mask))
-#                     _arr, _ = eqx.partition(__env, eqx.is_array)
-#                     return _arr, (read_stat, loss)
+        return optimized_transition
 
-#                 _, (stats, losses) = jax.lax.scan(step, arr, _ds.d)
-#                 return stats, jnp.sum(losses)
+    current_transition = transition_fns[0]
 
-#             return readout
+    for level in range(len(config.levels)):
+        meta_config = config.levels[level]
+        nest_interface = nest_learn_interfaces[level]
+        resetter = resetters[level]
+        vl_learner = validation_learners[level]
+        readout_fn = readout_fns[level]
+        interfaces = meta_interfaces[level]
 
-#         readouts.append(make_readout())
+        check = make_reset_checker(nest_interface, resetter, meta_config.meta_opt.reset_t)
+        advance = make_tick_advancer(nest_interface)
 
-#     readout_grs = [lambda env, data, g=gr_fn: g(env, data)[1:] for gr_fn in gr_fns[1:]]
+        current_transition = make_optimized_transition(
+            current_transition,
+            vl_learner,
+            readout_fn,
+            check,
+            advance,
+            meta_config.learner.optimizer,
+            interfaces,
+            nest_interface,
+            meta_config.learner.optimizer_learner.method,
+        )
 
-#     learner0 = optimization(
-#         lambda env, data: gr_fns[0](resets[0](env), data), learn_interfaces[0], general_interfaces[0]
-#     )
-#     for learn_config, vl_readout_gr, vl_readout, vl_reset, learn_interface, general_interface in zip(
-#         toolz.drop(1, config.learners.values()),
-#         readout_grs,
-#         readouts[1:],
-#         resets[1:],
-#         learn_interfaces[1:],
-#         general_interfaces[1:],
-#     ):
-#         learner0 = lambda env, data, r=vl_reset, l=learner0: l(r(env), data)
+        axes = diff_axes(env, resetter(env, jax.random.key(0)))
+        current_transition = eqx.filter_vmap(current_transition, in_axes=(axes, 0), out_axes=(axes, 0))
 
-#         match learn_config.learner:
-#             case RTRLConfig() as rtrl_config:
-#                 _learner = rtrl(
-#                     learner0,
-#                     vl_readout,
-#                     vl_readout_gr,
-#                     learn_interface,
-#                     lambda x: x[0],
-#                     lambda x: x[1],
-#                     rtrl_config,
-#                 )
-#             case RTRLHessianDecompConfig() as rtrl_config:
-#                 _learner = rtrl_hessian_decomp(
-#                     learner0,
-#                     vl_readout,
-#                     vl_readout_gr,
-#                     learn_interface,
-#                     lambda x: x[0],
-#                     lambda x: x[1],
-#                     rtrl_config,
-#                 )
-#             case RTRLFiniteHvpConfig() as rtrl_config:
-#                 _learner = rtrl_finite_hvp(
-#                     learner0,
-#                     vl_readout,
-#                     vl_readout_gr,
-#                     learn_interface,
-#                     lambda x: x[0],
-#                     lambda x: x[1],
-#                     rtrl_config,
-#                 )
-#             case BPTTConfig():
-#                 _learner = bptt(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
-#             case IdentityConfig():
-#                 _learner = identity(learner0, vl_readout, learn_interface, lambda x: x[0], lambda x: x[1])
-#             case RFLOConfig() as rflo_config:
-#                 _learner = rflo(
-#                     learner0,
-#                     vl_readout,
-#                     vl_readout_gr,
-#                     learn_interface,
-#                     lambda x: x[0],
-#                     lambda x: x[1],
-#                     rflo_config,
-#                 )
-#             case UOROConfig(std):
-#                 _learner = uoro(
-#                     learner0,
-#                     vl_readout,
-#                     vl_readout_gr,
-#                     learn_interface,
-#                     lambda x: x[0],
-#                     lambda x: x[1],
-#                     std,
-#                 )
-
-#         learner0 = optimization(_learner, learn_interface, general_interface)
-
-#     def final_learner(env: ENV, data: traverse) -> tuple[ENV, tuple[STAT, ...], traverse[LOSS]]:
-#         arr, static = eqx.partition(env, eqx.is_array)
-
-#         def step(_arr, d) -> tuple[PyTree, tuple[tuple[STAT, ...], LOSS]]:
-#             tr_data, vl_data = d
-#             _env = eqx.combine(_arr, static)
-#             _env, stats = learner0(_env, tr_data)
-#             temp_env = general_interfaces[0].put_current_virtual_minibatch(_env, jnp.nan)
-#             readout_stat, loss = readouts[0](test_reset(temp_env), vl_data)
-#             _arr, _ = eqx.partition(_env, eqx.is_array)
-#             return _arr, (stats + readout_stat, loss)
-
-#         _env, (stats, losses) = jax.lax.scan(step, arr, data.d)
-#         env = eqx.combine(_env, static)
-#         return env, stats, traverse(losses)
-
-#     return final_learner
+    return current_transition

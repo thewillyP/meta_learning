@@ -69,18 +69,22 @@ def jacobian_matrix_product(f, primal, matrix):
     return eqx.filter_vmap(wrapper, in_axes=(None, 1), out_axes=(None, 1, None))(primal, matrix)
 
 
-def get_activation_fn(s: ACTIVATION_FN) -> Callable[[jax.Array], jax.Array]:
+def identity_fn(x: jax.Array) -> jax.Array:
+    return x
+
+
+def get_activation_fn(s: str) -> Callable[[jax.Array], jax.Array]:
     match s:
         case "tanh":
-            return jax.nn.tanh
+            return jax.tree_util.Partial(jax.nn.tanh)
         case "relu":
-            return jax.nn.relu
+            return jax.tree_util.Partial(jax.nn.relu)
         case "sigmoid":
-            return jax.nn.sigmoid
+            return jax.tree_util.Partial(jax.nn.sigmoid)
         case "identity":
-            return lambda x: x
+            return jax.tree_util.Partial(identity_fn)
         case "softmax":
-            return jax.nn.softmax
+            return jax.tree_util.Partial(jax.nn.softmax)
         case _:
             raise ValueError("Invalid activation function")
 

@@ -171,16 +171,16 @@ def runApp(config: GodConfig) -> None:
                     is_test=False,
                 ),
                 validation=StepConfig(
-                    num_steps=1,
-                    batch=1,
-                    reset_t=None,
-                    track_influence_in=frozenset({0}),
-                ),
-                nested=StepConfig(
                     num_steps=28,
                     batch=2,
                     reset_t=28,
                     track_influence_in=frozenset({0, 1}),
+                ),
+                nested=StepConfig(
+                    num_steps=1,
+                    batch=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({0}),
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
@@ -365,9 +365,10 @@ def runApp(config: GodConfig) -> None:
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
     for x in toolz.take(1, dataloader):
-        (((tr_x, tr_y), _), (vl_x, vl_y)), (te_x, te_y) = x
+        ((none, (tr_x, tr_y)), (vl_x, vl_y)), (te_x, te_y) = x
         # print(tr_x, tr_y)
         # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
+        print(none)
         print(tr_x.shape, tr_y.shape)
         print(vl_x.shape, vl_y.shape)
         print(te_x.shape, te_y.shape)

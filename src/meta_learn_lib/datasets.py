@@ -348,17 +348,17 @@ def validate_dataloader_config(config: GodConfig) -> list[str]:
 
     running_divisor = 1
     for i, level in enumerate(config.levels):
-        running_divisor *= level.meta_opt.batch
+        running_divisor *= level.nested.batch
         if config.num_tasks % running_divisor != 0:
             errors.append(
                 f"Level {i}: num_tasks ({config.num_tasks}) not divisible by cumulative batch product ({running_divisor})"
             )
             continue
         chunk_size = config.num_tasks // running_divisor
-        tasks_per_stream = level.dataset_validation.task_batch_size
+        tasks_per_stream = level.validation.batch
         if chunk_size % tasks_per_stream != 0:
             errors.append(
-                f"Level {i}: chunk size ({chunk_size}) must be divisible by task_batch_size ({tasks_per_stream})"
+                f"Level {i}: chunk size ({chunk_size}) must be divisible by validation.batch ({tasks_per_stream})"
             )
 
     return errors
@@ -372,13 +372,12 @@ def create_data_sources(
     def get_sources(c: list[MetaConfig], k: PRNG) -> list[tuple[MetaConfig, PRNG]]:
         keys = jax.random.split(k, len(c))
         return [
-            (level, jax.random.key(level.test_seed) if level.dataset_validation.is_test else key)
-            for level, key in zip(c, keys)
+            (level, jax.random.key(level.test_seed) if level.dataset.is_test else key) for level, key in zip(c, keys)
         ]
 
     # 1. Create dataset sources
     unique_task_pairs = {
-        (level.dataset_source, level.dataset_validation.is_test): key for level, key in get_sources(config.levels, k1)
+        (level.dataset_source, level.dataset.is_test): key for level, key in get_sources(config.levels, k1)
     }
 
     remaining = {
@@ -396,12 +395,12 @@ def create_data_sources(
     # 2. Take from sources for each level
     level_datasets: list[list[Dataset]] = []
     for level, tk in get_sources(config.levels, k2):
-        key_pair = (level.dataset_source, level.dataset_validation.is_test)
+        key_pair = (level.dataset_source, level.dataset.is_test)
         taken, remaining[key_pair] = take_datasets(
             seed=tk,
             remaining=remaining[key_pair],
-            n=level.dataset_validation.num_examples_total,
-            n_consume=level.dataset_validation.num_steps_in_timeseries,
+            n=level.dataset.num_examples_total,
+            n_consume=level.validation.num_steps,
             x_mask=config.unlabeled_mask_value,
             y_mask=config.label_mask_value,
         )
@@ -420,7 +419,6 @@ def create_dataloader(
 ) -> DataLoader:
     k1, prng = jax.random.split(prng, 2)
 
-    # 3. Build nested loaders top-down
     global_perm = jax.random.permutation(task_distribution_prng, config.num_tasks)
 
     def make_task_loader(
@@ -429,20 +427,18 @@ def create_dataloader(
         datasets: list[Dataset],
         key: PRNG,
     ) -> Iterator:
-        tasks_per_stream = level.dataset_validation.task_batch_size
+        tasks_per_stream = level.validation.batch
         task_keys = jax.random.split(key, len(task_indices))
         task_iters = [
             task_iterator(
                 datasets[idx],
-                level.dataset_validation.num_examples_in_minibatch,
+                level.dataset.num_examples_in_minibatch,
                 config.unlabeled_mask_value,
                 config.label_mask_value,
                 tkey,
             )
             for idx, tkey in zip(task_indices.tolist(), task_keys)
         ]
-        # might want to switch vb and multitask axes.
-
         streams = [
             map(
                 lambda batch: jax.tree.map(lambda x: x.swapaxes(0, 1), batch),
@@ -452,40 +448,49 @@ def create_dataloader(
         ]
         return concat(streams)
 
+    def make_nil_loader() -> Iterator:
+        while True:
+            yield None
+
     def make_level_loader(
-        meta_config: MetaConfig,
-        datasets: list[Dataset],
-        xss: list[tuple[MetaConfig, list[Dataset]]],
+        levels: list[tuple[MetaConfig, list[Dataset]]],
         task_indices: jax.Array,
         key: PRNG,
     ) -> Iterator:
-        batch = meta_config.meta_opt.batch
-        num_steps = meta_config.meta_opt.num_steps
-        is_test = meta_config.dataset_validation.is_test
+        if len(levels) == 0:
+            return make_nil_loader()
+
+        (meta_config, datasets), *rest = levels
+
+        batch = meta_config.nested.batch
+        num_steps = meta_config.nested.num_steps
+        is_test = meta_config.dataset.is_test
         child_key, val_key = jax.random.split(key)
         val_key = jax.random.key(meta_config.test_seed) if is_test else val_key
 
         chunks = jnp.split(task_indices, batch)
         child_keys = jax.random.split(child_key, batch)
         val_keys_per_child = [infinite_keys(vk) for vk in jax.random.split(val_key, batch)]
-        partition = zip(chunks, child_keys, val_keys_per_child)
 
-        if len(xss) == 0:
-            f = lambda c, ck: make_task_loader(c, meta_config, datasets, ck)
-            f_val = lambda c, k: make_task_loader(c, meta_config, datasets, k)
-        else:
-            x, *xs = xss
-            mc, ds = x
-            f = lambda c, ck: make_level_loader(mc, ds, xs, c, ck)
-            f_val = lambda c, k: batch_iterator(
+        def f(c, ck):
+            return make_level_loader(rest, c, ck)
+
+        def f_val(c, k):
+            return batch_iterator(
                 [
                     make_task_loader(sub, meta_config, datasets, sk)
-                    for sub, sk in zip(jnp.split(c, mc.meta_opt.batch), jax.random.split(k, mc.meta_opt.batch))
+                    for sub, sk in zip(
+                        jnp.split(c, meta_config.nested.batch),
+                        jax.random.split(k, meta_config.nested.batch),
+                    )
                 ],
-                mc.meta_opt.batch,
+                meta_config.nested.batch,
             )
 
-        children = [zip(f(chunk, ckey), mapcat(lambda k, c=chunk: f_val(c, k), vks)) for chunk, ckey, vks in partition]
+        children = [
+            zip(f(chunk, ckey), mapcat(lambda k, c=chunk: f_val(c, k), vks))
+            for chunk, ckey, vks in zip(chunks, child_keys, val_keys_per_child)
+        ]
         train_loader = batch_iterator(children, len(children))
 
         return DataLoader(
@@ -494,5 +499,5 @@ def create_dataloader(
             collate_fn=jax_collate_fn,
         )
 
-    xs = list(reversed(list(zip(config.levels, data_sources))))
-    return make_level_loader(config.levels[-1], data_sources[-1], xs[1:], global_perm, k1)
+    levels_with_data = list(reversed(list(zip(config.levels, data_sources))))
+    return make_level_loader(levels_with_data, global_perm, k1)

@@ -24,25 +24,6 @@ class SeedConfig:
 
 
 @dataclass(frozen=True)
-class MetaOptimizationConfig:
-    batch: int  # num optimizers that run in parallel
-    num_steps: int
-    reset_t: int | None  # if not None, then reset the environment every reset_t steps. if None, then never reset
-    track_influence_in: frozenset[int]  # which levels to track influence for
-
-
-@dataclass(frozen=True)
-class ValidationConfig:
-    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validation
-    num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT). Every dataset will be treated as a time series. Even trivial ones.
-    num_examples_total: int  # total number of examples in dataset split
-    is_test: bool  # whether this split is test or train. if test then it will source from standardized test set
-    task_batch_size: int
-    reset_t: int | None
-    track_influence_in: frozenset[int]  # which levels to track influence for
-
-
-@dataclass(frozen=True)
 class MNISTTaskFamily:
     type Domain = Literal["mnist", "fashion_mnist"]
     patch_h: int
@@ -388,14 +369,30 @@ class TrackLogs:
 
 
 @dataclass(frozen=True)
+class StepConfig:
+    num_steps: int
+    batch: int
+    reset_t: int | None
+    track_influence_in: frozenset[int]
+
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    num_examples_in_minibatch: int
+    num_examples_total: int
+    is_test: bool
+
+
+@dataclass(frozen=True)
 class MetaConfig:
-    objective_fn: ObjectiveFn  # objective function used for validation inference at each meta level
-    dataset_validation: ValidationConfig
-    dataset_source: Task  # what dataset validation inference uses at each meta level
-    meta_opt: MetaOptimizationConfig  # number of simultaneous tasks at same level
+    objective_fn: ObjectiveFn
+    dataset_source: Task
+    dataset: DatasetConfig
+    validation: StepConfig
+    nested: StepConfig
     learner: LearnConfig
-    test_seed: int
     track_logs: TrackLogs
+    test_seed: int
 
 
 @dataclass(frozen=True)

@@ -431,7 +431,6 @@ def reset_validation[ENV](
     nodes: dict[str, Node],
     node_features: dict[str, tuple[int, ...]],
     is_init: bool,
-    prev_batch: int | None,
 ) -> Callable[[ENV, PRNG], ENV]:
 
     def create_env(env: ENV, prng: PRNG) -> ENV:
@@ -439,14 +438,12 @@ def reset_validation[ENV](
         # 1. Create inference state
         k1, prng = jax.random.split(prng, 2)
         f1 = lambda e, k: create_inference_state(
-            nodes, meta_interface, node_features, meta_config.dataset_validation.track_influence_in, is_init, e, k
+            nodes, meta_interface, node_features, meta_config.validation.track_influence_in, is_init, e, k
         )
         batch_size = [
-            meta_config.dataset_validation.task_batch_size,
-            meta_config.dataset_validation.num_examples_in_minibatch,
+            meta_config.validation.batch,
+            meta_config.dataset.num_examples_in_minibatch,
         ]
-        if prev_batch is not None:
-            batch_size = [prev_batch] + batch_size
         env = vmap_factory(f1, batch_size)(env, k1)
 
         # 2. use it for learning states
@@ -456,7 +453,7 @@ def reset_validation[ENV](
             factory,
             meta_config.learner.model_learner.method,
             vl_learner,
-            frozenset(),  # bc validation states never reincorporated back into transition, only readout
+            meta_config.validation.track_influence_in,
             env,
             k2,
         )
@@ -500,7 +497,7 @@ def reset_states[ENV](
             meta_interface,
             env,
             hyperparameters,
-            meta_config.meta_opt.track_influence_in,
+            meta_config.nested.track_influence_in,
         )
 
         # 3. use it for learning states
@@ -510,7 +507,7 @@ def reset_states[ENV](
             factory,
             meta_config.learner.optimizer_learner.method,
             meta_learner,
-            meta_config.meta_opt.track_influence_in,
+            meta_config.nested.track_influence_in,
             env,
             k3,
         )
@@ -625,11 +622,14 @@ def env_validation_resetters[ENV](
 ) -> list[Callable[[ENV, PRNG], ENV]]:
 
     resetters: list[Callable[[ENV, PRNG], ENV]] = []
-    prev_batch: int | None = None
     is_inits = [False] * len(config.levels)
 
-    for i, (shape, meta_interface, learn_interface, meta_config, is_init) in enumerate(
-        zip(shapes, meta_interfaces, val_learn_interfaces, config.levels, is_inits)
+    for shape, meta_interface, learn_interface, meta_config, is_init in zip(
+        shapes,
+        meta_interfaces,
+        val_learn_interfaces,
+        config.levels,
+        is_inits,
     ):
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
 
@@ -641,10 +641,8 @@ def env_validation_resetters[ENV](
             config.nodes,
             node_features,
             is_init,
-            prev_batch,
         )
         resetters.append(resetter)
-        prev_batch = meta_config.meta_opt.batch
 
     return resetters
 
@@ -661,27 +659,28 @@ def env_resetters[ENV](
 
     def fold(
         accum: Callable[[ENV, PRNG], ENV],
-        prev_batch: int | None,
         shape: tuple[tuple[int, ...], tuple[int, ...]],
         meta_interface: dict[str, GodInterface[ENV]],
         learn_interface: tuple[GodInterface[ENV], GodInterface[ENV]],
         meta_config: MetaConfig,
         create_inference_param: bool,
         is_init: bool,
-    ) -> tuple[Callable[[ENV, PRNG], ENV], int]:
+    ) -> Callable[[ENV, PRNG], ENV]:
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
         val_interface, nest_interface = learn_interface
 
         generator = reset_states(
-            reset_validation(
-                accum,
-                meta_interface,
-                val_interface,
-                meta_config,
-                config.nodes,
-                node_features,
-                is_init,
-                prev_batch,
+            vmap_factory(
+                reset_validation(
+                    accum,
+                    meta_interface,
+                    val_interface,
+                    meta_config,
+                    config.nodes,
+                    node_features,
+                    is_init,
+                ),
+                [meta_config.nested.batch],
             ),
             meta_interface,
             nest_interface,
@@ -693,12 +692,10 @@ def env_resetters[ENV](
             node_features,
             create_inference_param,
         )
-        new_factory = vmap_factory(generator, [meta_config.meta_opt.batch])
-        return (new_factory, meta_config.meta_opt.batch)
+        return generator
 
     resetters: list[Callable[[ENV, PRNG], ENV]] = []
     accum: Callable[[ENV, PRNG], ENV] = factory
-    prev_batch: int | None = None
     for (
         shape,
         meta_interface,
@@ -714,9 +711,8 @@ def env_resetters[ENV](
         create_inference_params,
         is_inits,
     ):
-        accum, prev_batch = fold(
+        accum = fold(
             accum,
-            prev_batch,
             shape,
             meta_interface,
             learn_interface,
@@ -788,7 +784,7 @@ def create_transition_fns[ENV](
 
     return [
         make_composed(
-            make_reset_checker(val_interface, resetter, meta_config.dataset_validation.reset_t),
+            make_reset_checker(val_interface, resetter, meta_config.validation.reset_t),
             make_tick_advancer(val_interface),
             transition,
         )

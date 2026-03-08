@@ -237,8 +237,8 @@ def runApp(config: GodConfig) -> None:
                     track_influence_in=frozenset({1}),
                 ),
                 nested=StepConfig(
-                    num_steps=2,
-                    batch=1,
+                    num_steps=1,
+                    batch=2,
                     reset_t=None,
                     track_influence_in=frozenset({1}),
                 ),
@@ -373,12 +373,12 @@ def runApp(config: GodConfig) -> None:
         print(vl_x.shape, vl_y.shape)
         print(te_x.shape, te_y.shape)
 
-    # meta_interfaces, count = create_meta_interfaces(config, 0)
-    # learn_interfaces, count = create_learn_interfaces(config, count)
-    # task_interfaces, count = create_task_interfaces(config, count)
+    meta_interfaces, count = create_meta_interfaces(config, 0)
+    learn_interfaces, count = create_learn_interfaces(config, count)
+    task_interfaces, count = create_task_interfaces(config, count)
 
-    # env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
-    # eqx.tree_pprint(env.serialize())
+    env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
+    eqx.tree_pprint(env.serialize())
 
     # val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
 

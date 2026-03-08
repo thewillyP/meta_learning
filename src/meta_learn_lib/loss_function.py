@@ -7,7 +7,7 @@ from meta_learn_lib.config import *
 from meta_learn_lib.env import Outputs
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import LOSS, STAT
-from meta_learn_lib.util import accuracy_hard, accuracy_soft
+from meta_learn_lib.util import accuracy
 
 
 def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
@@ -42,8 +42,10 @@ def create_loss_fn[ENV](
             match mode:
                 case "cross_entropy_with_integer_labels":
                     _loss_fn = lambda logits, y: optax.losses.softmax_cross_entropy_with_integer_labels(logits, y)
+                    _to_onehot = lambda target, num_classes: jax.nn.one_hot(target, num_classes)
                 case "cross_entropy":
                     _loss_fn = lambda logits, y: optax.safe_softmax_cross_entropy(logits, y)
+                    _to_onehot = lambda target, num_classes: target
 
             def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 _, target = data
@@ -51,12 +53,11 @@ def create_loss_fn[ENV](
                 mask = target != label_mask_value
                 raw_loss = _loss_fn(pred, target)
                 loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
-                hard_acc = jnp.sum(jnp.where(mask, accuracy_hard(pred, target), 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
-                soft_acc = jnp.sum(jnp.where(mask, accuracy_soft(pred, target), 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
+                target_onehot = _to_onehot(target, pred.shape[-1])
+                acc = jnp.sum(jnp.where(mask, accuracy(pred, target_onehot), 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
                 return loss, {
                     "loss": loss,
-                    "accuracy_hard": jax.lax.stop_gradient(hard_acc),
-                    "accuracy_soft": jax.lax.stop_gradient(soft_acc),
+                    "accuracy": jax.lax.stop_gradient(acc),
                 }
 
         case RegressionObjective():

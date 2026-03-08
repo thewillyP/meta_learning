@@ -89,15 +89,9 @@ def get_activation_fn(s: str) -> Callable[[jax.Array], jax.Array]:
             raise ValueError("Invalid activation function")
 
 
-def accuracy_hard(preds: jax.Array, labels: jax.Array) -> jax.Array:
-    pred_classes = jnp.argmax(preds, axis=-1)
-    return pred_classes == labels
-
-
-def accuracy_soft(preds: jax.Array, labels: jax.Array) -> jax.Array:
-    pred_classes = jnp.argmax(preds, axis=-1)
-    true_classes = jnp.argmax(labels, axis=-1)
-    return pred_classes == true_classes
+def accuracy(preds: jax.Array, labels: jax.Array) -> jax.Array:
+    """preds are logits, labels are one-hot or soft distributions."""
+    return jnp.argmax(preds, axis=-1) == jnp.argmax(labels, axis=-1)
 
 
 class Vector[T](eqx.Module):

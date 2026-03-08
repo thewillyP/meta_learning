@@ -337,10 +337,17 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
     meta_interfaces: list[dict[str, GodInterface[GodState]]] = [{} for _ in range(len(config.levels))]
 
     # 1. nodes first
+    # Compute shared param ids once
+    node_ids: dict[str, int] = {}
+    for name, node in config.nodes.items():
+        i += 1
+        node_ids[name] = i
+
     # Do parameter sharing base model across all levels.
     for level in range(len(config.levels)):
         for name, node in config.nodes.items():
             i += 1
+            ni = node_ids[name]
             match node:
                 case NNLayer():
                     interface = copy.replace(
@@ -348,8 +355,8 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_logs=put_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
-                        get_mlp_param=get_mlp_param(i, 0),
-                        put_mlp_param=put_mlp_param(i, 0),
+                        get_mlp_param=get_mlp_param(ni, 0),
+                        put_mlp_param=put_mlp_param(ni, 0),
                     )
                 case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
                     interface = copy.replace(
@@ -359,8 +366,8 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_prng=put_prng(i, level),
                         get_vanilla_rnn_state=get_vanilla_rnn_state(i, level),
                         put_vanilla_rnn_state=put_vanilla_rnn_state(i, level),
-                        get_vanilla_rnn_param=get_vanilla_rnn_param(i, 0),
-                        put_vanilla_rnn_param=put_vanilla_rnn_param(i, 0),
+                        get_vanilla_rnn_param=get_vanilla_rnn_param(ni, 0),
+                        put_vanilla_rnn_param=put_vanilla_rnn_param(ni, 0),
                         get_time_constant=get_time_constant(
                             [*config.hyperparameters].index(time_constant),
                             config.hyperparameters[time_constant].level,
@@ -374,8 +381,8 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_prng=put_prng(i, level),
                         get_gru_state=get_gru_state(i, level),
                         put_gru_state=put_gru_state(i, level),
-                        get_gru_param=get_gru_param(i, 0),
-                        put_gru_param=put_gru_param(i, 0),
+                        get_gru_param=get_gru_param(ni, 0),
+                        put_gru_param=put_gru_param(ni, 0),
                     )
                 case LSTMLayer():
                     interface = copy.replace(
@@ -385,8 +392,8 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_prng=put_prng(i, level),
                         get_lstm_state=get_lstm_state(i, level),
                         put_lstm_state=put_lstm_state(i, level),
-                        get_lstm_param=get_lstm_param(i, 0),
-                        put_lstm_param=put_lstm_param(i, 0),
+                        get_lstm_param=get_lstm_param(ni, 0),
+                        put_lstm_param=put_lstm_param(ni, 0),
                     )
                 case Scan():
                     interface = copy.replace(

@@ -79,7 +79,7 @@ def get_inference[ENV](
     def infer(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, PMap[str, Outputs]]:
         outputs: PMap[str, Outputs] = pmap()
         x_data, y_data = data
-        for node_name in toposort_flatten(node_graph):
+        for node_name in (n for n in toposort_flatten(node_graph) if n in node_graph):
             match nodes[node_name]:
                 case NNLayer():
                     deps = [
@@ -231,12 +231,14 @@ def create_inference_and_readout[ENV](
         return outputs[last_node]
 
     transition_inference = eqx.filter_vmap(
-        eqx.filter_vmap(lambda e, d: transition_fn(e, d), in_axes=(axes, 0)),
+        eqx.filter_vmap(lambda e, d: transition_fn(e, d), in_axes=(axes, 0), out_axes=axes),
         in_axes=(axes, 0),
+        out_axes=axes,
     )
     readout_inference = eqx.filter_vmap(
-        eqx.filter_vmap(lambda e, d: readout_fn(e, d), in_axes=(axes, 0)),
+        eqx.filter_vmap(lambda e, d: readout_fn(e, d), in_axes=(axes, 0), out_axes=0),
         in_axes=(axes, 0),
+        out_axes=0,
     )
 
     return transition_inference, readout_inference

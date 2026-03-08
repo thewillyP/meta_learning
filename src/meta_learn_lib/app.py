@@ -238,7 +238,7 @@ def runApp(config: GodConfig) -> None:
                 ),
                 nested=StepConfig(
                     num_steps=1,
-                    batch=2,
+                    batch=1,
                     reset_t=None,
                     track_influence_in=frozenset({1}),
                 ),
@@ -365,7 +365,7 @@ def runApp(config: GodConfig) -> None:
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
     for x in toolz.take(1, dataloader):
-        ((none, (tr_x, tr_y)), (vl_x, vl_y)), (te_x, te_y) = x
+        ((none, ((tr_x, tr_y), _)), ((vl_x, vl_y), _)), ((te_x, te_y), _) = x
         # print(tr_x, tr_y)
         # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
         print(none)

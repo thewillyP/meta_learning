@@ -476,19 +476,10 @@ def create_dataloader(
             return make_level_loader(rest, c, ck)
 
         def f_val(c, k):
-            return batch_iterator(
-                [
-                    make_task_loader(sub, meta_config, datasets, sk)
-                    for sub, sk in zip(
-                        jnp.split(c, meta_config.nested.batch),
-                        jax.random.split(k, meta_config.nested.batch),
-                    )
-                ],
-                meta_config.nested.batch,
-            )
+            return make_task_loader(c, meta_config, datasets, k)
 
         children = [
-            zip(f(chunk, ckey), mapcat(lambda k, c=chunk: f_val(c, k), vks))
+            zip(f(chunk, ckey), map(lambda v: (v, v), mapcat(lambda k, c=chunk: f_val(c, k), vks)))
             for chunk, ckey, vks in zip(chunks, child_keys, val_keys_per_child)
         ]
         train_loader = batch_iterator(children, len(children))

@@ -653,7 +653,7 @@ def env_resetters[ENV](
     meta_interfaces: list[dict[str, GodInterface[ENV]]],
     learn_interfaces: list[tuple[GodInterface[ENV], GodInterface[ENV]]],
     is_inits: list[bool],
-) -> list[Callable[[ENV, PRNG], ENV]]:
+) -> list[tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]]:
     create_inference_params = [True] + [False] * (len(config.levels) - 1)
     factory: Callable[[ENV, PRNG], ENV] = lambda e, k: e
 
@@ -665,23 +665,25 @@ def env_resetters[ENV](
         meta_config: MetaConfig,
         create_inference_param: bool,
         is_init: bool,
-    ) -> Callable[[ENV, PRNG], ENV]:
+    ) -> tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]:
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
         val_interface, nest_interface = learn_interface
 
-        generator = reset_states(
-            vmap_factory(
-                reset_validation(
-                    accum,
-                    meta_interface,
-                    val_interface,
-                    meta_config,
-                    config.nodes,
-                    node_features,
-                    is_init,
-                ),
-                [meta_config.nested.batch],
+        inner = vmap_factory(
+            reset_validation(
+                accum,
+                meta_interface,
+                val_interface,
+                meta_config,
+                config.nodes,
+                node_features,
+                is_init,
             ),
+            [meta_config.nested.batch],
+        )
+
+        full = reset_states(
+            inner,
             meta_interface,
             nest_interface,
             meta_config,
@@ -692,9 +694,9 @@ def env_resetters[ENV](
             node_features,
             create_inference_param,
         )
-        return generator
+        return inner, full
 
-    resetters: list[Callable[[ENV, PRNG], ENV]] = []
+    resetters: list[tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]] = []
     accum: Callable[[ENV, PRNG], ENV] = factory
     for (
         shape,
@@ -711,7 +713,7 @@ def env_resetters[ENV](
         create_inference_params,
         is_inits,
     ):
-        accum = fold(
+        inner, full = fold(
             accum,
             shape,
             meta_interface,
@@ -720,7 +722,8 @@ def env_resetters[ENV](
             create_inference_param,
             is_init,
         )
-        resetters.append(accum)
+        resetters.append((inner, full))
+        accum = full
 
     return resetters
 
@@ -732,7 +735,7 @@ def env_creator[ENV](
     learn_interfaces: list[tuple[GodInterface[ENV], GodInterface[ENV]]],
     is_inits: list[bool],
 ) -> Callable[[ENV, PRNG], ENV]:
-    return env_resetters(config, shapes, meta_interfaces, learn_interfaces, is_inits)[-1]
+    return env_resetters(config, shapes, meta_interfaces, learn_interfaces, is_inits)[-1][1]
 
 
 def make_tick_advancer[ENV](learn_interface: GodInterface[ENV]):

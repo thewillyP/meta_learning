@@ -229,14 +229,15 @@ def bptt[ENV, TR_DATA, VL_DATA](
                 _env = eqx.combine(arr, static)
                 tr_data, vl_data = data
 
-                t = learn_interface.get_tick(_env)
-                s = filter_cond(
-                    t % config.truncate_at == 0,
-                    lambda _: jax.lax.stop_gradient(learn_interface.get_state(_env)),
-                    lambda _: learn_interface.get_state(_env),
-                    None,
-                )
-                _env = learn_interface.put_state(_env, s)
+                if config.truncate_at is not None:
+                    t = learn_interface.get_tick(_env)
+                    s = filter_cond(
+                        t % config.truncate_at == 0,
+                        lambda _: jax.lax.stop_gradient(learn_interface.get_state(_env)),
+                        lambda _: learn_interface.get_state(_env),
+                        None,
+                    )
+                    _env = learn_interface.put_state(_env, s)
 
                 _env, trans_stat = transition(_env, tr_data)
                 _env, loss, readout_stat = readout(_env, vl_data)
@@ -254,14 +255,13 @@ def bptt[ENV, TR_DATA, VL_DATA](
     return gradient_fn
 
 
-def identity[ENV, TR_DATA, VL_DATA](
+def identity_loss[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
     readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
-    learn_interface: GodInterface[ENV],
     length: int,
-) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]:
 
-    def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+    def loss_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, LOSS, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
         def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[STAT, LOSS]]:
@@ -274,6 +274,22 @@ def identity[ENV, TR_DATA, VL_DATA](
 
         arr, (stats, losses) = jax.lax.scan(inference_fn, arr_init, ds_init, length=length)
         env = eqx.combine(arr, static)
+        return env, jnp.sum(losses), stats
+
+    return loss_fn
+
+
+def identity[ENV, TR_DATA, VL_DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
+    learn_interface: GodInterface[ENV],
+    length: int,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+
+    _loss_fn = identity_loss(transition, readout, length)
+
+    def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+        env, loss, stats = _loss_fn(env_init, ds_init)
         param = learn_interface.get_param(env)
         grad = jnp.zeros_like(param)
         return env, GRADIENT(grad), stats
@@ -286,7 +302,10 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
     readout_fns: list[Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]]],
     val_learn_interfaces: list[GodInterface[ENV]],
     config: GodConfig,
-) -> list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]]:
+) -> tuple[
+    list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]],
+    list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]],
+]:
 
     def identity_transition(env: ENV, data: TR_DATA) -> tuple[ENV, STAT]:
         return env, {}
@@ -303,6 +322,8 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         return wrapper
 
     gradient_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]] = []
+    loss_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]] = []
+
     for transition, readout_fn, interface, meta_config in zip(
         transition_fns,
         readout_fns,
@@ -317,9 +338,12 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 readout_fn,
                 interface,
                 BPTTConfig(truncate_at=None),
-                length=1,
+                1,
             )
         )
+
+        readout_loss = identity_loss(transition, readout_fn, length)
+
         match method:
             case BPTTConfig():
                 fn = bptt(transition, readout_fn, interface, method, length)
@@ -333,15 +357,16 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = rflo(transition, readout_gr, interface, method, length)
 
         gradient_fns.append(fn)
+        loss_fns.append(readout_loss)
 
-    return gradient_fns
+    return gradient_fns, loss_fns
 
 
 def create_meta_learner[ENV](
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
     transition_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, STAT]]],
-    readout_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]],
+    readout_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]],
     val_learn_interfaces: list[GodInterface[ENV]],
     nest_learn_interfaces: list[GodInterface[ENV]],
     meta_interfaces: list[dict[str, GodInterface[ENV]]],
@@ -354,27 +379,28 @@ def create_meta_learner[ENV](
 
     def make_optimized_transition(
         inner: Callable[[ENV, tuple], tuple[ENV, STAT]],
-        readout_gr: Callable[[ENV, tuple], tuple[GRADIENT, STAT]],
-        readout: Callable[[ENV, tuple], tuple[LOSS, STAT]],
+        readout_gr: Callable[[ENV, tuple], tuple[ENV, GRADIENT, STAT]],
+        readout: Callable[[ENV, tuple], tuple[ENV, LOSS, STAT]],
         check: Callable[[ENV], ENV],
         advance: Callable[[ENV], ENV],
         assignments: dict[str, OptimizerAssignment],
         interfaces: dict[str, GodInterface[ENV]],
         nest_interface: GodInterface[ENV],
         method: GradientMethod,
+        length: int,
     ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
         match method:
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                grad_fn = rtrl(inner, readout_gr, nest_interface, method)
+                grad_fn = rtrl(inner, readout_gr, nest_interface, method, length)
             case BPTTConfig():
-                grad_fn = bptt(inner, readout, nest_interface, method)
+                grad_fn = bptt(inner, readout, nest_interface, method, length)
             case IdentityLearnerConfig():
-                grad_fn = identity(inner, readout, nest_interface)
+                grad_fn = identity(inner, readout, nest_interface, length)
             case UOROConfig():
-                grad_fn = uoro(inner, readout_gr, nest_interface, method)
+                grad_fn = uoro(inner, readout_gr, nest_interface, method, length)
             case RFLOConfig():
-                grad_fn = rflo(inner, readout_gr, nest_interface, method)
+                grad_fn = rflo(inner, readout_gr, nest_interface, method, length)
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env = check(env)
@@ -386,17 +412,21 @@ def create_meta_learner[ENV](
 
         return optimized_transition
 
-    current_transition = transition_fns[0]
+    current_transition: Callable[[ENV, tuple], tuple[ENV, STAT]] = lambda env, data: (env, {})
+    current_resetter: Callable[[ENV, PRNG], ENV] = lambda env, prng: env
 
     for level in range(len(config.levels)):
         meta_config = config.levels[level]
         nest_interface = nest_learn_interfaces[level]
-        resetter = resetters[level]
+        inner_resetter, full_resetter = resetters[level]
         vl_learner = validation_learners[level]
         readout_fn = readout_fns[level]
         interfaces = meta_interfaces[level]
 
-        check = make_reset_checker(nest_interface, resetter, meta_config.meta_opt.reset_t)
+        axes = diff_axes(env, inner_resetter(env, jax.random.key(0)))
+        current_transition = eqx.filter_vmap(current_transition, in_axes=(axes, 0), out_axes=(axes, 0))
+
+        check = make_reset_checker(nest_interface, current_resetter, meta_config.nested.reset_t)
         advance = make_tick_advancer(nest_interface)
 
         current_transition = make_optimized_transition(
@@ -409,9 +439,9 @@ def create_meta_learner[ENV](
             interfaces,
             nest_interface,
             meta_config.learner.optimizer_learner.method,
+            meta_config.nested.num_steps,
         )
 
-        axes = diff_axes(env, resetter(env, jax.random.key(0)))
-        current_transition = eqx.filter_vmap(current_transition, in_axes=(axes, 0), out_axes=(axes, 0))
+        current_resetter = full_resetter
 
     return current_transition

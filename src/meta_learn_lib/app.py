@@ -378,7 +378,7 @@ def runApp(config: GodConfig) -> None:
     task_interfaces, count = create_task_interfaces(config, count)
 
     env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
-    eqx.tree_pprint(env.serialize())
+    # eqx.tree_pprint(env.serialize())
 
     val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
 
@@ -390,27 +390,27 @@ def runApp(config: GodConfig) -> None:
     transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
     loss_fns = create_readout_loss_fns(config, task_interfaces, readouts)
 
-    # meta_learner = create_meta_learner(
-    #     config,
-    #     shapes,
-    #     transition_fns,
-    #     loss_fns,
-    #     list(val_learn_interfaces),
-    #     list(nest_learn_interfaces),
-    #     meta_interfaces,
-    #     env,
-    # )
+    meta_learner = create_meta_learner(
+        config,
+        shapes,
+        transition_fns,
+        loss_fns,
+        list(val_learn_interfaces),
+        list(nest_learn_interfaces),
+        meta_interfaces,
+        env,
+    )
 
-    # x, dataloader = toolz.peek(dataloader)
-    # arr, static = eqx.partition(env, eqx.is_array)
+    x, dataloader = toolz.peek(dataloader)
+    arr, static = eqx.partition(env, eqx.is_array)
 
-    # def update_fn(data, arr):
-    #     env = eqx.combine(arr, static)
-    #     env, stat = meta_learner(env, data)
-    #     arr, _ = eqx.partition(env, eqx.is_array)
-    #     return arr, stat
+    def update_fn(data, arr):
+        env = eqx.combine(arr, static)
+        env, stat = meta_learner(env, data)
+        arr, _ = eqx.partition(env, eqx.is_array)
+        return arr, stat
 
-    # meta_learner_compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
+    meta_learner_compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
     # meta_learner_compiled = (
     #     eqx.filter_jit(lambda d, e: meta_learner(e, d), donate="all-except-first").lower(x, env).compile()

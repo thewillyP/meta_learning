@@ -77,6 +77,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 lambda _: influence_tensor_s.value,
                 None,
             )
+            print(vl_data)
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
@@ -373,7 +374,9 @@ def create_meta_learner[ENV](
     env: ENV,
 ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
-    validation_learners = create_validation_learners(transition_fns, readout_fns, val_learn_interfaces, config)
+    validation_learners, validation_losses = create_validation_learners(
+        transition_fns, readout_fns, val_learn_interfaces, config
+    )
     learn_interface_pairs = list(zip(val_learn_interfaces, nest_learn_interfaces))
     resetters = env_resetters(config, shapes, meta_interfaces, learn_interface_pairs, [False] * len(config.levels))
 
@@ -420,19 +423,21 @@ def create_meta_learner[ENV](
         nest_interface = nest_learn_interfaces[level]
         inner_resetter, full_resetter = resetters[level]
         vl_learner = validation_learners[level]
-        readout_fn = readout_fns[level]
+        vl_loss = validation_losses[level]
         interfaces = meta_interfaces[level]
 
         axes = diff_axes(env, inner_resetter(env, jax.random.key(0)))
-        current_transition = eqx.filter_vmap(current_transition, in_axes=(axes, 0), out_axes=(axes, 0))
+        vmapped_transition = eqx.filter_vmap(current_transition, in_axes=(axes, 0), out_axes=(axes, 0))
+        vmapped_vl_learner = eqx.filter_vmap(vl_learner, in_axes=(axes, 0), out_axes=(axes, 0, 0))
+        vmapped_vl_loss = eqx.filter_vmap(vl_loss, in_axes=(axes, 0), out_axes=(axes, 0, 0))
 
         check = make_reset_checker(nest_interface, current_resetter, meta_config.nested.reset_t)
         advance = make_tick_advancer(nest_interface)
 
         current_transition = make_optimized_transition(
-            current_transition,
-            vl_learner,
-            readout_fn,
+            vmapped_transition,
+            vmapped_vl_learner,
+            vmapped_vl_loss,
             check,
             advance,
             meta_config.learner.optimizer,

@@ -1,7 +1,7 @@
-from typing import Callable
 import jax
 import jax.numpy as jnp
 import optax
+from typing import Callable
 
 from meta_learn_lib.config import *
 from meta_learn_lib.env import Outputs
@@ -102,13 +102,13 @@ def create_readout_loss_fns[ENV](
     config: GodConfig,
     task_interfaces: list[GodInterface[ENV]],
     readouts: list[Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]],
-) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]]:
+) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]]:
 
     def compose(loss_fn, readout, level):
-        def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
+        def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, LOSS, STAT]:
             outputs = readout(env, data)
             loss, stat = loss_fn(env, outputs, data)
-            return loss, {f"level{level}/{k}": v for k, v in stat.items()}
+            return env, loss, {f"level{level}/{k}": v for k, v in stat.items()}
 
         return fn
 

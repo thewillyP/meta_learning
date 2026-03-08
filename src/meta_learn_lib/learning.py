@@ -15,9 +15,10 @@ from meta_learn_lib.util import filter_cond, jacobian_matrix_product
 
 def rtrl[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[GRADIENT, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     _config: RTRLConfig | RTRLFiniteHvpConfig,
+    length: int,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
     match _config:
@@ -76,7 +77,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 lambda _: influence_tensor_s.value,
                 None,
             )
-            credit_gr, readout_stat = readout_gr(env, vl_data)
+            env, credit_gr, readout_stat = readout_gr(env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
@@ -84,7 +85,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
-        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds)
+        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds, length=length)
         env = eqx.combine(arr, static)
         return env, GRADIENT(jnp.sum(grads, axis=0)), stats
 
@@ -93,9 +94,10 @@ def rtrl[ENV, TR_DATA, VL_DATA](
 
 def uoro[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[GRADIENT, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     config: UOROConfig,
+    length: int,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
@@ -143,7 +145,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             A_new: jax.Array = rho0 * immediateJacobian__A_projection + rho1 * random_vector
             B_new: jax.Array = B_s.value / rho0 + immediateInfluence__random_projection / rho1
 
-            credit_gr, readout_stat = readout_gr(env, vl_data)
+            env, credit_gr, readout_stat = readout_gr(env, vl_data)
             grad = (credit_gr[: A_new.shape[0]] @ A_new) * B_new + credit_gr[A_new.shape[0] :]
 
             env = learn_interface.put_uoro_state(
@@ -154,7 +156,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
-        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds)
+        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds, length=length)
         env = eqx.combine(arr, static)
         return env, GRADIENT(jnp.sum(grads, axis=0)), stats
 
@@ -163,9 +165,10 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
 def rflo[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[GRADIENT, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     config: RFLOConfig,
+    length: int,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
@@ -195,7 +198,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
             influence_tensor: JACOBIAN
             influence_tensor = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
 
-            credit_gr, readout_stat = readout_gr(env, vl_data)
+            env, credit_gr, readout_stat = readout_gr(env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
@@ -203,7 +206,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
-        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds)
+        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds, length=length)
         env = eqx.combine(arr, static)
         return env, GRADIENT(jnp.sum(grads, axis=0)), stats
 
@@ -212,9 +215,10 @@ def rflo[ENV, TR_DATA, VL_DATA](
 
 def bptt[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout: Callable[[ENV, VL_DATA], tuple[LOSS, STAT]],
+    readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
     learn_interface: GodInterface[ENV],
     config: BPTTConfig,
+    length: int,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         def loss_fn(param: jax.Array, ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
@@ -235,11 +239,11 @@ def bptt[ENV, TR_DATA, VL_DATA](
                 _env = learn_interface.put_state(_env, s)
 
                 _env, trans_stat = transition(_env, tr_data)
-                loss, readout_stat = readout(_env, vl_data)
+                _env, loss, readout_stat = readout(_env, vl_data)
                 arr, _ = eqx.partition(_env, eqx.is_array)
                 return arr, (trans_stat | readout_stat, loss)
 
-            arr, (stats, losses) = jax.lax.scan(inference_fn, arr_init, ds)
+            arr, (stats, losses) = jax.lax.scan(inference_fn, arr_init, ds, length=length)
             env = eqx.combine(arr, static)
             return jnp.sum(losses), (env, stats)
 
@@ -252,8 +256,9 @@ def bptt[ENV, TR_DATA, VL_DATA](
 
 def identity[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout: Callable[[ENV, VL_DATA], tuple[LOSS, STAT]],
+    readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
     learn_interface: GodInterface[ENV],
+    length: int,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
@@ -263,11 +268,11 @@ def identity[ENV, TR_DATA, VL_DATA](
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
             env, trans_stat = transition(env, tr_data)
-            loss, readout_stat = readout(env, vl_data)
+            env, loss, readout_stat = readout(env, vl_data)
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (trans_stat | readout_stat, loss)
 
-        arr, (stats, losses) = jax.lax.scan(inference_fn, arr_init, ds_init)
+        arr, (stats, losses) = jax.lax.scan(inference_fn, arr_init, ds_init, length=length)
         env = eqx.combine(arr, static)
         param = learn_interface.get_param(env)
         grad = jnp.zeros_like(param)
@@ -278,10 +283,10 @@ def identity[ENV, TR_DATA, VL_DATA](
 
 def create_validation_learners[ENV, TR_DATA, VL_DATA](
     transition_fns: list[Callable[[ENV, TR_DATA], tuple[ENV, STAT]]],
-    readout_fns: list[Callable[[ENV, VL_DATA], tuple[LOSS, STAT]]],
+    readout_fns: list[Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]]],
     val_learn_interfaces: list[GodInterface[ENV]],
     config: GodConfig,
-) -> list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[GRADIENT, STAT]]]:
+) -> list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]]:
 
     def identity_transition(env: ENV, data: TR_DATA) -> tuple[ENV, STAT]:
         return env, {}
@@ -297,46 +302,39 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
 
         return wrapper
 
-    def drop_env(
-        fn: Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]],
-    ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[GRADIENT, STAT]]:
-        def wrapper(env: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[GRADIENT, STAT]:
-            _, gradient, stat = fn(env, data)
-            return gradient, stat
-
-        return wrapper
-
-    transitions = [identity_transition] + transition_fns[1:]
-
     gradient_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]] = []
     for transition, readout_fn, interface, meta_config in zip(
-        transitions,
+        transition_fns,
         readout_fns,
         val_learn_interfaces,
         config.levels,
     ):
         method = meta_config.learner.model_learner.method
-        readout_gr = drop_env(
-            shim_expand_time(bptt(identity_transition, readout_fn, interface, BPTTConfig(truncate_at=None)))
+        length = meta_config.validation.num_steps
+        readout_gr = shim_expand_time(
+            bptt(
+                identity_transition,
+                readout_fn,
+                interface,
+                BPTTConfig(truncate_at=None),
+                length=1,
+            )
         )
-
         match method:
             case BPTTConfig():
-                fn = bptt(transition, readout_fn, interface, method)
+                fn = bptt(transition, readout_fn, interface, method, length)
             case IdentityLearnerConfig():
-                fn = identity(transition, readout_fn, interface)
+                fn = identity(transition, readout_fn, interface, length)
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                fn = rtrl(transition, readout_gr, interface, method)
+                fn = rtrl(transition, readout_gr, interface, method, length)
             case UOROConfig():
-                fn = uoro(transition, readout_gr, interface, method)
+                fn = uoro(transition, readout_gr, interface, method, length)
             case RFLOConfig():
-                fn = rflo(transition, readout_gr, interface, method)
+                fn = rflo(transition, readout_gr, interface, method, length)
 
         gradient_fns.append(fn)
 
-    gradient_fns[0] = shim_expand_time(gradient_fns[0])
-
-    return [drop_env(fn) for fn in gradient_fns]
+    return gradient_fns
 
 
 def create_meta_learner[ENV](

@@ -380,15 +380,15 @@ def runApp(config: GodConfig) -> None:
     env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
     eqx.tree_pprint(env.serialize())
 
-    # val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
+    val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
 
-    # inference_axes = map(lambda i: create_inference_axes(env, i), range(len(config.levels)))
-    # transitions, readouts = zip(
-    #     *map(lambda i, a: create_inference_and_readout(config, i, a), meta_interfaces, inference_axes)
-    # )
+    inference_axes = map(lambda i: create_inference_axes(env, i), range(len(config.levels)))
+    transitions, readouts = zip(
+        *map(lambda i, a: create_inference_and_readout(config, i, a), meta_interfaces, inference_axes)
+    )
 
-    # transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
-    # loss_fns = create_readout_loss_fns(config, task_interfaces, readouts)
+    transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
+    loss_fns = create_readout_loss_fns(config, task_interfaces, readouts)
 
     # meta_learner = create_meta_learner(
     #     config,

@@ -696,16 +696,9 @@ def env_resetters[ENV](
         )
         return inner, full
 
-    resetters: list[tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]] = []
+    nested_resetters: list[tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]] = []
     accum: Callable[[ENV, PRNG], ENV] = factory
-    for (
-        shape,
-        meta_interface,
-        learn_interface,
-        meta_config,
-        create_inference_param,
-        is_init,
-    ) in zip(
+    for shape, meta_interface, learn_interface, meta_config, create_inference_param, is_init in zip(
         shapes,
         meta_interfaces,
         learn_interfaces,
@@ -713,19 +706,46 @@ def env_resetters[ENV](
         create_inference_params,
         is_inits,
     ):
-        inner, full = fold(
-            accum,
-            shape,
-            meta_interface,
-            learn_interface,
-            meta_config,
-            create_inference_param,
-            is_init,
-        )
-        resetters.append((inner, full))
+        inner, full = fold(accum, shape, meta_interface, learn_interface, meta_config, create_inference_param, is_init)
+        nested_resetters.append((inner, full))
         accum = full
 
-    return resetters
+    # Build correctly-batched validation resetters
+    val_resetters = env_validation_resetters(
+        config,
+        shapes,
+        meta_interfaces,
+        [li[0] for li in learn_interfaces],
+    )
+    batches = [mc.nested.batch for mc in reversed(config.levels)]
+    batched_val_resetters = [vmap_factory(vr, batches) for vr in val_resetters]
+
+    def compose(
+        nested_inner: Callable[[ENV, PRNG], ENV],
+        nested_full: Callable[[ENV, PRNG], ENV],
+        batched_vrs: list[Callable[[ENV, PRNG], ENV]],
+    ) -> tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]:
+        def composed_inner(env: ENV, prng: PRNG) -> ENV:
+            k1, prng = jax.random.split(prng, 2)
+            env = nested_inner(env, k1)
+            for bvr in batched_vrs:
+                k, prng = jax.random.split(prng, 2)
+                env = bvr(env, k)
+            return env
+
+        def composed_full(env: ENV, prng: PRNG) -> ENV:
+            k1, prng = jax.random.split(prng, 2)
+            env = nested_full(env, k1)
+            for bvr in batched_vrs:
+                k, prng = jax.random.split(prng, 2)
+                env = bvr(env, k)
+            return env
+
+        return composed_inner, composed_full
+
+    return [
+        compose(inner, full, batched_val_resetters[: level + 1]) for level, (inner, full) in enumerate(nested_resetters)
+    ]
 
 
 def env_creator[ENV](

@@ -392,7 +392,7 @@ def create_learner_states[ENV](
             env = factory(env, k1)
             env = interface.put_prng(env, k2)
 
-    env = interface.put_tick(env, 0)
+    env = interface.put_tick(env, jnp.array(0))
     return env
 
 
@@ -795,3 +795,17 @@ def create_transition_fns[ENV](
             val_learn_interfaces, resetters, config.levels, transitions
         )
     ]
+
+
+def create_inference_axes[ENV](
+    env: ENV,
+    config: GodConfig,
+    meta_interface: dict[str, GodInterface[ENV]],
+    shape: tuple[tuple[int, ...], tuple[int, ...]],
+    meta_config: MetaConfig,
+) -> ENV:
+    node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+    f = lambda e, k: create_inference_state(
+        config.nodes, meta_interface, node_features, meta_config.validation.track_influence_in, False, e, k
+    )
+    return diff_axes(env, f(env, jax.random.key(0)))

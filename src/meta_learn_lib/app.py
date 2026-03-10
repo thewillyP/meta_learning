@@ -12,8 +12,7 @@ import time
 import equinox as eqx
 
 from meta_learn_lib.config import *
-from meta_learn_lib.create_axes import create_inference_axes
-from meta_learn_lib.create_env import create_env, create_transition_fns, env_validation_resetters
+from meta_learn_lib.create_env import create_env, create_inference_axes, create_transition_fns, env_validation_resetters
 from meta_learn_lib.create_interface import create_learn_interfaces, create_meta_interfaces, create_task_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
@@ -238,7 +237,7 @@ def runApp(config: GodConfig) -> None:
                 ),
                 nested=StepConfig(
                     num_steps=1,
-                    batch=1,
+                    batch=2,
                     reset_t=None,
                     track_influence_in=frozenset({1}),
                 ),
@@ -378,11 +377,16 @@ def runApp(config: GodConfig) -> None:
     task_interfaces, count = create_task_interfaces(config, count)
 
     env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
-    # eqx.tree_pprint(env.serialize())
+    eqx.tree_pprint(env.serialize())
+    quit()
 
     val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
 
-    inference_axes = map(lambda i: create_inference_axes(env, i), range(len(config.levels)))
+    inference_axes = [
+        create_inference_axes(env, config, meta_interface, shape, meta_config)
+        for shape, meta_interface, meta_config in zip(shapes, meta_interfaces, config.levels)
+    ]
+
     transitions, readouts = zip(
         *map(lambda i, a: create_inference_and_readout(config, i, a), meta_interfaces, inference_axes)
     )

@@ -434,7 +434,6 @@ def reset_validation[ENV](
 ) -> Callable[[ENV, PRNG], ENV]:
 
     def create_env(env: ENV, prng: PRNG) -> ENV:
-
         # 1. Create inference state
         k1, prng = jax.random.split(prng, 2)
         f1 = lambda e, k: create_inference_state(
@@ -448,7 +447,6 @@ def reset_validation[ENV](
 
         # 2. use it for learning states
         k1, k2, prng = jax.random.split(prng, 3)
-
         env = create_learner_states(
             factory,
             meta_config.learner.model_learner.method,
@@ -463,10 +461,9 @@ def reset_validation[ENV](
     return create_env
 
 
-def reset_states[ENV](
+def reset_params_hyperparams_optimizer[ENV](
     factory: Callable[[ENV, PRNG], ENV],
     meta_interface: dict[str, GodInterface[ENV]],
-    meta_learner: GodInterface[ENV],
     meta_config: MetaConfig,
     hyperparameters: dict[HP, HyperparameterConfig],
     nodes: dict[str, Node],
@@ -475,23 +472,20 @@ def reset_states[ENV](
     node_features: dict[str, tuple[int, ...]],
     create_inference_param: bool,
 ) -> Callable[[ENV, PRNG], ENV]:
+    """Creates params, hyperparams, optimizer states, then calls factory."""
 
     learnables: frozenset[str] = frozenset().union(*[v.target for v in meta_config.learner.optimizer.values()])
 
     def create_env(env: ENV, prng: PRNG) -> ENV:
-
-        # 1. Create parameters
         if create_inference_param:
             k1, prng = jax.random.split(prng, 2)
             env = create_inference_parameters(
                 nodes, transition_graph, readout_graph, meta_interface, node_features, learnables, env, k1
             )
 
-        # 2. Create hyperparameters
         k2, prng = jax.random.split(prng, 2)
         env = create_hyperparameters(hyperparameters, meta_interface, learnables, env, k2)
 
-        # 3. use it for optimizer states
         env = get_opt_state(
             meta_config.learner.optimizer,
             meta_interface,
@@ -500,8 +494,24 @@ def reset_states[ENV](
             meta_config.nested.track_influence_in,
         )
 
-        # 3. use it for learning states
         k3, prng = jax.random.split(prng, 2)
+        env = factory(env, k3)
+
+        return env
+
+    return create_env
+
+
+def reset_nested_learner[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    meta_learner: GodInterface[ENV],
+    meta_config: MetaConfig,
+) -> Callable[[ENV, PRNG], ENV]:
+    """Creates nest learner states and logs. Must run inside vmap to see unbatched shapes."""
+
+    def create_env(env: ENV, prng: PRNG) -> ENV:
+        k1, k2, prng = jax.random.split(prng, 3)
+        env = factory(env, k1)
 
         env = create_learner_states(
             factory,
@@ -509,10 +519,9 @@ def reset_states[ENV](
             meta_learner,
             meta_config.nested.track_influence_in,
             env,
-            k3,
+            k2,
         )
 
-        # 4. Create the logs
         logs = Logs(
             gradient=jnp.zeros_like(meta_learner.get_param(env)) if meta_config.track_logs.gradient else None,
             hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
@@ -530,7 +539,6 @@ def reset_states[ENV](
             if meta_config.track_logs.jacobian
             else None,
         )
-
         env = meta_learner.put_logs(env, logs)
 
         return env
@@ -669,23 +677,26 @@ def env_resetters[ENV](
         node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
         val_interface, nest_interface = learn_interface
 
-        inner = vmap_factory(
-            reset_validation(
-                accum,
-                meta_interface,
-                val_interface,
-                meta_config,
-                config.nodes,
-                node_features,
-                is_init,
-            ),
-            [meta_config.nested.batch],
+        _reset_validation = reset_validation(
+            accum,
+            meta_interface,
+            val_interface,
+            meta_config,
+            config.nodes,
+            node_features,
+            is_init,
+        )
+        _reset_nested_learner = reset_nested_learner(
+            _reset_validation,
+            nest_interface,
+            meta_config,
         )
 
-        full = reset_states(
+        inner = vmap_factory(_reset_nested_learner, [meta_config.nested.batch])
+
+        full = reset_params_hyperparams_optimizer(
             inner,
             meta_interface,
-            nest_interface,
             meta_config,
             config.hyperparameters,
             config.nodes,

@@ -339,6 +339,11 @@ def batch_iterator(iters, batch_size):
             yield jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
 
 
+def stack_batches(stream: Iterator, batch_size: int) -> Iterator:
+    for group in itertools.batched(stream, batch_size):
+        yield jax.tree.map(lambda *xs: jnp.stack(xs), *group)
+
+
 def validate_dataloader_config(config: GodConfig) -> list[str]:
     errors = []
 
@@ -426,7 +431,7 @@ def create_dataloader(
         level: MetaConfig,
         datasets: list[Dataset],
         key: PRNG,
-    ) -> Iterator:
+    ) -> Iterator[tuple[jax.Array, jax.Array]]:
         tasks_per_stream = level.validation.batch
         task_keys = jax.random.split(key, len(task_indices))
         task_iters = [
@@ -472,14 +477,25 @@ def create_dataloader(
         child_keys = jax.random.split(child_key, batch)
         val_keys_per_child = [infinite_keys(vk) for vk in jax.random.split(val_key, batch)]
 
-        def f(c, ck):
+        def f(c: jax.Array, ck: PRNG) -> Iterator:
             return make_level_loader(rest, c, ck)
 
-        def f_val(c, k):
+        def f_val(c: jax.Array, k: PRNG) -> Iterator[tuple[jax.Array, jax.Array]]:
             return make_task_loader(c, meta_config, datasets, k)
 
+        def nest_validation(
+            val_stream: Iterator[tuple[jax.Array, jax.Array]],
+            lower_levels: list[tuple[MetaConfig, list[Dataset]]],
+        ) -> Iterator:
+            for lower_meta, _ in reversed(lower_levels):
+                val_stream = stack_batches(val_stream, lower_meta.nested.batch)
+            return val_stream
+
         children = [
-            zip(f(chunk, ckey), map(lambda v: (v, v), mapcat(lambda k, c=chunk: f_val(c, k), vks)))
+            zip(
+                f(chunk, ckey),
+                map(lambda v: (v, v), nest_validation(mapcat(lambda k, c=chunk: f_val(c, k), vks), rest)),
+            )
             for chunk, ckey, vks in zip(chunks, child_keys, val_keys_per_child)
         ]
         train_loader = batch_iterator(children, len(children))

@@ -6,7 +6,7 @@ import equinox as eqx
 
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
-from meta_learn_lib.create_env import env_resetters, make_reset_checker, make_tick_advancer
+from meta_learn_lib.create_env import env_resetters, env_validation_resetters, make_reset_checker, make_tick_advancer
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.optimizer import get_opt_step
@@ -19,6 +19,10 @@ def rtrl[ENV, TR_DATA, VL_DATA](
     learn_interface: GodInterface[ENV],
     _config: RTRLConfig | RTRLFiniteHvpConfig,
     length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
     match _config:
@@ -77,7 +81,6 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 lambda _: influence_tensor_s.value,
                 None,
             )
-            print(vl_data)
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
@@ -86,9 +89,10 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
-        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds, length=length)
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
         env = eqx.combine(arr, static)
-        return env, GRADIENT(jnp.sum(grads, axis=0)), stats
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        return env, total_grad, stats
 
     return gradient_fn
 
@@ -99,6 +103,10 @@ def uoro[ENV, TR_DATA, VL_DATA](
     learn_interface: GodInterface[ENV],
     config: UOROConfig,
     length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
@@ -157,9 +165,10 @@ def uoro[ENV, TR_DATA, VL_DATA](
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
-        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds, length=length)
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
         env = eqx.combine(arr, static)
-        return env, GRADIENT(jnp.sum(grads, axis=0)), stats
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        return env, total_grad, stats
 
     return gradient_fn
 
@@ -170,6 +179,10 @@ def rflo[ENV, TR_DATA, VL_DATA](
     learn_interface: GodInterface[ENV],
     config: RFLOConfig,
     length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
@@ -207,9 +220,10 @@ def rflo[ENV, TR_DATA, VL_DATA](
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
-        arr, (grads, stats) = jax.lax.scan(step, arr_init, ds, length=length)
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
         env = eqx.combine(arr, static)
-        return env, GRADIENT(jnp.sum(grads, axis=0)), stats
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        return env, total_grad, stats
 
     return gradient_fn
 
@@ -220,13 +234,17 @@ def bptt[ENV, TR_DATA, VL_DATA](
     learn_interface: GodInterface[ENV],
     config: BPTTConfig,
     length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
+    ],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         def loss_fn(param: jax.Array, ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
             env = learn_interface.put_param(env_init, param)
             arr_init, static = eqx.partition(env, eqx.is_array)
 
-            def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[STAT, LOSS]]:
+            def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[LOSS, STAT]]:
                 _env = eqx.combine(arr, static)
                 tr_data, vl_data = data
 
@@ -243,9 +261,11 @@ def bptt[ENV, TR_DATA, VL_DATA](
                 _env, trans_stat = transition(_env, tr_data)
                 _env, loss, readout_stat = readout(_env, vl_data)
                 arr, _ = eqx.partition(_env, eqx.is_array)
-                return arr, (trans_stat | readout_stat, loss)
+                return arr, (loss, trans_stat | readout_stat)
 
-            arr, (stats, losses) = jax.lax.scan(inference_fn, arr_init, ds, length=length)
+            arr, (losses, stats) = jax.lax.scan(
+                lambda x, y: vmap_this(inference_fn)(x, y), arr_init, ds_init, length=length
+            )
             env = eqx.combine(arr, static)
             return jnp.sum(losses), (env, stats)
 
@@ -260,20 +280,26 @@ def identity_loss[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
     readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
     length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
+    ],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]:
 
     def loss_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, LOSS, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
-        def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[STAT, LOSS]]:
+        def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[LOSS, STAT]]:
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
             env, trans_stat = transition(env, tr_data)
             env, loss, readout_stat = readout(env, vl_data)
             arr, _ = eqx.partition(env, eqx.is_array)
-            return arr, (trans_stat | readout_stat, loss)
+            return arr, (loss, trans_stat | readout_stat)
 
-        arr, (stats, losses) = jax.lax.scan(inference_fn, arr_init, ds_init, length=length)
+        arr, (losses, stats) = jax.lax.scan(
+            lambda x, y: vmap_this(inference_fn)(x, y), arr_init, ds_init, length=length
+        )
         env = eqx.combine(arr, static)
         return env, jnp.sum(losses), stats
 
@@ -285,9 +311,13 @@ def identity[ENV, TR_DATA, VL_DATA](
     readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
     learn_interface: GodInterface[ENV],
     length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
+    ],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
-    _loss_fn = identity_loss(transition, readout, length)
+    _loss_fn = identity_loss(transition, readout, length, vmap_this)
 
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         env, loss, stats = _loss_fn(env_init, ds_init)
@@ -340,22 +370,23 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 interface,
                 BPTTConfig(truncate_at=None),
                 1,
+                lambda f: f,
             )
         )
 
-        readout_loss = identity_loss(transition, readout_fn, length)
+        readout_loss = identity_loss(transition, readout_fn, length, lambda f: f)
 
         match method:
             case BPTTConfig():
-                fn = bptt(transition, readout_fn, interface, method, length)
+                fn = bptt(transition, readout_fn, interface, method, length, lambda f: f)
             case IdentityLearnerConfig():
-                fn = identity(transition, readout_fn, interface, length)
+                fn = identity(transition, readout_fn, interface, length, lambda f: f)
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                fn = rtrl(transition, readout_gr, interface, method, length)
+                fn = rtrl(transition, readout_gr, interface, method, length, lambda f: f)
             case UOROConfig():
-                fn = uoro(transition, readout_gr, interface, method, length)
+                fn = uoro(transition, readout_gr, interface, method, length, lambda f: f)
             case RFLOConfig():
-                fn = rflo(transition, readout_gr, interface, method, length)
+                fn = rflo(transition, readout_gr, interface, method, length, lambda f: f)
 
         gradient_fns.append(fn)
         loss_fns.append(readout_loss)
@@ -380,34 +411,48 @@ def create_meta_learner[ENV](
     learn_interface_pairs = list(zip(val_learn_interfaces, nest_learn_interfaces))
     resetters = env_resetters(config, shapes, meta_interfaces, learn_interface_pairs, [False] * len(config.levels))
 
-    def make_optimized_transition(
+    # Per-level validation axes: marks only that level's validation states with 0
+    val_resetters = env_validation_resetters(config, shapes, meta_interfaces, val_learn_interfaces)
+    per_level_val_axes = [diff_axes(env, vr(env, jax.random.key(0))) for vr in val_resetters]
+
+    def make_optimized_transition[X](
         inner: Callable[[ENV, tuple], tuple[ENV, STAT]],
         readout_gr: Callable[[ENV, tuple], tuple[ENV, GRADIENT, STAT]],
         readout: Callable[[ENV, tuple], tuple[ENV, LOSS, STAT]],
-        check: Callable[[ENV], ENV],
-        advance: Callable[[ENV], ENV],
+        resetter: Callable[[ENV, PRNG], ENV],
+        reset_t: int | None,
+        nest_interface: GodInterface[ENV],
         assignments: dict[str, OptimizerAssignment],
         interfaces: dict[str, GodInterface[ENV]],
-        nest_interface: GodInterface[ENV],
         method: GradientMethod,
         length: int,
+        vmap_this: Callable[
+            [Callable[[ENV, tuple], tuple[ENV, tuple[X, STAT]]]],
+            Callable[[ENV, tuple], tuple[ENV, tuple[X, STAT]]],
+        ],
     ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
+
+        check = make_reset_checker(nest_interface, resetter, reset_t)
+        advance = make_tick_advancer(nest_interface)
+
+        def composed_inner(env: ENV, data: tuple) -> tuple[ENV, STAT]:
+            env = check(env)
+            env = advance(env)
+            return inner(env, data)
 
         match method:
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                grad_fn = rtrl(inner, readout_gr, nest_interface, method, length)
+                grad_fn = rtrl(composed_inner, readout_gr, nest_interface, method, length, vmap_this)
             case BPTTConfig():
-                grad_fn = bptt(inner, readout, nest_interface, method, length)
+                grad_fn = bptt(composed_inner, readout, nest_interface, method, length, vmap_this)
             case IdentityLearnerConfig():
-                grad_fn = identity(inner, readout, nest_interface, length)
+                grad_fn = identity(composed_inner, readout, nest_interface, length, vmap_this)
             case UOROConfig():
-                grad_fn = uoro(inner, readout_gr, nest_interface, method, length)
+                grad_fn = uoro(composed_inner, readout_gr, nest_interface, method, length, vmap_this)
             case RFLOConfig():
-                grad_fn = rflo(inner, readout_gr, nest_interface, method, length)
+                grad_fn = rflo(composed_inner, readout_gr, nest_interface, method, length, vmap_this)
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
-            env = check(env)
-            env = advance(env)
             env, gradient, stat = grad_fn(env, data)
             gr_env = nest_interface.put_param(env, gradient)
             env = get_opt_step(assignments, interfaces, env, gr_env, config.hyperparameters)
@@ -415,6 +460,8 @@ def create_meta_learner[ENV](
 
         return optimized_transition
 
+    # Collect axes for all levels
+    all_axes: list[ENV] = []
     current_transition: Callable[[ENV, tuple], tuple[ENV, STAT]] = lambda env, data: (env, {})
     current_resetter: Callable[[ENV, PRNG], ENV] = lambda env, prng: env
 
@@ -427,24 +474,30 @@ def create_meta_learner[ENV](
         interfaces = meta_interfaces[level]
 
         axes = diff_axes(env, inner_resetter(env, jax.random.key(0)))
-        vmapped_transition = eqx.filter_vmap(current_transition, in_axes=(axes, 0), out_axes=(axes, 0))
-        vmapped_vl_learner = eqx.filter_vmap(vl_learner, in_axes=(axes, 0), out_axes=(axes, 0, 0))
-        vmapped_vl_loss = eqx.filter_vmap(vl_loss, in_axes=(axes, 0), out_axes=(axes, 0, 0))
+        all_axes.append(axes)
 
-        check = make_reset_checker(nest_interface, current_resetter, meta_config.nested.reset_t)
-        advance = make_tick_advancer(nest_interface)
+        # N extra vmaps on readout for LOWER levels' nested dims
+        # Combine each lower level's axes with current level's validation axes
+        for ax in all_axes[:level]:
+            combined = eqx.combine(ax, per_level_val_axes[level])
+            vl_learner = eqx.filter_vmap(vl_learner, in_axes=(combined, 0), out_axes=(combined, 0, 0))
+            vl_loss = eqx.filter_vmap(vl_loss, in_axes=(combined, 0), out_axes=(combined, 0, 0))
+
+        # vmap_this wraps the scan step inside learners, peeling this level's nested dim
+        vmap_this = lambda f, a=axes: eqx.filter_vmap(f, in_axes=(a, 0), out_axes=(a, 0))
 
         current_transition = make_optimized_transition(
-            vmapped_transition,
-            vmapped_vl_learner,
-            vmapped_vl_loss,
-            check,
-            advance,
+            current_transition,
+            vl_learner,
+            vl_loss,
+            current_resetter,
+            meta_config.nested.reset_t,
+            nest_interface,
             meta_config.learner.optimizer,
             interfaces,
-            nest_interface,
             meta_config.learner.optimizer_learner.method,
             meta_config.nested.num_steps,
+            vmap_this,
         )
 
         current_resetter = full_resetter

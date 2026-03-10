@@ -377,8 +377,7 @@ def runApp(config: GodConfig) -> None:
     task_interfaces, count = create_task_interfaces(config, count)
 
     env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
-    eqx.tree_pprint(env.serialize())
-    quit()
+    # eqx.tree_pprint(env.serialize())
 
     val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
 

@@ -73,7 +73,7 @@ def identity_fn(x: jax.Array) -> jax.Array:
     return x
 
 
-def get_activation_fn(s: str) -> Callable[[jax.Array], jax.Array]:
+def get_activation_fn(s: ACTIVATION_FN) -> Callable[[jax.Array], jax.Array]:
     match s:
         case "tanh":
             return jax.tree_util.Partial(jax.nn.tanh)

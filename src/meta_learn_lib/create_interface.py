@@ -1,12 +1,11 @@
 import copy
 import jax
 import equinox as eqx
-import jax.numpy as jnp
 
 from meta_learn_lib.config import *
 from meta_learn_lib.env import GodState
 from meta_learn_lib.interface import *
-from meta_learn_lib.util import Vector, to_vector
+from meta_learn_lib.util import to_vector
 
 
 def prng_factory(key: int, level: int):

@@ -89,7 +89,7 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
     )
 
     transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
-    loss_fns = create_readout_loss_fns(config, task_interfaces, readouts)
+    loss_fns = create_readout_loss_fns(config, task_interfaces, readouts, meta_interfaces)
 
     meta_learner = create_meta_learner(
         config,

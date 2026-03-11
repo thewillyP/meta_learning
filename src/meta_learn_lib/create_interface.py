@@ -330,6 +330,13 @@ def put_logs(level: int):
     return put_logs_fn
 
 
+def get_logs(level: int):
+    def get_logs_fn(env: GodState) -> Logs:
+        return env.level_meta[level].log.value
+
+    return get_logs_fn
+
+
 def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, GodInterface[GodState]]], int]:
     i = max(i, 0) + len(config.hyperparameters)
 
@@ -353,6 +360,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
+                        get_logs=get_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
                         get_mlp_param=get_mlp_param(ni, 0),
@@ -362,6 +370,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
+                        get_logs=get_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
                         get_vanilla_rnn_state=get_vanilla_rnn_state(i, level),
@@ -377,6 +386,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
+                        get_logs=get_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
                         get_gru_state=get_gru_state(i, level),
@@ -388,6 +398,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
+                        get_logs=get_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
                         get_lstm_state=get_lstm_state(i, level),
@@ -399,6 +410,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
+                        get_logs=get_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
                         get_autoregressive_predictions=get_autoregressive_predictions(i, level),
@@ -418,6 +430,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
+                        get_logs=get_logs(level),
                         take_prng=prng_factory(i, level),
                         put_prng=put_prng(i, level),
                         get_opt_state=get_opt_state(i, level),
@@ -460,6 +473,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                 interface = copy.replace(
                     default_interface,
                     put_logs=put_logs(hp.level),
+                    get_logs=get_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
                     get_learning_rate=get_learning_rate(idx, hp.level),
@@ -469,6 +483,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                 interface = copy.replace(
                     default_interface,
                     put_logs=put_logs(hp.level),
+                    get_logs=get_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
                     get_weight_decay=get_weight_decay(idx, hp.level),
@@ -478,6 +493,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                 interface = copy.replace(
                     default_interface,
                     put_logs=put_logs(hp.level),
+                    get_logs=get_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
                     get_momentum=get_momentum(idx, hp.level),
@@ -487,6 +503,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                 interface = copy.replace(
                     default_interface,
                     put_logs=put_logs(hp.level),
+                    get_logs=get_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
                     get_time_constant=get_time_constant(idx, hp.level),
@@ -496,6 +513,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                 interface = copy.replace(
                     default_interface,
                     put_logs=put_logs(hp.level),
+                    get_logs=get_logs(hp.level),
                     take_prng=prng_factory(idx, hp.level),
                     put_prng=put_prng(idx, hp.level),
                     get_kl_regularizer_beta=get_kl_regularizer_beta(idx, hp.level),
@@ -536,6 +554,7 @@ def create_learn_interfaces(
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
+                    get_logs=get_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
                     get_tick=get_tick(i, level),
@@ -552,6 +571,7 @@ def create_learn_interfaces(
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
+                    get_logs=get_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
                     get_tick=get_tick(i, level),
@@ -572,6 +592,7 @@ def create_learn_interfaces(
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
+                    get_logs=get_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
                     get_tick=get_tick(i, level),
@@ -588,6 +609,7 @@ def create_learn_interfaces(
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
+                    get_logs=get_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
                     get_tick=get_tick(i, level),
@@ -619,6 +641,7 @@ def create_task_interfaces(config: GodConfig, i: int) -> tuple[list[GodInterface
                 interface = copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
+                    get_logs=get_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
                     get_kl_regularizer_beta=get_kl_regularizer_beta(
@@ -630,6 +653,7 @@ def create_task_interfaces(config: GodConfig, i: int) -> tuple[list[GodInterface
                 interface = copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),
+                    get_logs=get_logs(level),
                     take_prng=prng_factory(i, level),
                     put_prng=put_prng(i, level),
                 )

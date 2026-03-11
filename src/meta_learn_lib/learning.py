@@ -18,7 +18,8 @@ def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
     g = grad * grad_config.scale
     match grad_config.add_clip:
         case HardClip(threshold):
-            g = jnp.clip(g, -threshold, threshold)
+            norm = jnp.linalg.norm(g)
+            g = GRADIENT(g * jnp.minimum(1.0, threshold / jnp.maximum(norm, 1e-8)))
         case SoftClip(threshold, sharpness):
             g = softclip(g, a=None, b=threshold, sharpness=sharpness)
         case None:
@@ -492,6 +493,7 @@ def create_meta_learner[ENV](
         interfaces: dict[str, GodInterface[ENV]],
         method: GradientMethod,
         grad_config: GradientConfig,
+        level: int,
         length: int,
         vmap_this: Callable[
             [Callable[[ENV, tuple], tuple[ENV, tuple[X, STAT]]]],
@@ -523,6 +525,7 @@ def create_meta_learner[ENV](
             env, gradient, stat = grad_fn(env, data)
             gr_env = nest_interface.put_param(env, gradient)
             env = get_opt_step(assignments, interfaces, env, gr_env, config.hyperparameters)
+            stat[f"level{level}/meta_gradient_norm"] = jax.lax.stop_gradient(jnp.linalg.norm(gradient))
             return env, stat
 
         return optimized_transition
@@ -566,6 +569,7 @@ def create_meta_learner[ENV](
             interfaces,
             meta_config.learner.optimizer_learner.method,
             meta_config.learner.optimizer_learner,
+            level,
             meta_config.nested.num_steps,
             vmap_this,
         )

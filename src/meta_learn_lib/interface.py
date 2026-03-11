@@ -26,6 +26,7 @@ class GodInterface[ENV]:
     put_tick: Callable[[ENV, jax.Array], ENV]
     advance_tick: Callable[[ENV], ENV]
     put_logs: Callable[[ENV, Logs], ENV]
+    get_logs: Callable[[ENV], Logs]
     get_state: Callable[[ENV], jax.Array]
     put_state: Callable[[ENV, jax.Array], ENV]
     get_param: Callable[[ENV], jax.Array]
@@ -72,6 +73,7 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         put_tick=lambda env, tick: env,
         advance_tick=lambda env: env,
         put_logs=lambda env, logs: env,
+        get_logs=lambda env: None,
         get_state=lambda env: None,
         put_state=lambda env, state: env,
         get_param=lambda env: None,

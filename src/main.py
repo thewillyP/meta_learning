@@ -167,12 +167,12 @@ def main():
                     num_steps=1,
                     batch=1,
                     reset_t=None,
-                    track_influence_in=frozenset({0}),
+                    track_influence_in=frozenset({0, 1}),
                 ),
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=BPTTConfig(None),
-                        add_clip=None,
+                        add_clip=HardClip(1.0),
                         scale=1.0,
                     ),
                     optimizer_learner=GradientConfig(

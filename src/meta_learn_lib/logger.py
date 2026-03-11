@@ -142,35 +142,10 @@ class MultiLogger:
             logger.log_scalar(context, title, series, value, iteration, max_count)
 
 
-def infer_level(ndim: int, num_levels: int) -> int:
-    """Infer the level number from array ndim. Level i has 2L - i + 1 total dims."""
-    return 2 * num_levels - (ndim - 1)
-
-
-def reduce_batch_dims(arr: np.ndarray, level: int, num_levels: int) -> np.ndarray:
-    """Average out batch dims, keeping only scan dims + time.
-
-    Stats for level i have 2L - i dims before time:
-      - First 2*(L-i) dims alternate (scan, batch, scan, batch, ...)
-      - Remaining i dims are extra vmaps (all batch)
-      - Last dim is time
-
-    Scan dims are at even positions 0, 2, ..., 2*(L-i-1).
-    Everything else before time is batch.
-    """
-    ndim = arr.ndim
-    if ndim <= 1:
-        return arr
-
-    n_before_time = ndim - 1
-    n_scan_vmap_pairs = num_levels - level
-    n_paired_dims = 2 * n_scan_vmap_pairs
-
-    batch_axes = list(range(1, n_paired_dims, 2)) + list(range(n_paired_dims, n_before_time))
-
-    for ax in reversed(batch_axes):
-        arr = np.nanmean(arr, axis=ax)
-    return arr
+def infer_level(key: str) -> int:
+    """Extract level number from stat key like 'level0/loss' -> 0."""
+    prefix = key.split("/")[0]
+    return int(prefix.replace("level", ""))
 
 
 def compute_strides(shape: tuple[int, ...]) -> list[int]:
@@ -179,33 +154,30 @@ def compute_strides(shape: tuple[int, ...]) -> list[int]:
 
 
 class ScalarLogger:
-    """Logs dict[str, np.ndarray] stats against a shared global step.
+    """Logs dict[str, np.ndarray] stats.
 
-    After averaging out batch dims, each key has shape (scan, ..., scan, time).
-    The scan dims (all but last) define the shared iteration space from the
-    deepest level. Time is iterated per key separately — each non-nan timestep
-    gets its own point via a per-key counter.
+    Each stat has shape (..., time) where dims before time are a mix of
+    scan and batch dims. Scan dims advance the shared iteration counter.
+    Batch dims become separate named series.
     """
 
     def __init__(self, logger: Logger, num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str):
         self.logger = logger
         self.num_levels = num_levels
-        self.global_step = 0
         self.total_iterations = total_iterations
         self.checkpoint_every = checkpoint_every
         self.log_title = log_title
         self.counters: dict[str, int] = {}
+        self.global_step = 0
 
     def log(self, stats: dict[str, np.ndarray]):
-        reduced = {
-            k: reduce_batch_dims(v, infer_level(v.ndim, self.num_levels), self.num_levels) for k, v in stats.items()
-        }
-
         # ref_shape from deepest level's scan dims (exclude time)
-        max_ndim = max(v.ndim for v in reduced.values())
-        for v in reduced.values():
+        max_ndim = max(v.ndim for v in stats.values())
+        for k, v in stats.items():
             if v.ndim == max_ndim:
-                ref_shape = v.shape[:-1]
+                ref_level = infer_level(k)
+                n_ref_pairs = self.num_levels - ref_level
+                ref_shape = tuple(v.shape[i] for i in range(0, 2 * n_ref_pairs, 2))
                 break
 
         strides = compute_strides(ref_shape)
@@ -218,23 +190,62 @@ class ScalarLogger:
             if iteration % self.checkpoint_every != 0:
                 continue
 
-            for key, value in reduced.items():
-                n_scan = value.ndim - 1
+            for key, value in stats.items():
+                level = infer_level(key)
+                n_scan_vmap_pairs = self.num_levels - level
+                n_paired_dims = 2 * n_scan_vmap_pairs
+                expected_with_time = n_paired_dims + level + 1
+                has_time = value.ndim >= expected_with_time
+
+                if has_time:
+                    n_before_time = value.ndim - 1
+                else:
+                    n_before_time = value.ndim
+
+                actual_paired = min(n_paired_dims, n_before_time)
+                actual_paired = actual_paired - (actual_paired % 2)
+
+                batch_axes = list(range(1, actual_paired, 2)) + list(range(actual_paired, n_before_time))
+
+                n_scan = actual_paired // 2
                 scan_idx = idx[:n_scan]
                 extra_idx = idx[n_scan:]
 
                 if any(i != 0 for i in extra_idx):
                     continue
 
-                time_slice = value[scan_idx]
-                offset = self.counters.get(key, 0)
-                logged = 0
-                for v in time_slice:
-                    v = float(v)
-                    if not np.isnan(v):
-                        self.logger.log_scalar(context, self.log_title, key, v, offset + logged, self.total_iterations)
-                        logged += 1
-                self.counters[key] = offset + logged
+                batch_shape = tuple(value.shape[ax] for ax in batch_axes)
+                for batch_idx in itertools.product(*(range(d) for d in batch_shape)):
+                    suffix = "/".join(str(i) for i in batch_idx)
+                    series = f"{key}/{suffix}" if suffix else key
+
+                    full_idx = [None] * n_before_time
+                    scan_pos = 0
+                    batch_pos = 0
+                    for ax in range(n_before_time):
+                        if ax < actual_paired and ax % 2 == 0:
+                            full_idx[ax] = scan_idx[scan_pos]
+                            scan_pos += 1
+                        else:
+                            full_idx[ax] = batch_idx[batch_pos]
+                            batch_pos += 1
+
+                    if has_time:
+                        time_slice = value[tuple(full_idx)]
+                        offset = self.counters.get(series, 0)
+                        logged = 0
+                        for v in time_slice:
+                            v = float(v)
+                            if not np.isnan(v):
+                                self.logger.log_scalar(
+                                    context, self.log_title, series, v, offset + logged, self.total_iterations
+                                )
+                                logged += 1
+                        self.counters[series] = offset + logged
+                    else:
+                        v = float(value[tuple(full_idx)])
+                        if not np.isnan(v):
+                            self.logger.log_scalar(context, self.log_title, series, v, iteration, self.total_iterations)
 
         self.global_step += math.prod(ref_shape)
         self.logger.close_context(context)

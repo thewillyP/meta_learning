@@ -40,9 +40,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             tr_data, vl_data = data
 
             s = learn_interface.get_state(env)
-            p1, p2 = learn_interface.get_param(env)
-            p = jnp.concatenate([p1, p2])
-            n1 = p1.shape[0]
+            p = learn_interface.get_param(env)
             t = learn_interface.get_tick(env)
             mu = config.damping
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
@@ -54,7 +52,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 return state, None
 
             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                _env = learn_interface.put_param(env, (param[:n1], param[n1:]))
+                _env = learn_interface.put_param(env, param)
                 _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
@@ -65,7 +63,6 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             else:
                 dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
             env = eqx.combine(arr, static)
-            env = learn_interface.put_param(env, (p1, p2))
 
             hmp: JACOBIAN
             match _config:
@@ -86,7 +83,6 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 None,
             )
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
-
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
@@ -134,9 +130,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             A_s = uoro_state.A
             B_s = uoro_state.B
             s = learn_interface.get_state(env)
-            p1, p2 = learn_interface.get_param(env)
-            p = jnp.concatenate([p1, p2])
-            n1 = p1.shape[0]
+            p = learn_interface.get_param(env)
 
             def state_fn(state: jax.Array) -> jax.Array:
                 _env = learn_interface.put_state(env, state)
@@ -145,7 +139,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
                 return state
 
             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                _env = learn_interface.put_param(env, (param[:n1], param[n1:]))
+                _env = learn_interface.put_param(env, param)
                 _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
@@ -155,7 +149,6 @@ def uoro[ENV, TR_DATA, VL_DATA](
             _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn, p, has_aux=True)
             (immediateInfluence__random_projection,) = vjp_func(random_vector)
             env = eqx.combine(arr, static)
-            env = learn_interface.put_param(env, (p1, p2))
 
             rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(immediateJacobian__A_projection))
             rho1 = jnp.sqrt(jnp.linalg.norm(immediateInfluence__random_projection) / jnp.linalg.norm(random_vector))
@@ -200,15 +193,13 @@ def rflo[ENV, TR_DATA, VL_DATA](
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
             s = learn_interface.get_state(env)
-            p1, p2 = learn_interface.get_param(env)
-            p = jnp.concatenate([p1, p2])
-            n1 = p1.shape[0]
+            p = learn_interface.get_param(env)
             mu = config.damping
             alpha = learn_interface.get_time_constant(env).value
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                _env = learn_interface.put_param(env, (param[:n1], param[n1:]))
+                _env = learn_interface.put_param(env, param)
                 _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
@@ -219,7 +210,6 @@ def rflo[ENV, TR_DATA, VL_DATA](
             else:
                 dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
             env = eqx.combine(arr, static)
-            env = learn_interface.put_param(env, (p1, p2))
 
             influence_tensor: JACOBIAN
             influence_tensor = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
@@ -254,7 +244,7 @@ def bptt[ENV, TR_DATA, VL_DATA](
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         param = learn_interface.get_param(env_init)
 
-        def loss_fn(param: tuple[jax.Array, jax.Array], ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
+        def loss_fn(param: jax.Array, ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
             env = learn_interface.put_param(env_init, param)
             arr_init, static = eqx.partition(env, eqx.is_array)
 
@@ -277,17 +267,14 @@ def bptt[ENV, TR_DATA, VL_DATA](
                 arr, _ = eqx.partition(_env, eqx.is_array)
                 return arr, (loss, trans_stat | readout_stat)
 
-            arr, (losses, stats) = jax.lax.scan(
-                lambda x, y: vmap_this(inference_fn)(x, y), arr_init, ds_init, length=length
-            )
+            arr, (losses, stats) = jax.lax.scan(lambda x, y: vmap_this(inference_fn)(x, y), arr_init, ds, length=length)
             env = eqx.combine(arr, static)
             env = learn_interface.put_param(env, param)
             return jnp.sum(losses), (env, stats)
 
         grad, (env, stats) = eqx.filter_grad(loss_fn, has_aux=True)(param, ds_init)
         env = learn_interface.put_param(env, param)
-        grad = GRADIENT(jnp.concatenate([grad[0], grad[1]]))
-        return env, grad, stats
+        return env, GRADIENT(grad), stats
 
     return gradient_fn
 
@@ -337,8 +324,8 @@ def identity[ENV, TR_DATA, VL_DATA](
 
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         env, loss, stats = _loss_fn(env_init, ds_init)
-        p1, p2 = learn_interface.get_param(env)
-        grad = jnp.zeros(p1.shape[0] + p2.shape[0])
+        param = learn_interface.get_param(env)
+        grad = jnp.zeros_like(param)
         return env, GRADIENT(grad), stats
 
     return gradient_fn
@@ -369,16 +356,15 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         return wrapper
 
     def make_readout_interface(interface: GodInterface[ENV]) -> GodInterface[ENV]:
-        def get_param(env: ENV) -> tuple[jax.Array, jax.Array]:
+        def get_param(env: ENV) -> jax.Array:
             state = interface.get_state(env)
-            p1, p2 = interface.get_param(env)
-            return (state, jnp.concatenate([p1, p2]))
+            p = interface.get_param(env)
+            return jnp.concatenate([state, p])
 
-        def put_param(env: ENV, param: tuple[jax.Array, jax.Array]) -> ENV:
-            state, p_flat = param
-            p1_size = interface.get_param(env)[0].shape[0]
-            env = interface.put_state(env, state)
-            env = interface.put_param(env, (p_flat[:p1_size], p_flat[p1_size:]))
+        def put_param(env: ENV, param: jax.Array) -> ENV:
+            state_size = interface.get_state(env).shape[0]
+            env = interface.put_state(env, param[:state_size])
+            env = interface.put_param(env, param[state_size:])
             return env
 
         return copy.replace(
@@ -512,9 +498,7 @@ def create_meta_learner[ENV](
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)
-            p1, p2 = nest_interface.get_param(env)
-            n1 = p1.shape[0]
-            gr_env = nest_interface.put_param(env, (gradient[:n1], gradient[n1:]))
+            gr_env = nest_interface.put_param(env, gradient)
             env = get_opt_step(assignments, interfaces, env, gr_env, config.hyperparameters)
             return env, stat
 

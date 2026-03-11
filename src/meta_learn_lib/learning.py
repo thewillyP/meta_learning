@@ -39,7 +39,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             tr_data, vl_data = data
 
             s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
+            p1, p2 = learn_interface.get_param(env)
             t = learn_interface.get_tick(env)
             mu = config.damping
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
@@ -50,17 +50,19 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 state = learn_interface.get_state(_env)
                 return state, None
 
-            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+            def param_fn(param: tuple[jax.Array, jax.Array]) -> tuple[jax.Array, tuple[ENV, STAT]]:
                 _env = learn_interface.put_param(env, param)
                 _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
                 return state, (_arr, stat)
 
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
+            p_size = p1.shape[0] + p2.shape[0]
+            if s.shape[0] > p_size:
+                dhdp_tree, (arr, trans_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)((p1, p2))
             else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
+                dhdp_tree, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)((p1, p2))
+            dhdp = jnp.concatenate([dhdp_tree[0], dhdp_tree[1]], axis=1)
             env = eqx.combine(arr, static)
 
             hmp: JACOBIAN
@@ -82,6 +84,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 None,
             )
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
+            env = learn_interface.put_param(env, (p1, p2))
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
@@ -129,7 +132,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             A_s = uoro_state.A
             B_s = uoro_state.B
             s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
+            p1, p2 = learn_interface.get_param(env)
 
             def state_fn(state: jax.Array) -> jax.Array:
                 _env = learn_interface.put_state(env, state)
@@ -137,7 +140,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
                 state = learn_interface.get_state(_env)
                 return state
 
-            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+            def param_fn(param: tuple[jax.Array, jax.Array]) -> tuple[jax.Array, tuple[ENV, STAT]]:
                 _env = learn_interface.put_param(env, param)
                 _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
@@ -145,8 +148,14 @@ def uoro[ENV, TR_DATA, VL_DATA](
                 return state, (_arr, stat)
 
             immediateJacobian__A_projection = eqx.filter_jvp(state_fn, (s,), (A_s.value,))[1] - mu * A_s.value
-            _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn, p, has_aux=True)
-            (immediateInfluence__random_projection,) = vjp_func(random_vector)
+            _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn, (p1, p2), has_aux=True)
+            (immediateInfluence__random_projection_tree,) = vjp_func(random_vector)
+            immediateInfluence__random_projection = jnp.concatenate(
+                [
+                    immediateInfluence__random_projection_tree[0],
+                    immediateInfluence__random_projection_tree[1],
+                ]
+            )
 
             rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(immediateJacobian__A_projection))
             rho1 = jnp.sqrt(jnp.linalg.norm(immediateInfluence__random_projection) / jnp.linalg.norm(random_vector))
@@ -155,6 +164,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             B_new: jax.Array = B_s.value / rho0 + immediateInfluence__random_projection / rho1
 
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
+            env = learn_interface.put_param(env, (p1, p2))
             grad = (credit_gr[: A_new.shape[0]] @ A_new) * B_new + credit_gr[A_new.shape[0] :]
 
             env = learn_interface.put_uoro_state(
@@ -191,28 +201,31 @@ def rflo[ENV, TR_DATA, VL_DATA](
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
             s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
+            p1, p2 = learn_interface.get_param(env)
             mu = config.damping
             alpha = learn_interface.get_time_constant(env).value
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
-            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+            def param_fn(param: tuple[jax.Array, jax.Array]) -> tuple[jax.Array, tuple[ENV, STAT]]:
                 _env = learn_interface.put_param(env, param)
                 _env, stat = transition(_env, tr_data)
                 state = learn_interface.get_state(_env)
                 _arr, _ = eqx.partition(_env, eqx.is_array)
                 return state, (_arr, stat)
 
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
+            p_size = p1.shape[0] + p2.shape[0]
+            if s.shape[0] > p_size:
+                dhdp_tree, (arr, trans_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)((p1, p2))
             else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
+                dhdp_tree, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)((p1, p2))
+            dhdp = jnp.concatenate([dhdp_tree[0], dhdp_tree[1]], axis=1)
             env = eqx.combine(arr, static)
 
             influence_tensor: JACOBIAN
             influence_tensor = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
 
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
+            env = learn_interface.put_param(env, (p1, p2))
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
@@ -240,7 +253,9 @@ def bptt[ENV, TR_DATA, VL_DATA](
     ],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        def loss_fn(param: jax.Array, ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
+        param = learn_interface.get_param(env_init)
+
+        def loss_fn(param: tuple[jax.Array, jax.Array], ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
             env = learn_interface.put_param(env_init, param)
             arr_init, static = eqx.partition(env, eqx.is_array)
 
@@ -267,11 +282,13 @@ def bptt[ENV, TR_DATA, VL_DATA](
                 lambda x, y: vmap_this(inference_fn)(x, y), arr_init, ds_init, length=length
             )
             env = eqx.combine(arr, static)
+            env = learn_interface.put_param(env, param)
             return jnp.sum(losses), (env, stats)
 
-        param = learn_interface.get_param(env_init)
         grad, (env, stats) = eqx.filter_grad(loss_fn, has_aux=True)(param, ds_init)
-        return env, GRADIENT(grad), stats
+        env = learn_interface.put_param(env, param)
+        grad = GRADIENT(jnp.concatenate([grad[0], grad[1]]))
+        return env, grad, stats
 
     return gradient_fn
 
@@ -321,8 +338,8 @@ def identity[ENV, TR_DATA, VL_DATA](
 
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         env, loss, stats = _loss_fn(env_init, ds_init)
-        param = learn_interface.get_param(env)
-        grad = jnp.zeros_like(param)
+        p1, p2 = learn_interface.get_param(env)
+        grad = jnp.zeros(p1.shape[0] + p2.shape[0])
         return env, GRADIENT(grad), stats
 
     return gradient_fn
@@ -346,7 +363,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
     ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
         def wrapper(env: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
             data_with_time = jax.tree.map(lambda x: jnp.expand_dims(x, axis=0), data)
-            env, gradient, stat = grad_fn(env, data_with_time)
+            _, gradient, stat = grad_fn(env, data_with_time)
             stat = jax.tree.map(lambda x: x[0], stat)
             return env, gradient, stat
 
@@ -392,6 +409,26 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         loss_fns.append(readout_loss)
 
     return gradient_fns, loss_fns
+
+
+def restore_broadcast[ENV, X](
+    fn: Callable[[ENV, tuple], tuple[ENV, X, STAT]],
+    axes: ENV,
+) -> Callable[[ENV, tuple], tuple[ENV, X, STAT]]:
+    is_leaf = lambda x: x is None
+
+    def wrapper(env: ENV, data: tuple) -> tuple[ENV, X, STAT]:
+        out_env, x, stat = fn(env, data)
+        merged_env = jax.tree.map(
+            lambda ax, inp, out: inp if ax is None else out,
+            axes,
+            env,
+            out_env,
+            is_leaf=is_leaf,
+        )
+        return merged_env, x, stat
+
+    return wrapper
 
 
 def create_meta_learner[ENV](
@@ -454,7 +491,9 @@ def create_meta_learner[ENV](
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)
-            gr_env = nest_interface.put_param(env, gradient)
+            p1, p2 = nest_interface.get_param(env)
+            n1 = p1.shape[0]
+            gr_env = nest_interface.put_param(env, (gradient[:n1], gradient[n1:]))
             env = get_opt_step(assignments, interfaces, env, gr_env, config.hyperparameters)
             return env, stat
 
@@ -480,6 +519,8 @@ def create_meta_learner[ENV](
         # Combine each lower level's axes with current level's validation axes
         for ax in all_axes[:level]:
             combined = eqx.combine(ax, per_level_val_axes[level])
+            vl_learner = restore_broadcast(vl_learner, combined)
+            vl_loss = restore_broadcast(vl_loss, combined)
             vl_learner = eqx.filter_vmap(vl_learner, in_axes=(combined, 0), out_axes=(combined, 0, 0))
             vl_loss = eqx.filter_vmap(vl_loss, in_axes=(combined, 0), out_axes=(combined, 0, 0))
 

@@ -1,6 +1,7 @@
 import copy
 import jax
 import equinox as eqx
+import jax.numpy as jnp
 
 from meta_learn_lib.config import *
 from meta_learn_lib.env import GodState
@@ -517,20 +518,28 @@ def create_learn_interfaces(
             param_lens1 = make_lens(slice(0, level), slice(0, level), slice(0, level))
             param_lens2 = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
 
-            # want to take wrt to both state + param bc transition outputs state wrt to param and Identity can be appended to this to get total deriv
-            def get_param(env: GodState) -> jax.Array:
-                return to_vector((param_lens1.get(env), param_lens2.get(env))).vector
+            def get_param(env: GodState) -> tuple[jax.Array, jax.Array]:
+                return (param_lens1.get(env), param_lens2.get(env))
 
-            def put_param(env: GodState, vector: jax.Array) -> GodState:
-                new_param1, new_param2 = to_vector((param_lens1.get(env), param_lens2.get(env))).to_param(vector)
-                env = param_lens1.put(env, new_param1)
-                env = param_lens2.put(env, new_param2)
+            def put_param(env: GodState, param: tuple[jax.Array, jax.Array]) -> GodState:
+                v1, v2 = param
+                env = param_lens1.put(env, v1)
+                env = param_lens2.put(env, v2)
                 return env
 
             param_lens = Lens(get=get_param, put=put_param)
         else:
             state_lens = make_lens(slice(0, level), slice(0, level), slice(0, level))
-            param_lens = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
+            _param_lens = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
+
+            def get_param(env: GodState) -> tuple[jax.Array, jax.Array]:
+                return (_param_lens.get(env), jnp.empty(0))
+
+            def put_param(env: GodState, param: tuple[jax.Array, jax.Array]) -> GodState:
+                v1, v2 = param
+                return _param_lens.put(env, v1)
+
+            param_lens = Lens(get=get_param, put=put_param)
 
         match learner:
             case RTRLConfig() | RTRLFiniteHvpConfig():

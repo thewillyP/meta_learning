@@ -342,11 +342,13 @@ def create_learner_states[ENV](
         case RTRLConfig() | RTRLFiniteHvpConfig() | RFLOConfig():
             k1, k2, prng = jax.random.split(prng, 3)
             new_env = factory(env, k1)
-            param = interface.get_param(new_env)
+            p1, p2 = interface.get_param(new_env)
+            param = jnp.concatenate([p1, p2])
             state = interface.get_state(new_env)
 
             def infl_fn(p: jax.Array) -> jax.Array:
-                _env = interface.put_param(new_env, p)
+                n1 = p1.shape[0]
+                _env = interface.put_param(new_env, (p[:n1], p[n1:]))
                 _env = factory(_env, k1)
                 s = interface.get_state(_env)
                 return s
@@ -361,14 +363,17 @@ def create_learner_states[ENV](
             k0, k1, k2, k3, prng = jax.random.split(prng, 5)
             env = factory(env, k0)
 
-            param = interface.get_param(env)
+            p1, p2 = interface.get_param(env)
+            param = jnp.concatenate([p1, p2])
             state = interface.get_state(env)
 
             # A: random init, shape = (|h|,)
             a = jax.random.normal(k1, state.shape)
 
             # B: start fully random, then zero out nonrecurrent params
-            b_env = interface.put_param(env, jax.random.normal(k2, param.shape))
+            rand_param = jax.random.normal(k2, param.shape)
+            n1 = p1.shape[0]
+            b_env = interface.put_param(env, (rand_param[:n1], rand_param[n1:]))
 
             def zero_readout(x):
                 if isinstance(x, Parameter) and not x.parametrizes_transition:
@@ -379,7 +384,8 @@ def create_learner_states[ENV](
 
             b_env = jax.tree.map(zero_readout, b_env, is_leaf=lambda x: isinstance(x, Parameter))
 
-            b = interface.get_param(b_env)
+            b1, b2 = interface.get_param(b_env)
+            b = jnp.concatenate([b1, b2])
 
             uoro = UOROState(
                 A=State(value=a, is_stateful=track_influence_in),
@@ -522,16 +528,16 @@ def reset_nested_learner[ENV](
             k2,
         )
 
+        p1, p2 = meta_learner.get_param(env)
+        param_size = p1.shape[0] + p2.shape[0]
         logs = Logs(
-            gradient=jnp.zeros_like(meta_learner.get_param(env)) if meta_config.track_logs.gradient else None,
+            gradient=jnp.zeros(param_size) if meta_config.track_logs.gradient else None,
             hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
             largest_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_eigenvalue else None,
-            influence_tensor=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0]))
+            influence_tensor=jnp.zeros((meta_learner.get_state(env).shape[0], param_size))
             if meta_config.track_logs.influence_tensor
             else None,
-            immediate_influence_tensor=jnp.zeros(
-                (meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0])
-            )
+            immediate_influence_tensor=jnp.zeros((meta_learner.get_state(env).shape[0], param_size))
             if meta_config.track_logs.immediate_influence_tensor
             else None,
             largest_jac_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_jac_eigenvalue else None,

@@ -4,10 +4,11 @@ import random
 import string
 from cattrs import Converter
 import random
+import argparse
 import time
 from meta_learn_lib import app
 from meta_learn_lib.config import *
-from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
+from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, PrintLogger
 from meta_learn_lib.util import setup_flattened_union
 import jax.numpy as jnp
 
@@ -115,9 +116,10 @@ def make_converter() -> Converter:
     return converter
 
 
-def main():
-    _jitter_rng = random.Random()
-    time.sleep(_jitter_rng.uniform(1, 60))
+def main(skip_jitter: bool):
+    if not skip_jitter:
+        _jitter_rng = random.Random()
+        time.sleep(_jitter_rng.uniform(1, 60))
 
     task: clearml.Task = clearml.Task.init(
         project_name="temp",
@@ -486,4 +488,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-jitter", action="store_true", default=False)
+    args = parser.parse_args()
+    main(skip_jitter=args.skip_jitter)

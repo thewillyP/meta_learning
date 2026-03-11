@@ -401,6 +401,7 @@ class GodConfig:
     clearml_run: bool
     data_root_dir: str
     log_dir: str
+    log_title: str
     logger_config: list[LoggerConfig]
     epochs: int
     checkpoint_every_n_minibatches: int

@@ -12,7 +12,6 @@ import threading
 import queue
 import itertools
 import math
-import re
 import jax
 
 
@@ -143,12 +142,9 @@ class MultiLogger:
             logger.log_scalar(context, title, series, value, iteration, max_count)
 
 
-def parse_level(key: str) -> int:
-    """Extract level number from key like 'level0/loss' -> 0."""
-    m = re.match(r"level(\d+)/", key)
-    if m is None:
-        raise ValueError(f"Cannot parse level from key: {key}")
-    return int(m.group(1))
+def infer_level(ndim: int, num_levels: int) -> int:
+    """Infer the level number from array ndim. Level i has 2L - i + 1 total dims."""
+    return 2 * num_levels - (ndim - 1)
 
 
 def reduce_batch_dims(arr: np.ndarray, level: int, num_levels: int) -> np.ndarray:
@@ -191,16 +187,19 @@ class ScalarLogger:
     gets its own point via a per-key counter.
     """
 
-    def __init__(self, logger: Logger, num_levels: int, total_iterations: int, checkpoint_every: int):
+    def __init__(self, logger: Logger, num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str):
         self.logger = logger
         self.num_levels = num_levels
         self.global_step = 0
         self.total_iterations = total_iterations
         self.checkpoint_every = checkpoint_every
+        self.log_title = log_title
         self.counters: dict[str, int] = {}
 
     def log(self, stats: dict[str, np.ndarray]):
-        reduced = {k: reduce_batch_dims(v, parse_level(k), self.num_levels) for k, v in stats.items()}
+        reduced = {
+            k: reduce_batch_dims(v, infer_level(v.ndim, self.num_levels), self.num_levels) for k, v in stats.items()
+        }
 
         # ref_shape from deepest level's scan dims (exclude time)
         max_ndim = max(v.ndim for v in reduced.values())
@@ -233,7 +232,7 @@ class ScalarLogger:
                 for v in time_slice:
                     v = float(v)
                     if not np.isnan(v):
-                        self.logger.log_scalar(context, key, key, v, offset + logged, self.total_iterations)
+                        self.logger.log_scalar(context, self.log_title, key, v, offset + logged, self.total_iterations)
                         logged += 1
                 self.counters[key] = offset + logged
 
@@ -245,9 +244,15 @@ class ThreadedScalarLogger:
     """Async wrapper that processes log calls in a background thread."""
 
     def __init__(
-        self, logger: Logger, loggers: list[Logger], num_levels: int, total_iterations: int, checkpoint_every: int
+        self,
+        logger: Logger,
+        loggers: list[Logger],
+        num_levels: int,
+        total_iterations: int,
+        checkpoint_every: int,
+        log_title: str,
     ):
-        self.scalar_logger = ScalarLogger(logger, num_levels, total_iterations, checkpoint_every)
+        self.scalar_logger = ScalarLogger(logger, num_levels, total_iterations, checkpoint_every, log_title)
         self.loggers = loggers
         self.job_queue = queue.Queue()
         self.stop_event = threading.Event()
@@ -284,8 +289,8 @@ class ThreadedScalarLogger:
 
 
 def create_logger(
-    loggers: list[Logger], num_levels: int, total_iterations: int, checkpoint_every: int
+    loggers: list[Logger], num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str
 ) -> ThreadedScalarLogger:
     """Construct a ThreadedScalarLogger from a list of loggers."""
     logger = MultiLogger(loggers)
-    return ThreadedScalarLogger(logger, loggers, num_levels, total_iterations, checkpoint_every)
+    return ThreadedScalarLogger(logger, loggers, num_levels, total_iterations, checkpoint_every, log_title)

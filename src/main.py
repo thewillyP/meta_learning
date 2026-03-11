@@ -1,9 +1,7 @@
-import random
-import string
-import random
+import jax.numpy as jnp
 from meta_learn_lib import app
 from meta_learn_lib.config import *
-from meta_learn_lib.logger import HDF5Logger, MatplotlibLogger, MultiLogger, PrintLogger
+from meta_learn_lib.logger import *
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -14,146 +12,314 @@ from meta_learn_lib.logger import HDF5Logger, MatplotlibLogger, MultiLogger, Pri
 
 def main():
     config = GodConfig(
+        seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
         clearml_run=True,
-        data_root_dir="/tmp",
-        log_dir="/scratch/offline_logs",
-        dataset=CIFAR10Config(96),
-        # dataset=DelayAddOnlineConfig(t1=10, t2=12, tau_task=1, n=100_000, nTest=1_000),
-        num_base_epochs=200,
+        data_root_dir="/scratch/wlp9800/datasets",
+        log_dir="/scratch/wlp9800/offline_logs",
+        log_title="train",
+        logger_config=[MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs")],
+        epochs=100,
         checkpoint_every_n_minibatches=1,
-        seed=SeedConfig(global_seed=4352, data_seed=1, parameter_seed=1, test_seed=12345),
-        loss_fn="cross_entropy_with_integer_labels",
-        # loss_fn="cross_entropy",
-        transition_function={
-            # 0: GRULayer(
-            #     n=256,
-            #     # activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-            # 0: LSTMLayer(
-            #     n=256,
-            #     use_bias=True,
-            # ),
-            0: NNLayer(
-                n=256,
-                activation_fn="tanh",
+        transition_graph={
+            "x": {},
+            "concat": {"x"},
+            "rnn1": {"concat"},
+            "rnn2": {"rnn1"},
+        },
+        readout_graph={
+            "readout": {"rnn2"},
+        },
+        nodes={
+            "x": UnlabeledSource(),
+            "concat": Concat(),
+            "rnn1": VanillaRNNLayer(
+                nn_layer=NNLayer(
+                    n=32,
+                    activation_fn="tanh",
+                    use_bias=True,
+                    layer_norm=None,
+                ),
+                use_random_init=False,
+                time_constant="meta1_rnn1_time_constant",
+            ),
+            "rnn2": VanillaRNNLayer(
+                nn_layer=NNLayer(
+                    n=32,
+                    activation_fn="tanh",
+                    use_bias=True,
+                    layer_norm=None,
+                ),
+                use_random_init=False,
+                time_constant="meta1_rnn2_time_constant",
+            ),
+            "readout": NNLayer(
+                n=10,
+                activation_fn="identity",
                 use_bias=True,
+                layer_norm=None,
             ),
-            # 1: NNLayer(
-            #     n=128,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-            # 2: NNLayer(
-            #     n=128,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            # ),
-            # 0: LSTMLayer(
-            #     n=64,
-            #     use_bias=True,
-            # ),
-            # 1: NNLayer(
-            #     n=64,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            # ),
         },
-        # readout_function=FeedForwardConfig(
-        #     ffw_layers={
-        #         0: NNLayer(n=10, activation_fn="identity", use_bias=True),
-        #     }
-        # ),
-        readout_function=FeedForwardConfig(
-            ffw_layers={
-                # 0: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 1: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                # 2: NNLayer(n=128, activation_fn="tanh", use_bias=True),
-                0: NNLayer(n=10, activation_fn="identity", use_bias=True),
-            }
-        ),
-        learners={
-            0: LearnConfig(  # normal feedforward backprop
-                learner=BPTTConfig(),
-                # optimizer=SGDNormalizedConfig(
-                #     learning_rate=HyperparameterConfig(value=0.029240177382128668, learnable=True),
-                #     weight_decay=HyperparameterConfig(value=0.0, learnable=False),
-                #     momentum=0.0,
-                # ),
-                # optimizer=SGDConfig(
-                #     learning_rate=HyperparameterConfig(value=0.1, learnable=True),
-                #     weight_decay=HyperparameterConfig(value=0.0, learnable=False),
-                #     momentum=0.0,
-                # ),
-                optimizer=SGDClipConfig(
-                    # learning_rate=HyperparameterConfig(value=0.1, learnable=True),
-                    learning_rate=HyperparameterConfig(
-                        value=0.029240177382128668,
-                        learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
-                    ),
-                    weight_decay=HyperparameterConfig(
-                        value=0.001,
-                        learnable=True,
-                        hyperparameter_parametrization=HyperparameterConfig.softrelu(10000),
-                    ),
-                    momentum=0.0,
-                    clip_threshold=5.0,
-                    clip_sharpness=100.0,
+        hyperparameters={
+            "meta1_rnn1_time_constant": HyperparameterConfig(
+                value=1.0,
+                kind="time_constant",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=1,
+                parametrizes_transition=True,
+            ),
+            "meta1_rnn2_time_constant": HyperparameterConfig(
+                value=1.0,
+                kind="time_constant",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=1,
+                parametrizes_transition=True,
+            ),
+            "meta1_sgd1.lr": HyperparameterConfig(
+                value=0.001,
+                kind="learning_rate",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=1,
+                parametrizes_transition=True,
+            ),
+            "meta1_sgd1.wd": HyperparameterConfig(
+                value=0.00001,
+                kind="weight_decay",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=1,
+                parametrizes_transition=True,
+            ),
+            "meta1_sgd1.momentum": HyperparameterConfig(
+                value=0.0,
+                kind="momentum",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=1,
+                parametrizes_transition=True,
+            ),
+            "meta2_adam1.lr": HyperparameterConfig(
+                value=0.001,
+                kind="learning_rate",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=2,
+                parametrizes_transition=True,
+            ),
+            "meta2_adam1.wd": HyperparameterConfig(
+                value=0.0,
+                kind="weight_decay",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=jnp.inf,
+                level=2,
+                parametrizes_transition=True,
+            ),
+            "meta2_adam1.momentum": HyperparameterConfig(
+                value=0.9,
+                kind="momentum",
+                count=1,
+                hyperparameter_parametrization=HyperparameterConfig.identity(),
+                min_value=0.0,
+                max_value=1.0,
+                level=2,
+                parametrizes_transition=True,
+            ),
+        },
+        levels=[
+            MetaConfig(
+                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+                dataset_source=MNISTTaskFamily(
+                    patch_h=1,
+                    patch_w=28,
+                    label_last_only=True,
+                    add_spurious_pixel_to_train=False,
+                    domain=frozenset({"mnist"}),
+                    normalize=True,
                 ),
-                # optimizer=AdamConfig(
-                #     learning_rate=HyperparameterConfig(value=0.001, learnable=True),
-                #     weight_decay=HyperparameterConfig(value=0.0, learnable=False),
-                # ),
-                lanczos_iterations=0,
-                track_logs=True,
-                track_special_logs=False,
-                num_virtual_minibatches_per_turn=1,
-            ),
-            1: LearnConfig(
-                # learner=IdentityConfig(),
-                learner=RTRLFiniteHvpConfig(epsilon=1e-3),
-                optimizer=AdamConfig(
-                    learning_rate=HyperparameterConfig(
-                        value=0.02,
-                        learnable=False,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    ),
-                    weight_decay=HyperparameterConfig(
-                        value=0.0,
-                        learnable=False,
-                        hyperparameter_parametrization=HyperparameterConfig.identity(),
-                    ),
+                dataset=DatasetConfig(
+                    num_examples_in_minibatch=100,
+                    num_examples_total=50_000,
+                    is_test=False,
                 ),
-                # optimizer=SGDConfig(
-                #     learning_rate=HyperparameterConfig(value=0.001, learnable=True),
-                #     weight_decay=HyperparameterConfig(value=0.0, learnable=False),
-                #     momentum=0.0,
-                # ),
-                lanczos_iterations=0,
-                track_logs=True,
-                track_special_logs=False,
-                num_virtual_minibatches_per_turn=40,
+                validation=StepConfig(
+                    num_steps=28,
+                    batch=1,
+                    reset_t=28,
+                    track_influence_in=frozenset({0}),
+                ),
+                nested=StepConfig(
+                    num_steps=1,
+                    batch=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({0}),
+                ),
+                learner=LearnConfig(
+                    model_learner=GradientConfig(
+                        method=BPTTConfig(None),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer_learner=GradientConfig(
+                        method=BPTTConfig(None),
+                        add_clip=HardClip(1.0),
+                        scale=1.0,
+                    ),
+                    optimizer={
+                        "meta1_sgd1": OptimizerAssignment(
+                            target=frozenset({"rnn1", "rnn2", "readout"}),
+                            optimizer=SGDConfig(
+                                learning_rate="meta1_sgd1.lr",
+                                weight_decay="meta1_sgd1.wd",
+                                momentum="meta1_sgd1.momentum",
+                            ),
+                        ),
+                    },
+                ),
+                track_logs=TrackLogs(
+                    gradient=False,
+                    hessian_contains_nans=False,
+                    largest_eigenvalue=False,
+                    influence_tensor=False,
+                    immediate_influence_tensor=False,
+                    largest_jac_eigenvalue=False,
+                    jacobian=False,
+                ),
+                test_seed=0,
             ),
-        },
-        data={
-            0: DataConfig(
-                train_percent=80.000,
-                num_examples_in_minibatch=1000,
-                num_steps_in_timeseries=32,
-                num_times_to_avg_in_timeseries=1,
+            MetaConfig(
+                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+                dataset_source=MNISTTaskFamily(
+                    patch_h=1,
+                    patch_w=28,
+                    label_last_only=True,
+                    add_spurious_pixel_to_train=False,
+                    domain=frozenset({"mnist"}),
+                    normalize=True,
+                ),
+                dataset=DatasetConfig(
+                    num_examples_in_minibatch=100,
+                    num_examples_total=10_000,
+                    is_test=False,
+                ),
+                validation=StepConfig(
+                    num_steps=28,
+                    batch=1,
+                    reset_t=28,
+                    track_influence_in=frozenset({1}),
+                ),
+                nested=StepConfig(
+                    num_steps=1,
+                    batch=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({1}),
+                ),
+                learner=LearnConfig(
+                    model_learner=GradientConfig(
+                        method=BPTTConfig(None),
+                        add_clip=HardClip(1.0),
+                        scale=1.0,
+                    ),
+                    optimizer_learner=GradientConfig(
+                        method=RTRLConfig(
+                            start_at_step=0,
+                            damping=1e-4,
+                        ),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer={
+                        "meta2_adam1": OptimizerAssignment(
+                            target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
+                            optimizer=AdamConfig(
+                                learning_rate="meta2_adam1.lr",
+                                weight_decay="meta2_adam1.wd",
+                                momentum="meta2_adam1.momentum",
+                            ),
+                        ),
+                    },
+                ),
+                track_logs=TrackLogs(
+                    gradient=False,
+                    hessian_contains_nans=False,
+                    largest_eigenvalue=False,
+                    influence_tensor=False,
+                    immediate_influence_tensor=False,
+                    largest_jac_eigenvalue=False,
+                    jacobian=False,
+                ),
+                test_seed=0,
             ),
-            1: DataConfig(
-                train_percent=20.000,
-                num_examples_in_minibatch=1000,
-                num_steps_in_timeseries=32,
-                num_times_to_avg_in_timeseries=1,
+            MetaConfig(
+                objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+                dataset_source=MNISTTaskFamily(
+                    patch_h=1,
+                    patch_w=28,
+                    label_last_only=True,
+                    add_spurious_pixel_to_train=False,
+                    domain=frozenset({"mnist"}),
+                    normalize=True,
+                ),
+                dataset=DatasetConfig(
+                    num_examples_in_minibatch=100,
+                    num_examples_total=10_000,
+                    is_test=True,
+                ),
+                validation=StepConfig(
+                    num_steps=28,
+                    batch=1,
+                    reset_t=28,
+                    track_influence_in=frozenset({2}),
+                ),
+                nested=StepConfig(
+                    num_steps=100,
+                    batch=1,
+                    reset_t=None,
+                    track_influence_in=frozenset({2}),
+                ),
+                learner=LearnConfig(
+                    model_learner=GradientConfig(
+                        method=IdentityLearnerConfig(),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer_learner=GradientConfig(
+                        method=IdentityLearnerConfig(),
+                        add_clip=None,
+                        scale=1.0,
+                    ),
+                    optimizer={},
+                ),
+                track_logs=TrackLogs(
+                    gradient=False,
+                    hessian_contains_nans=False,
+                    largest_eigenvalue=False,
+                    influence_tensor=False,
+                    immediate_influence_tensor=False,
+                    largest_jac_eigenvalue=False,
+                    jacobian=False,
+                ),
+                test_seed=0,
             ),
-        },
-        ignore_validation_inference_recurrence=True,
-        readout_uses_input_data=False,
-        logger_config=(MatplotlibLoggerConfig("./figures"), PrintLoggerConfig()),
-        treat_inference_state_as_online=False,
+        ],
+        label_mask_value=-1.0,
+        unlabeled_mask_value=-100.0,
+        num_tasks=1,
     )
 
     loggers = []
@@ -167,14 +333,7 @@ def main():
                 raise ValueError("Invalid logger configuration.")
         loggers.append(logger)
 
-    logger = MultiLogger(loggers)
-
-    app.runApp(config, logger)
-
-    for logger in loggers:
-        match logger:
-            case MatplotlibLogger():
-                logger.generate_figures()
+    app.runApp(config, loggers)
 
 
 if __name__ == "__main__":

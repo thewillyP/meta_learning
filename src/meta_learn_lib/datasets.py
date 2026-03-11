@@ -72,6 +72,18 @@ class PyTreeDataset(Dataset):
         return jax.tree.map(lambda x: x[idx], self.data)
 
 
+def get_seq_len(task: Task, is_test: bool) -> int:
+    match task:
+        case MNISTTaskFamily(ph, pw, _, _, _, _):
+            return (MNIST_HEIGHT // ph) * (MNIST_WIDTH // pw)
+        case CIFAR10TaskFamily(ph, pw, _):
+            return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
+        case CIFAR100TaskFamily(ph, pw, _):
+            return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
+        case DelayAddTaskFamily(_, _, _, _, _, _, t_train, _, t_test, _):
+            return t_test if is_test else t_train
+
+
 def numpy_collate_fn(batch):
     return jax.tree.map(lambda x: np.asarray(x), batch)
 

@@ -18,7 +18,7 @@ from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
 from meta_learn_lib.learning import create_meta_learner
 from meta_learn_lib.lib_types import *
-from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
+from meta_learn_lib.datasets import create_data_sources, create_dataloader, get_seq_len, validate_dataloader_config
 from meta_learn_lib.logger import MatplotlibLogger, create_logger
 from meta_learn_lib.loss_function import create_readout_loss_fns
 
@@ -30,9 +30,11 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
 
     # Count total num iterations
     base = config.levels[0]
-    num_vb = math.ceil(base.dataset.num_examples_total / base.dataset.num_examples_in_minibatch)
+    seq_len = get_seq_len(base.dataset_source, base.dataset.is_test)
+    num_vb = math.ceil(seq_len / base.validation.num_steps)
+    num_minibatches = math.ceil(base.dataset.num_examples_total / base.dataset.num_examples_in_minibatch)
     nesting = math.prod(l.nested.num_steps for l in config.levels)
-    iters_per_epoch = (base.dataset.num_examples_total * num_vb) // (base.dataset.num_examples_in_minibatch * nesting)
+    iters_per_epoch = (num_minibatches * num_vb) // nesting
     total_iterations = iters_per_epoch * config.epochs
 
     # Logger

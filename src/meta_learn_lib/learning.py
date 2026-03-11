@@ -85,7 +85,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 case RTRLFiniteHvpConfig(epsilon, ___):
 
                     def finite_hvp(v: jax.Array) -> jax.Array:
-                        return (state_fn(s + epsilon * v) - state_fn(s - epsilon * v)) / (2 * epsilon)
+                        return (state_fn(s + epsilon * v)[0] - state_fn(s - epsilon * v)[0]) / (2 * epsilon)
 
                     hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor_s.value)
 

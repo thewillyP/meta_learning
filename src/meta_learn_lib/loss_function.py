@@ -30,6 +30,10 @@ def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: 
             return outputs.log_q_z - log_p_z(prior, outputs.z)
 
 
+def nan_if_masked(value: jax.Array, has_label: jax.Array) -> jax.Array:
+    return jnp.where(has_label, value, jnp.nan)
+
+
 def create_loss_fn[ENV](
     objective_fn: ObjectiveFn,
     label_mask_value: float,
@@ -51,13 +55,14 @@ def create_loss_fn[ENV](
                 _, target = data
                 pred = outputs.prediction
                 mask = target != label_mask_value
+                has_label = jnp.any(mask)
                 raw_loss = _loss_fn(pred, target)
                 loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
                 target_onehot = _to_onehot(target, pred.shape[-1])
                 acc = jnp.sum(jnp.where(mask, accuracy(pred, target_onehot), 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
                 return loss, {
-                    "loss": loss,
-                    "accuracy": jax.lax.stop_gradient(acc),
+                    "loss": nan_if_masked(loss, has_label),
+                    "accuracy": jax.lax.stop_gradient(nan_if_masked(acc, has_label)),
                 }
 
         case RegressionObjective():
@@ -66,9 +71,10 @@ def create_loss_fn[ENV](
                 _, target = data
                 pred = outputs.prediction
                 mask = target != label_mask_value
+                has_label = jnp.any(mask)
                 raw_loss = optax.losses.squared_error(pred, target)
                 loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
-                return loss, {"loss": loss}
+                return loss, {"loss": nan_if_masked(loss, has_label)}
 
         case BernoulliObjective():
 
@@ -76,9 +82,10 @@ def create_loss_fn[ENV](
                 _, target = data
                 pred = outputs.prediction
                 mask = target != label_mask_value
+                has_label = jnp.any(mask)
                 raw_loss = optax.losses.sigmoid_binary_cross_entropy(pred, target)
                 loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
-                return loss, {"loss": loss}
+                return loss, {"loss": nan_if_masked(loss, has_label)}
 
         case ELBOObjective(beta_hp, likelihood, posterior, prior):
             inner_loss_fn = create_loss_fn(likelihood, unlabeled_mask_value, unlabeled_mask_value, task_interface)

@@ -1,9 +1,9 @@
 import copy
+from logging import Logger
 import random
 import os
 import jax
 import jax.numpy as jnp
-from pyrsistent import pmap, pvector
 import torch
 import numpy as np
 import toolz
@@ -12,17 +12,18 @@ import time
 import equinox as eqx
 
 from meta_learn_lib.config import *
-from meta_learn_lib.create_env import create_env, create_inference_axes, create_transition_fns, env_validation_resetters
+from meta_learn_lib.create_env import create_env, create_inference_axes, create_transition_fns
 from meta_learn_lib.create_interface import create_learn_interfaces, create_meta_interfaces, create_task_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
-from meta_learn_lib.learning import create_meta_learner, create_validation_learners
+from meta_learn_lib.learning import create_meta_learner
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
+from meta_learn_lib.logger import MatplotlibLogger, create_logger
 from meta_learn_lib.loss_function import create_readout_loss_fns
 
 
-def runApp(config: GodConfig) -> None:
+def runApp(config: GodConfig, loggers: list[Logger]) -> None:
 
     config = GodConfig(
         seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
@@ -46,7 +47,7 @@ def runApp(config: GodConfig) -> None:
             "concat": Concat(),
             "rnn1": VanillaRNNLayer(
                 nn_layer=NNLayer(
-                    n=128,
+                    n=32,
                     activation_fn="tanh",
                     use_bias=True,
                     layer_norm=None,
@@ -166,14 +167,14 @@ def runApp(config: GodConfig) -> None:
                 ),
                 dataset=DatasetConfig(
                     num_examples_in_minibatch=100,
-                    num_examples_total=500,
+                    num_examples_total=50_000,
                     is_test=False,
                 ),
                 validation=StepConfig(
                     num_steps=28,
-                    batch=2,
+                    batch=1,
                     reset_t=28,
-                    track_influence_in=frozenset({0, 1}),
+                    track_influence_in=frozenset({0}),
                 ),
                 nested=StepConfig(
                     num_steps=1,
@@ -226,18 +227,18 @@ def runApp(config: GodConfig) -> None:
                 ),
                 dataset=DatasetConfig(
                     num_examples_in_minibatch=100,
-                    num_examples_total=500,
+                    num_examples_total=10_000,
                     is_test=False,
                 ),
                 validation=StepConfig(
                     num_steps=28,
-                    batch=2,
+                    batch=1,
                     reset_t=28,
                     track_influence_in=frozenset({1}),
                 ),
                 nested=StepConfig(
                     num_steps=1,
-                    batch=2,
+                    batch=1,
                     reset_t=None,
                     track_influence_in=frozenset({1}),
                 ),
@@ -299,7 +300,7 @@ def runApp(config: GodConfig) -> None:
                     track_influence_in=frozenset({2}),
                 ),
                 nested=StepConfig(
-                    num_steps=1,
+                    num_steps=100,
                     batch=1,
                     reset_t=None,
                     track_influence_in=frozenset({2}),
@@ -330,11 +331,22 @@ def runApp(config: GodConfig) -> None:
             ),
         ],
         label_mask_value=-1.0,
-        unlabeled_mask_value=0.0,
-        num_tasks=8,
+        unlabeled_mask_value=-100.0,
+        num_tasks=1,
     )
     if not config.clearml_run:
         return
+
+    # Count total num iterations
+    base = config.levels[0]
+    num_vb = math.ceil(base.dataset.num_examples_total / base.dataset.num_examples_in_minibatch)
+    nesting = math.prod(l.nested.num_steps for l in config.levels)
+    iters_per_epoch = (base.dataset.num_examples_total * num_vb) // (base.dataset.num_examples_in_minibatch * nesting)
+    total_iterations = iters_per_epoch * config.epochs
+
+    # Logger
+    loggers = [MatplotlibLogger(config.log_dir)]
+    scalar_logger = create_logger(loggers, len(config.levels), total_iterations, config.checkpoint_every_n_minibatches)
 
     # RNG Stuff
     base_key = jax.random.key(config.seed.global_seed)
@@ -363,21 +375,11 @@ def runApp(config: GodConfig) -> None:
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    for x in toolz.take(1, dataloader):
-        ((none, ((tr_x, tr_y), _)), ((vl_x, vl_y), _)), ((te_x, te_y), _) = x
-        # print(tr_x, tr_y)
-        # print(tr_x.min(), tr_x.max(), tr_x.mean(), tr_x.std())
-        print(none)
-        print(tr_x.shape, tr_y.shape)
-        print(vl_x.shape, vl_y.shape)
-        print(te_x.shape, te_y.shape)
-
     meta_interfaces, count = create_meta_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
     task_interfaces, count = create_task_interfaces(config, count)
 
     env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
-    # eqx.tree_pprint(env.serialize())
 
     val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
 
@@ -405,7 +407,9 @@ def runApp(config: GodConfig) -> None:
     )
 
     x, dataloader = toolz.peek(dataloader)
-    arr, static = eqx.partition(env, eqx.is_array)
+    env_copy = copy.deepcopy(env)
+    arr_copy, static = eqx.partition(env_copy, eqx.is_array)
+    arr, _ = eqx.partition(env, eqx.is_array)
 
     def update_fn(data, arr):
         env = eqx.combine(arr, static)
@@ -413,236 +417,23 @@ def runApp(config: GodConfig) -> None:
         arr, _ = eqx.partition(env, eqx.is_array)
         return arr, stat
 
-    meta_learner_compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
+    meta_learner_compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr_copy).compile()
 
-    # meta_learner_compiled = (
-    #     eqx.filter_jit(lambda d, e: meta_learner(e, d), donate="all-except-first").lower(x, env).compile()
-    # )
+    for k, data in enumerate(toolz.take(total_iterations, dataloader)):
+        start_time = time.time()
+        arr, stats = meta_learner_compiled(data, arr)
+        jax.block_until_ready(arr)
+        end_time = time.time()
+        print(f"Iteration {k + 1}/{total_iterations} took {end_time - start_time:.2f} seconds")
+        scalar_logger.log(stats)
+        break
 
-    # (((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)), (te_x, te_y, te_seqs, te_mask)), dataloader = (
-    #     toolz.peek(dataloader)
-    # )
-    # _scan_data = traverse(
-    #     ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
-    # )
-    # scan_data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
+    scalar_logger.shutdown()
 
-    # update_fn = (
-    #     eqx.filter_jit(lambda data, init_model: meta_learner(init_model, data), donate="all-except-first")
-    #     .lower(scan_data, env)
-    #     .compile()
-    # )
-
-    # iterations_per_epoch: int = total_tr_vb // math.prod(
-    #     [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
-    # )
-
-    # total_iterations = iterations_per_epoch * config.num_base_epochs
-
-    # for k, (
-    #     ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
-    #     (te_x, te_y, te_seqs, te_mask),
-    # ) in enumerate(toolz.take(total_iterations, dataloader)):
-    #     _scan_data = traverse(
-    #         ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
-    #     )
-    #     data = traverse((_scan_data, (traverse(batched((te_x, te_y, te_seqs))), te_mask)))
-    #     env, stats, te_losses = update_fn(data, env)
-    #     tr_stats, vl_stats, te_stats = stats
-
-    #     tr_loss, tr_acc, _, _wds, tr_grs, __, hT, aT, _eig = tr_stats
-    #     vl_loss, vl_acc, _, _wds, __, ___, _hT, _aT, _eig = vl_stats
-    #     te_loss, te_acc, _, _wds, __, ___, _hT, _aT, _eig = te_stats
-    #     _, __, lrs, wds, ___, meta_grs, _hT, _aT, eig = tr_stats
-
-    #     tr_loss = metric_fn(tr_loss, axis=2)
-    #     tr_acc = metric_fn(tr_acc, axis=2)
-    #     tr_grs = tr_grs[:, :, -1]
-    #     vl_loss = metric_fn(vl_loss, axis=2)
-    #     vl_acc = metric_fn(vl_acc, axis=2)
-    #     te_loss = metric_fn(te_loss, axis=1)
-    #     te_acc = metric_fn(te_acc, axis=1)
-    #     lrs1 = lrs[0][:, :, -1]
-    #     lrs2 = lrs[1][:, :, -1]
-    #     wds1 = wds[0][:, :, -1]
-    #     wds2 = wds[1][:, :, -1]
-    #     meta_grs = meta_grs[:, :, -1]
-    #     hT = hT[:, :, -1]
-    #     aT = aT[:, :, -1]
-    #     eig = eig[:, :, -1]
-
-    #     jax.block_until_ready(env)
-
-    #     # def corr(a, b):
-    #     #     # a,b: [batch, hidden]
-    #     #     a_flat = a.reshape(-1)
-    #     #     b_flat = b.reshape(-1)
-    #     #     a_flat = a_flat - a_flat.mean()
-    #     #     b_flat = b_flat - b_flat.mean()
-    #     #     return jnp.dot(a_flat, b_flat) / (jnp.linalg.norm(a_flat) * jnp.linalg.norm(b_flat))
-
-    #     window_size = 100
-    #     aT_buffer = []  # store past activations
-
-    #     def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
-    #         dot = jnp.sum(a_prev * a_curr, axis=1)
-    #         norm_prev = jnp.linalg.norm(a_prev, axis=1)
-    #         norm_curr = jnp.linalg.norm(a_curr, axis=1)
-    #         corr_per_ex = dot / (norm_prev * norm_curr + eps)
-    #         return jnp.mean(corr_per_ex)
-
-    #     context = logger.get_context()
-    #     for i in range(tr_loss.shape[0]):
-    #         for j in range(tr_loss.shape[1]):
-    #             iteration = k * tr_loss.shape[0] * tr_loss.shape[1] + i * tr_loss.shape[1] + j + 1
-    #             if iteration % config.checkpoint_every_n_minibatches == 0:
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/loss",
-    #                     "train_loss",
-    #                     tr_loss[i, j],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/accuracy",
-    #                     "train_accuracy",
-    #                     tr_acc[i, j],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/recurrent_learning_rate",
-    #                     "train_recurrent_learning_rate",
-    #                     lrs1[i, j][0],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/readout_learning_rate",
-    #                     "train_readout_learning_rate",
-    #                     lrs2[i, j][0],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/recurrent_weight_decay",
-    #                     "train_recurrent_weight_decay",
-    #                     wds1[i, j][0],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/readout_weight_decay",
-    #                     "train_readout_weight_decay",
-    #                     wds2[i, j][0],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/gradient_norm",
-    #                     "train_gradient_norm",
-    #                     jnp.linalg.norm(tr_grs[i, j]),
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "validation/loss",
-    #                     "validation_loss",
-    #                     vl_loss[i, j],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "validation/accuracy",
-    #                     "validation_accuracy",
-    #                     vl_acc[i, j],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "meta/gradient_norm",
-    #                     "meta_gradient_norm",
-    #                     jnp.linalg.norm(meta_grs[i, j]),
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/final_rnn_activation_norm",
-    #                     "train_final_rnn_activation_norm",
-    #                     hT[i, j],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-
-    #                 # # store previous activations across iterations
-    #                 # if iteration == 1:
-    #                 #     prev_aT = aT[i, j]  # initialize
-    #                 # else:
-    #                 #     aT_curr = aT[i, j]  # [batch, hidden]
-    #                 #     aT_prev = prev_aT  # [batch, hidden]
-
-    #                 #     at_corr = corr(aT_prev, aT_curr)
-
-    #                 #     logger.log_scalar(
-    #                 #         context,
-    #                 #         "train/aT_correlation",
-    #                 #         "train_aT_correlation",
-    #                 #         at_corr,
-    #                 #         iteration,
-    #                 #         total_tr_vb * config.num_base_epochs,
-    #                 #     )
-
-    #                 #     prev_aT = aT_curr
-
-    #                 aT_curr = aT[i, j]  # [batch, hidden]
-
-    #                 # add to buffer
-    #                 aT_buffer.append(aT_curr)
-    #                 if len(aT_buffer) > window_size:
-    #                     aT_buffer.pop(0)
-
-    #                 # only compute correlation when we have at least 2 stored activations
-    #                 if len(aT_buffer) > 1:
-    #                     # correlate current activation with each previous activation in buffer
-    #                     corrs = [corr_per_example_dot(prev, aT_curr) for prev in aT_buffer[:-1]]
-    #                     at_corr = jnp.mean(jnp.array(corrs))
-
-    #                     logger.log_scalar(
-    #                         context,
-    #                         "train/aT_correlation_window",
-    #                         "train_aT_correlation_window",
-    #                         at_corr,
-    #                         iteration,
-    #                         total_tr_vb * config.num_base_epochs,
-    #                     )
-
-    #                 logger.log_scalar(
-    #                     context,
-    #                     "train/largest_eigenvalue",
-    #                     "train_largest_eigenvalue",
-    #                     eig[i, j],
-    #                     iteration,
-    #                     total_tr_vb * config.num_base_epochs,
-    #                 )
-
-    #         logger.log_scalar(
-    #             context, "test/loss", "test_loss", te_loss[i], iteration, total_tr_vb * config.num_base_epochs
-    #         )
-    #         logger.log_scalar(
-    #             context, "test/accuracy", "test_accuracy", te_acc[i], iteration, total_tr_vb * config.num_base_epochs
-    #         )
-    #     logger.close_context(context)
+    for logger in scalar_logger.loggers:
+        match logger:
+            case MatplotlibLogger():
+                logger.generate_figures()
 
     # def te_inf(
     #     _env: GodState, ds: traverse[batched[tuple[jax.Array, jax.Array, jax.Array]]], mask: jax.Array
@@ -693,4 +484,4 @@ def runApp(config: GodConfig) -> None:
 
 
 if __name__ == "__main__":
-    runApp(None)
+    runApp(None, None)

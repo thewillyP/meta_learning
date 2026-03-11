@@ -11,7 +11,19 @@ from meta_learn_lib.create_env import env_resetters, env_validation_resetters, m
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.optimizer import get_opt_step
-from meta_learn_lib.util import filter_cond, jacobian_matrix_product
+from meta_learn_lib.util import filter_cond, jacobian_matrix_product, softclip
+
+
+def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
+    g = grad * grad_config.scale
+    match grad_config.add_clip:
+        case HardClip(threshold):
+            g = jnp.clip(g, -threshold, threshold)
+        case SoftClip(threshold, sharpness):
+            g = softclip(g, a=None, b=threshold, sharpness=sharpness)
+        case None:
+            pass
+    return GRADIENT(g)
 
 
 def rtrl[ENV, TR_DATA, VL_DATA](
@@ -19,6 +31,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
     readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     _config: RTRLConfig | RTRLFiniteHvpConfig,
+    grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
@@ -93,6 +106,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
         env = eqx.combine(arr, static)
         total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
         return env, total_grad, stats
 
     return gradient_fn
@@ -103,6 +117,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
     readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     config: UOROConfig,
+    grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
@@ -170,6 +185,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
         arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
         env = eqx.combine(arr, static)
         total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
         return env, total_grad, stats
 
     return gradient_fn
@@ -180,6 +196,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
     readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
     config: RFLOConfig,
+    grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
@@ -225,6 +242,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
         arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
         env = eqx.combine(arr, static)
         total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
         return env, total_grad, stats
 
     return gradient_fn
@@ -235,6 +253,7 @@ def bptt[ENV, TR_DATA, VL_DATA](
     readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
     learn_interface: GodInterface[ENV],
     config: BPTTConfig,
+    grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
@@ -274,7 +293,7 @@ def bptt[ENV, TR_DATA, VL_DATA](
 
         grad, (env, stats) = eqx.filter_grad(loss_fn, has_aux=True)(param, ds_init)
         env = learn_interface.put_param(env, param)
-        return env, GRADIENT(grad), stats
+        return env, process_gradient(GRADIENT(grad), grad_config), stats
 
     return gradient_fn
 
@@ -313,6 +332,7 @@ def identity[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
     readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
     learn_interface: GodInterface[ENV],
+    grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
@@ -326,7 +346,7 @@ def identity[ENV, TR_DATA, VL_DATA](
         env, loss, stats = _loss_fn(env_init, ds_init)
         param = learn_interface.get_param(env)
         grad = jnp.zeros_like(param)
-        return env, GRADIENT(grad), stats
+        return env, process_gradient(GRADIENT(grad), grad_config), stats
 
     return gradient_fn
 
@@ -385,6 +405,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         config.levels,
     ):
         method = meta_config.learner.model_learner.method
+        model_grad_config = meta_config.learner.model_learner
         length = meta_config.validation.num_steps
         readout_interface = make_readout_interface(interface)
         readout_gr = shim_expand_time(
@@ -393,6 +414,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 readout_fn,
                 readout_interface,
                 BPTTConfig(truncate_at=None),
+                GradientConfig(method=BPTTConfig(truncate_at=None), add_clip=None, scale=1.0),
                 1,
                 lambda f: f,
             )
@@ -402,15 +424,15 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
 
         match method:
             case BPTTConfig():
-                fn = bptt(transition, readout_fn, interface, method, length, lambda f: f)
+                fn = bptt(transition, readout_fn, interface, method, model_grad_config, length, lambda f: f)
             case IdentityLearnerConfig():
-                fn = identity(transition, readout_fn, interface, length, lambda f: f)
+                fn = identity(transition, readout_fn, interface, model_grad_config, length, lambda f: f)
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                fn = rtrl(transition, readout_gr, interface, method, length, lambda f: f)
+                fn = rtrl(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f)
             case UOROConfig():
-                fn = uoro(transition, readout_gr, interface, method, length, lambda f: f)
+                fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f)
             case RFLOConfig():
-                fn = rflo(transition, readout_gr, interface, method, length, lambda f: f)
+                fn = rflo(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f)
 
         gradient_fns.append(fn)
         loss_fns.append(readout_loss)
@@ -469,6 +491,7 @@ def create_meta_learner[ENV](
         assignments: dict[str, OptimizerAssignment],
         interfaces: dict[str, GodInterface[ENV]],
         method: GradientMethod,
+        grad_config: GradientConfig,
         length: int,
         vmap_this: Callable[
             [Callable[[ENV, tuple], tuple[ENV, tuple[X, STAT]]]],
@@ -486,15 +509,15 @@ def create_meta_learner[ENV](
 
         match method:
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                grad_fn = rtrl(composed_inner, readout_gr, nest_interface, method, length, vmap_this)
+                grad_fn = rtrl(composed_inner, readout_gr, nest_interface, method, grad_config, length, vmap_this)
             case BPTTConfig():
-                grad_fn = bptt(composed_inner, readout, nest_interface, method, length, vmap_this)
+                grad_fn = bptt(composed_inner, readout, nest_interface, method, grad_config, length, vmap_this)
             case IdentityLearnerConfig():
-                grad_fn = identity(composed_inner, readout, nest_interface, length, vmap_this)
+                grad_fn = identity(composed_inner, readout, nest_interface, grad_config, length, vmap_this)
             case UOROConfig():
-                grad_fn = uoro(composed_inner, readout_gr, nest_interface, method, length, vmap_this)
+                grad_fn = uoro(composed_inner, readout_gr, nest_interface, method, grad_config, length, vmap_this)
             case RFLOConfig():
-                grad_fn = rflo(composed_inner, readout_gr, nest_interface, method, length, vmap_this)
+                grad_fn = rflo(composed_inner, readout_gr, nest_interface, method, grad_config, length, vmap_this)
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)
@@ -542,6 +565,7 @@ def create_meta_learner[ENV](
             meta_config.learner.optimizer,
             interfaces,
             meta_config.learner.optimizer_learner.method,
+            meta_config.learner.optimizer_learner,
             meta_config.nested.num_steps,
             vmap_this,
         )

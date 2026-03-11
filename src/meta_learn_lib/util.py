@@ -106,12 +106,24 @@ def to_vector[T](tree: T) -> Vector[T]:
     return Vector(vector=vector, to_param=lambda a: eqx.combine(to_param(a), nonparams))
 
 
+def softminus(x: jax.Array) -> jax.Array:
+    return -jax.nn.softplus(-x)
+
+
+def softclip(x: jax.Array, a: float | None, b: float | None, sharpness: float) -> jax.Array:
+    """Soft clipping with parameterized corner sharpness. Set either endpoint to None to disable."""
+    c = sharpness / ((b - a) / 2) if a is not None and b is not None else sharpness
+    v = x
+    if a is not None:
+        v = v - softminus(c * (x - a)) / c
+    if b is not None:
+        v = v - jax.nn.softplus(c * (x - b)) / c
+    return v
+
+
 def hyperparameter_reparametrization(
     reparametrization: HyperparameterConfig.Parametrization,
 ) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    def softminus(x):
-        return -jax.nn.softplus(-x)
-
     match reparametrization:
         case HyperparameterConfig.identity():
             reparam_fn = lambda lr: lr
@@ -161,18 +173,7 @@ def hyperparameter_reparametrization(
             reparam_inverse = lambda y: jnp.sqrt(y) / scale
 
         case HyperparameterConfig.softclip(a, b, clip):
-
-            def softclip(x):
-                """Soft clipping with parameterized corner sharpness. Set either endpoint to None to disable."""
-                c = clip / ((b - a) / 2) if a is not None and b is not None else clip
-                v = x
-                if a is not None:
-                    v = v - softminus(c * (x - a)) / c
-                if b is not None:
-                    v = v - jax.nn.softplus(c * (x - b)) / c
-                return v
-
-            reparam_fn = softclip
+            reparam_fn = lambda x: softclip(x, a, b, clip)
             reparam_inverse = lambda y: y  # Note: softclip is not invertible
 
         case _:

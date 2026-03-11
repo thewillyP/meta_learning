@@ -1,5 +1,4 @@
 from typing import Callable, get_args
-from cattrs.strategies import configure_tagged_union
 from cattrs.gen import make_dict_unstructure_fn
 import jax
 import jax.flatten_util
@@ -37,18 +36,20 @@ def deep_serialize(_, obj):
 def setup_flattened_union(converter, union_type):
     union_members = get_args(union_type)
 
+    # --- Unstructure: pad missing fields with None, add _type tag ---
     def factory(cls, converter):
         all_fields = set()
         for member_type in union_members:
-            if hasattr(member_type, "__attrs_attrs__"):  # attrs class
+            if hasattr(member_type, "__attrs_attrs__"):
                 all_fields.update(field.name for field in member_type.__attrs_attrs__)
-            elif hasattr(member_type, "__dataclass_fields__"):  # dataclass
+            elif hasattr(member_type, "__dataclass_fields__"):
                 all_fields.update(member_type.__dataclass_fields__.keys())
 
         base_fn = make_dict_unstructure_fn(cls, converter)
 
         def flatten_unstructure(obj):
             result = base_fn(obj)
+            result["_type"] = cls.__name__
             for field_name in all_fields:
                 if field_name not in result:
                     result[field_name] = None
@@ -57,7 +58,32 @@ def setup_flattened_union(converter, union_type):
         return flatten_unstructure
 
     converter.register_unstructure_hook_factory(lambda cls: cls in union_members, factory)
-    configure_tagged_union(union_type, converter)
+
+    # --- Structure: dispatch on _type tag, only pass own fields ---
+    name_to_cls = {}
+    for cls in union_members:
+        name_to_cls[cls.__name__] = cls
+        name_to_cls[cls.__qualname__] = cls
+
+    def structure_by_type_tag(val, _tp):
+        if val is None:
+            return None
+        if not isinstance(val, dict):
+            raise ValueError(f"Expected dict for union, got {type(val)}: {val!r}")
+        tag = val.get("_type")
+        if tag and tag in name_to_cls:
+            cls = name_to_cls[tag]
+            if hasattr(cls, "__dataclass_fields__"):
+                own_fields = set(cls.__dataclass_fields__.keys())
+            elif hasattr(cls, "__attrs_attrs__"):
+                own_fields = {a.name for a in cls.__attrs_attrs__}
+            else:
+                own_fields = set()
+            cleaned = {k: v for k, v in val.items() if k in own_fields}
+            return converter.structure(cleaned, cls)
+        raise ValueError(f"Unknown or missing _type tag in {val!r}")
+
+    converter.register_structure_hook(union_type, structure_by_type_tag)
 
 
 def jvp(f, primal, tangent):

@@ -90,8 +90,8 @@ class HyperparameterConfig:
 
     @dataclass(frozen=True)
     class softclip:
-        a: float | None
-        b: float | None
+        a: Optional[float]
+        b: Optional[float]
         clip: float
 
     type Parametrization = Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
@@ -178,7 +178,7 @@ class RTRLFiniteHvpConfig:
 
 @dataclass(frozen=True)
 class BPTTConfig:
-    truncate_at: int | None  # if None, then perform full bptt
+    truncate_at: Optional[int]  # if None, then perform full bptt
 
 
 @dataclass(frozen=True)
@@ -212,7 +212,7 @@ type GradientMethod = Union[
 @dataclass(frozen=True)
 class GradientConfig:
     method: GradientMethod
-    add_clip: HardClip | SoftClip | None  # these are placed here because vl_gr could also want to be clipped
+    add_clip: Optional[Union[HardClip, SoftClip]]  # these are placed here because vl_gr could also want to be clipped
     scale: float
 
 
@@ -372,7 +372,7 @@ class TrackLogs:
 class StepConfig:
     num_steps: int
     batch: int
-    reset_t: int | None
+    reset_t: Optional[int]
     track_influence_in: frozenset[int]
 
 

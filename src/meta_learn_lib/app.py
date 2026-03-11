@@ -122,7 +122,6 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
         end_time = time.time()
         print(f"Iteration {k + 1}/{total_iterations} took {end_time - start_time:.2f} seconds")
         scalar_logger.log(stats)
-        break
 
     scalar_logger.shutdown()
 

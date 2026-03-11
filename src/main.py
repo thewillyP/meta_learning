@@ -80,7 +80,7 @@ def main():
                 level=1,
                 parametrizes_transition=True,
             ),
-            "meta1_sgd1.lr": HyperparameterConfig(
+            "meta1_sgd1_lr": HyperparameterConfig(
                 value=0.001,
                 kind="learning_rate",
                 count=1,
@@ -90,7 +90,7 @@ def main():
                 level=1,
                 parametrizes_transition=True,
             ),
-            "meta1_sgd1.wd": HyperparameterConfig(
+            "meta1_sgd1_wd": HyperparameterConfig(
                 value=0.00001,
                 kind="weight_decay",
                 count=1,
@@ -100,7 +100,7 @@ def main():
                 level=1,
                 parametrizes_transition=True,
             ),
-            "meta1_sgd1.momentum": HyperparameterConfig(
+            "meta1_sgd1_momentum": HyperparameterConfig(
                 value=0.0,
                 kind="momentum",
                 count=1,
@@ -110,7 +110,7 @@ def main():
                 level=1,
                 parametrizes_transition=True,
             ),
-            "meta2_adam1.lr": HyperparameterConfig(
+            "meta2_adam1_lr": HyperparameterConfig(
                 value=0.001,
                 kind="learning_rate",
                 count=1,
@@ -120,7 +120,7 @@ def main():
                 level=2,
                 parametrizes_transition=True,
             ),
-            "meta2_adam1.wd": HyperparameterConfig(
+            "meta2_adam1_wd": HyperparameterConfig(
                 value=0.0,
                 kind="weight_decay",
                 count=1,
@@ -130,7 +130,7 @@ def main():
                 level=2,
                 parametrizes_transition=True,
             ),
-            "meta2_adam1.momentum": HyperparameterConfig(
+            "meta2_adam1_momentum": HyperparameterConfig(
                 value=0.9,
                 kind="momentum",
                 count=1,
@@ -184,9 +184,9 @@ def main():
                         "meta1_sgd1": OptimizerAssignment(
                             target=frozenset({"rnn1", "rnn2", "readout"}),
                             optimizer=SGDConfig(
-                                learning_rate="meta1_sgd1.lr",
-                                weight_decay="meta1_sgd1.wd",
-                                momentum="meta1_sgd1.momentum",
+                                learning_rate="meta1_sgd1_lr",
+                                weight_decay="meta1_sgd1_wd",
+                                momentum="meta1_sgd1_momentum",
                             ),
                         ),
                     },
@@ -245,11 +245,11 @@ def main():
                     ),
                     optimizer={
                         "meta2_adam1": OptimizerAssignment(
-                            target=frozenset({"meta1_sgd1.lr", "meta1_sgd1.wd", "meta1_sgd1.momentum"}),
+                            target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd", "meta1_sgd1_momentum"}),
                             optimizer=AdamConfig(
-                                learning_rate="meta2_adam1.lr",
-                                weight_decay="meta2_adam1.wd",
-                                momentum="meta2_adam1.momentum",
+                                learning_rate="meta2_adam1_lr",
+                                weight_decay="meta2_adam1_wd",
+                                momentum="meta2_adam1_momentum",
                             ),
                         ),
                     },

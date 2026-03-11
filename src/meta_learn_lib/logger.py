@@ -238,14 +238,14 @@ class ScalarLogger:
                             v = float(v)
                             if not np.isnan(v):
                                 self.logger.log_scalar(
-                                    context, self.log_title, series, v, offset + logged, self.total_iterations
+                                    context, series, self.log_title, v, offset + logged, self.total_iterations
                                 )
                                 logged += 1
                         self.counters[series] = offset + logged
                     else:
                         v = float(value[tuple(full_idx)])
                         if not np.isnan(v):
-                            self.logger.log_scalar(context, self.log_title, series, v, iteration, self.total_iterations)
+                            self.logger.log_scalar(context, series, self.log_title, v, iteration, self.total_iterations)
 
         self.global_step += math.prod(ref_shape)
         self.logger.close_context(context)

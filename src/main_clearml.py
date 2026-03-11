@@ -365,9 +365,12 @@ def main(skip_jitter: bool):
                         scale=1.0,
                     ),
                     optimizer_learner=GradientConfig(
-                        method=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
+                        method=RTRLFiniteHvpConfig(
+                            epsilon=1e-3,
+                            rtrl_config=RTRLConfig(
+                                start_at_step=0,
+                                damping=1e-4,
+                            ),
                         ),
                         add_clip=None,
                         scale=1.0,

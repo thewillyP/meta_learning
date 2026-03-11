@@ -267,14 +267,15 @@ class ThreadedScalarLogger:
         self.loggers = loggers
         self.job_queue = queue.Queue()
         self.stop_event = threading.Event()
-        self.worker = threading.Thread(target=self._process, daemon=False)
+        self.worker = threading.Thread(target=self._process, daemon=True)
         self.worker.start()
 
     def _process(self):
         while not self.stop_event.is_set():
             try:
-                stats = self.job_queue.get(timeout=0.001)
+                stats = self.job_queue.get(timeout=0.1)
                 if stats is None:
+                    self.job_queue.task_done()
                     break
                 self.scalar_logger.log(stats)
                 self.job_queue.task_done()
@@ -282,6 +283,8 @@ class ThreadedScalarLogger:
                 continue
 
     def log(self, stats: dict[str, jax.Array]):
+        if self.stop_event.is_set():
+            return
         np_stats = {k: np.array(v) for k, v in stats.items()}
         self.job_queue.put(np_stats)
 
@@ -289,10 +292,16 @@ class ThreadedScalarLogger:
         self.job_queue.join()
 
     def shutdown(self):
-        self.flush()
-        self.job_queue.put(None)
-        self.worker.join(timeout=5.0)
         self.stop_event.set()
+        # Drain the queue so .join() doesn't block forever
+        while not self.job_queue.empty():
+            try:
+                self.job_queue.get_nowait()
+                self.job_queue.task_done()
+            except queue.Empty:
+                break
+        self.job_queue.put(None)  # sentinel to unblock get()
+        self.worker.join(timeout=5.0)
 
     def __del__(self):
         if hasattr(self, "stop_event") and not self.stop_event.is_set():

@@ -34,8 +34,7 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
     num_vb = math.ceil(seq_len / base.validation.num_steps)
     num_minibatches = math.ceil(base.dataset.num_examples_total / base.dataset.num_examples_in_minibatch)
     nesting = math.prod(l.nested.num_steps for l in config.levels)
-    iters_per_epoch = (num_minibatches * num_vb) // nesting
-    total_iterations = iters_per_epoch * config.epochs
+    total_iterations = (num_minibatches * num_vb * config.epochs) // nesting
 
     # Logger
     scalar_logger = create_logger(
@@ -117,15 +116,18 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
 
     meta_learner_compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr_copy).compile()
 
-    for k, data in enumerate(toolz.take(total_iterations, dataloader)):
-        start_time = time.time()
-        arr, stats = meta_learner_compiled(data, arr)
-        jax.block_until_ready(arr)
-        end_time = time.time()
-        print(f"Iteration {k + 1}/{total_iterations} took {end_time - start_time:.2f} seconds")
-        scalar_logger.log(stats)
-
-    scalar_logger.shutdown()
+    try:
+        for k, data in enumerate(toolz.take(total_iterations, dataloader)):
+            start_time = time.time()
+            arr, stats = meta_learner_compiled(data, arr)
+            jax.block_until_ready(arr)
+            end_time = time.time()
+            print(f"Iteration {k + 1}/{total_iterations} took {end_time - start_time:.2f} seconds")
+            scalar_logger.log(stats)
+    except KeyboardInterrupt:
+        print("\nInterrupted — shutting down logger...")
+    finally:
+        scalar_logger.shutdown()
 
     for logger in scalar_logger.loggers:
         match logger:

@@ -316,6 +316,60 @@ def dataset_sources(
             return [make_task(k) for k in keys]
 
 
+def materialize_task_epoch(
+    dataset: Dataset,
+    batch: int,
+    x_mask: float,
+    y_mask: float,
+    key: PRNG,
+) -> tuple[jax.Array, jax.Array]:
+    """Pre-build one shuffled epoch of a task's data as a flat array of virtual batches.
+
+    Equivalent to what the old task_iterator did lazily:
+      for X_batch, Y_batch in DataLoader(dataset, batch_size=batch, shuffle=True):
+          # pad last batch if needed
+          for vb in range(num_vb):
+              yield X_batch[:, vb].swapaxes(0, 1)
+
+    Instead, we do the shuffle, pad, reshape, and axis swaps in bulk,
+    producing a single array where indexing along axis 0 gives the same
+    sequence of (time, batch, features...) items.
+
+    Returns (xs, ys) each with shape (num_minibatches * num_vb, time, batch, features...).
+    """
+    xs, ys = dataset.data  # (num_examples, num_vb, time, features...)
+
+    # Shuffle examples — same as DataLoader(shuffle=True)
+    perm = jax.random.permutation(key, xs.shape[0])
+    xs = xs[perm]
+    ys = ys[perm]
+
+    # Pad to multiple of batch — same as the if X_batch.shape[0] < batch block
+    remainder = xs.shape[0] % batch
+    if remainder != 0:
+        pad_size = batch - remainder
+        xs = jnp.concatenate([xs, jnp.full((pad_size, *xs.shape[1:]), x_mask)])
+        ys = jnp.concatenate([ys, jnp.full((pad_size, *ys.shape[1:]), y_mask)])
+
+    num_mb = xs.shape[0] // batch
+
+    # Group into minibatches: (num_mb, batch, num_vb, time, features...)
+    xs = xs.reshape(num_mb, batch, *xs.shape[1:])
+    ys = ys.reshape(num_mb, batch, *ys.shape[1:])
+
+    # Rearrange so the yield order (for mb: for vb: ...) is contiguous along axis 0,
+    # and each slice is (time, batch, features...) matching X_batch[:, vb].swapaxes(0, 1):
+    #   (num_mb, batch, num_vb, time, ...) → (num_mb, num_vb, time, batch, ...)
+    xs = xs.swapaxes(1, 2).swapaxes(2, 3)
+    ys = ys.swapaxes(1, 2).swapaxes(2, 3)
+
+    # Flatten the two iteration dims into one
+    xs = xs.reshape(num_mb * xs.shape[1], *xs.shape[2:])
+    ys = ys.reshape(num_mb * ys.shape[1], *ys.shape[2:])
+
+    return xs, ys
+
+
 def task_iterator(
     dataset: Dataset,
     batch: int,
@@ -323,26 +377,14 @@ def task_iterator(
     y_mask: float,
     key: PRNG,
 ) -> Iterator[tuple[jax.Array, jax.Array]]:
-    generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
-    loader = DataLoader(
-        dataset,
-        batch_size=batch,
-        shuffle=True,
-        generator=generator,
-        collate_fn=jax_collate_fn,
-        drop_last=False,
-    )
-    for X_batch, Y_batch in loader:
-        if X_batch.shape[0] < batch:
-            pad_size = batch - X_batch.shape[0]
-            X_pad = jnp.full((pad_size, *X_batch.shape[1:]), x_mask)
-            Y_pad = jnp.full((pad_size, *Y_batch.shape[1:]), y_mask)
-            X_batch = jnp.concatenate([X_batch, X_pad])
-            Y_batch = jnp.concatenate([Y_batch, Y_pad])
-        for vb in range(X_batch.shape[1]):
-            x = X_batch[:, vb].swapaxes(0, 1)
-            y = Y_batch[:, vb].swapaxes(0, 1)
-            yield x, y
+    """Yields (x, y) each with shape (time, batch, features...).
+
+    Same output as the old task_iterator but uses pre-materialized array slicing
+    instead of torch DataLoader + per-element jnp operations.
+    """
+    xs, ys = materialize_task_epoch(dataset, batch, x_mask, y_mask, key)
+    for x, y in zip(xs, ys):
+        yield x, y
 
 
 def batch_iterator(iters, batch_size):

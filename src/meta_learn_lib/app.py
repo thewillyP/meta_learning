@@ -2,6 +2,7 @@ import copy
 from logging import Logger
 import random
 import os
+from typing import Iterator
 import jax
 import jax.numpy as jnp
 import torch
@@ -10,6 +11,8 @@ import toolz
 import math
 import time
 import equinox as eqx
+import threading
+import queue
 
 from meta_learn_lib.config import *
 from meta_learn_lib.create_env import create_env, create_inference_axes, create_transition_fns
@@ -68,9 +71,32 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
         raise ValueError("\n".join(errors))
 
     # Dataset
+
+    def prefetch[T](iterator: Iterator[T], buffer_size: int) -> Iterator[T]:
+        q: queue.Queue[T | BaseException | object] = queue.Queue(maxsize=buffer_size)
+        sentinel: object = object()
+
+        def fill() -> None:
+            try:
+                for item in iterator:
+                    q.put(item)
+            except Exception as e:
+                q.put(e)
+            q.put(sentinel)
+
+        threading.Thread(target=fill, daemon=True).start()
+        while True:
+            item = q.get()
+            if item is sentinel:
+                break
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+
     dataset_prng, data_loader_prng = jax.random.split(dataset_gen_prng, 2)
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
+    dataloader = prefetch(dataloader, buffer_size=2)
 
     meta_interfaces, count = create_meta_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
@@ -117,13 +143,16 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
     meta_learner_compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr_copy).compile()
 
     try:
+        t_prev = time.time()
         for k, data in enumerate(toolz.take(total_iterations, dataloader)):
-            start_time = time.time()
+            t_data = time.time()
             arr, stats = meta_learner_compiled(data, arr)
             jax.block_until_ready(arr)
-            end_time = time.time()
-            print(f"Iteration {k + 1}/{total_iterations} took {end_time - start_time:.2f} seconds")
+            t_compute = time.time()
             scalar_logger.log(stats)
+            t_log = time.time()
+            print(f"data: {t_data - t_prev:.3f}  compute+sync: {t_compute - t_data:.3f}  log: {t_log - t_compute:.3f}")
+            t_prev = t_log
     except KeyboardInterrupt:
         print("\nInterrupted — shutting down logger...")
     finally:

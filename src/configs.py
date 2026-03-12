@@ -260,7 +260,7 @@ OHO_RNN256 = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=100,
+                num_steps=500,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),

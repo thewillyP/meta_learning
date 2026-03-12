@@ -129,6 +129,8 @@ def to_vector[T](tree: T) -> Vector[T]:
     """Convert a pytree to a Vector, which contains a flattened array and non-parameter parts."""
     params, nonparams = eqx.partition(tree, eqx.is_inexact_array)
     vector, to_param = jax.flatten_util.ravel_pytree(params)
+    if vector.size == 0:
+        vector = vector.astype(jnp.result_type(float))
     return Vector(vector=vector, to_param=lambda a: eqx.combine(to_param(a), nonparams))
 
 

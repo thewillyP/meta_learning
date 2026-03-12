@@ -154,7 +154,7 @@ def compute_strides(shape: tuple[int, ...]) -> list[int]:
 
 
 class ScalarLogger:
-    """Logs dict[str, np.ndarray] stats.
+    """Logs dict[str, jax.Array] stats.
 
     Each stat has shape (..., time) where dims before time are a mix of
     scan and batch dims. Scan dims advance the shared iteration counter.
@@ -170,7 +170,7 @@ class ScalarLogger:
         self.counters: dict[str, int] = {}
         self.global_step = 0
 
-    def log(self, stats: dict[str, np.ndarray]):
+    def log(self, stats: dict[str, jax.Array]):
         # ref_shape from deepest level's scan dims (exclude time)
         max_ndim = max(v.ndim for v in stats.values())
         for k, v in stats.items():
@@ -285,8 +285,7 @@ class ThreadedScalarLogger:
     def log(self, stats: dict[str, jax.Array]):
         if self.stop_event.is_set():
             return
-        np_stats = {k: np.array(v) for k, v in stats.items()}
-        self.job_queue.put(np_stats)
+        self.job_queue.put(stats)
 
     def flush(self):
         self.job_queue.join()

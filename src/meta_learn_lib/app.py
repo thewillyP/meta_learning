@@ -7,6 +7,7 @@ import torch
 import numpy as np
 import toolz
 import math
+import time
 
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import create_axes
@@ -157,10 +158,22 @@ def runApp(config: GodConfig, base_logger: Logger) -> None:
 
     total_iterations = iterations_per_epoch * config.num_base_epochs
 
+    window_size = 100
+    aT_buffer = []  # store past activations
+
+    def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
+        dot = jnp.sum(a_prev * a_curr, axis=1)
+        norm_prev = jnp.linalg.norm(a_prev, axis=1)
+        norm_curr = jnp.linalg.norm(a_curr, axis=1)
+        corr_per_ex = dot / (norm_prev * norm_curr + eps)
+        return jnp.mean(corr_per_ex)
+
+    t_prev = time.time()
     for k, (
         ((tr_x, tr_y, tr_seqs, tr_mask), (vl_x, vl_y, vl_seqs, vl_mask)),
         (te_x, te_y, te_seqs, te_mask),
     ) in enumerate(toolz.take(total_iterations, dataloader)):
+        t_data = time.time()
         _scan_data = traverse(
             ((traverse(batched((tr_x, tr_y, tr_seqs))), tr_mask), (traverse(batched((vl_x, vl_y, vl_seqs))), vl_mask))
         )
@@ -191,23 +204,8 @@ def runApp(config: GodConfig, base_logger: Logger) -> None:
 
         jax.block_until_ready(env)
 
-        # def corr(a, b):
-        #     # a,b: [batch, hidden]
-        #     a_flat = a.reshape(-1)
-        #     b_flat = b.reshape(-1)
-        #     a_flat = a_flat - a_flat.mean()
-        #     b_flat = b_flat - b_flat.mean()
-        #     return jnp.dot(a_flat, b_flat) / (jnp.linalg.norm(a_flat) * jnp.linalg.norm(b_flat))
-
-        window_size = 100
-        aT_buffer = []  # store past activations
-
-        def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
-            dot = jnp.sum(a_prev * a_curr, axis=1)
-            norm_prev = jnp.linalg.norm(a_prev, axis=1)
-            norm_curr = jnp.linalg.norm(a_curr, axis=1)
-            corr_per_ex = dot / (norm_prev * norm_curr + eps)
-            return jnp.mean(corr_per_ex)
+        t_compute = time.time()
+        print(f"data: {t_data - t_prev:.3f}  compute+sync: {t_compute - t_data:.3f}")
 
         context = logger.get_context()
         for i in range(tr_loss.shape[0]):
@@ -303,26 +301,6 @@ def runApp(config: GodConfig, base_logger: Logger) -> None:
                         total_tr_vb * config.num_base_epochs,
                     )
 
-                    # # store previous activations across iterations
-                    # if iteration == 1:
-                    #     prev_aT = aT[i, j]  # initialize
-                    # else:
-                    #     aT_curr = aT[i, j]  # [batch, hidden]
-                    #     aT_prev = prev_aT  # [batch, hidden]
-
-                    #     at_corr = corr(aT_prev, aT_curr)
-
-                    #     logger.log_scalar(
-                    #         context,
-                    #         "train/aT_correlation",
-                    #         "train_aT_correlation",
-                    #         at_corr,
-                    #         iteration,
-                    #         total_tr_vb * config.num_base_epochs,
-                    #     )
-
-                    #     prev_aT = aT_curr
-
                     aT_curr = aT[i, j]  # [batch, hidden]
 
                     # add to buffer
@@ -361,6 +339,9 @@ def runApp(config: GodConfig, base_logger: Logger) -> None:
                 context, "test/accuracy", "test_accuracy", te_acc[i], iteration, total_tr_vb * config.num_base_epochs
             )
         logger.close_context(context)
+        t_log = time.time()
+        print(f"  log: {t_log - t_compute:.3f}")
+        t_prev = time.time()
 
     def te_inf(
         _env: GodState, ds: traverse[batched[tuple[jax.Array, jax.Array, jax.Array]]], mask: jax.Array

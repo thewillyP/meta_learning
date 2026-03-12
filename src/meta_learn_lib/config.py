@@ -362,7 +362,7 @@ class TrackLogs:
     gradient: bool
     hessian_contains_nans: bool
     largest_eigenvalue: bool
-    influence_tensor: bool
+    influence_tensor_norm: bool
     immediate_influence_tensor: bool
     largest_jac_eigenvalue: bool
     jacobian: bool

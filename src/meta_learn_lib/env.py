@@ -33,7 +33,7 @@ class Logs(PClass):
     gradient: Optional[jax.Array] = field(initial=None)
     hessian_contains_nans: Optional[bool] = field(initial=None)
     largest_eigenvalue: Optional[jax.Array] = field(initial=None)
-    influence_tensor: Optional[jax.Array] = field(initial=None)
+    influence_tensor_norm: Optional[jax.Array] = field(initial=None)
     immediate_influence_tensor: Optional[jax.Array] = field(initial=None)
     largest_jac_eigenvalue: Optional[jax.Array] = field(initial=None)
     jacobian: Optional[jax.Array] = field(initial=None)

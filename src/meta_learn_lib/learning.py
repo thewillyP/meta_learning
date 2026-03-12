@@ -38,6 +38,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
     ],
+    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
     match _config:
@@ -101,6 +102,9 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
+                env = learn_interface.put_logs(env, Logs(influence_tensor_norm=influence_tensor_norm))
 
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
@@ -125,6 +129,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
     ],
+    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
@@ -204,6 +209,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
     ],
+    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
@@ -261,6 +267,7 @@ def bptt[ENV, TR_DATA, VL_DATA](
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
     ],
+    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         param = learn_interface.get_param(env_init)
@@ -308,6 +315,7 @@ def identity_loss[ENV, TR_DATA, VL_DATA](
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
     ],
+    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]:
 
     def loss_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, LOSS, STAT]:
@@ -340,9 +348,10 @@ def identity[ENV, TR_DATA, VL_DATA](
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
     ],
+    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
-    _loss_fn = identity_loss(transition, readout, length, vmap_this)
+    _loss_fn = identity_loss(transition, readout, length, vmap_this, track_logs)
 
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         env, loss, stats = _loss_fn(env_init, ds_init)
@@ -409,6 +418,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         method = meta_config.learner.model_learner.method
         model_grad_config = meta_config.learner.model_learner
         length = meta_config.validation.num_steps
+        track_logs = meta_config.track_logs
         readout_interface = make_readout_interface(interface)
         readout_gr = shim_expand_time(
             bptt(
@@ -419,22 +429,23 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 GradientConfig(method=BPTTConfig(truncate_at=None), add_clip=None, scale=1.0),
                 1,
                 lambda f: f,
+                track_logs,
             )
         )
 
-        readout_loss = identity_loss(transition, readout_fn, length, lambda f: f)
+        readout_loss = identity_loss(transition, readout_fn, length, lambda f: f, track_logs)
 
         match method:
             case BPTTConfig():
-                fn = bptt(transition, readout_fn, interface, method, model_grad_config, length, lambda f: f)
+                fn = bptt(transition, readout_fn, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case IdentityLearnerConfig():
-                fn = identity(transition, readout_fn, interface, model_grad_config, length, lambda f: f)
+                fn = identity(transition, readout_fn, interface, model_grad_config, length, lambda f: f, track_logs)
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                fn = rtrl(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f)
+                fn = rtrl(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case UOROConfig():
-                fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f)
+                fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
-                fn = rflo(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f)
+                fn = rflo(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
 
         gradient_fns.append(fn)
         loss_fns.append(readout_loss)
@@ -500,6 +511,7 @@ def create_meta_learner[ENV](
             [Callable[[ENV, tuple], tuple[ENV, tuple[X, STAT]]]],
             Callable[[ENV, tuple], tuple[ENV, tuple[X, STAT]]],
         ],
+        track_logs: TrackLogs,
     ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
         check = make_reset_checker(nest_interface, resetter, reset_t)
@@ -512,15 +524,59 @@ def create_meta_learner[ENV](
 
         match method:
             case RTRLConfig() | RTRLFiniteHvpConfig():
-                grad_fn = rtrl(composed_inner, readout_gr, nest_interface, method, grad_config, length, vmap_this)
+                grad_fn = rtrl(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
             case BPTTConfig():
-                grad_fn = bptt(composed_inner, readout, nest_interface, method, grad_config, length, vmap_this)
+                grad_fn = bptt(
+                    composed_inner,
+                    readout,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
             case IdentityLearnerConfig():
-                grad_fn = identity(composed_inner, readout, nest_interface, grad_config, length, vmap_this)
+                grad_fn = identity(
+                    composed_inner,
+                    readout,
+                    nest_interface,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
             case UOROConfig():
-                grad_fn = uoro(composed_inner, readout_gr, nest_interface, method, grad_config, length, vmap_this)
+                grad_fn = uoro(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
             case RFLOConfig():
-                grad_fn = rflo(composed_inner, readout_gr, nest_interface, method, grad_config, length, vmap_this)
+                grad_fn = rflo(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)
@@ -573,6 +629,7 @@ def create_meta_learner[ENV](
             level,
             meta_config.nested.num_steps,
             vmap_this,
+            meta_config.track_logs,
         )
 
         current_resetter = full_resetter

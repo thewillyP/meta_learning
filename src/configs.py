@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 from meta_learn_lib.config import *
 
 

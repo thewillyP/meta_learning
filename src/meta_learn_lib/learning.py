@@ -82,17 +82,18 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             match _config:
                 case RTRLConfig():
                     _primals, hmp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor_s.value)
+                    hmp = hmp - mu * influence_tensor_s.value
                 case RTRLFiniteHvpConfig(epsilon, ___):
 
                     def finite_hvp(v: jax.Array) -> jax.Array:
-                        return (state_fn(s + epsilon * v)[0] - state_fn(s - epsilon * v)[0]) / (2 * epsilon)
+                        return (state_fn(s + epsilon * v)[0] - state_fn(s - epsilon * v)[0]) / (2 * epsilon) - mu * v
 
                     hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor_s.value)
 
             influence_tensor: JACOBIAN
             influence_tensor = filter_cond(
                 t >= config.start_at_step,
-                lambda _: hmp + dhdp - mu * influence_tensor_s.value,
+                lambda _: hmp + dhdp,
                 lambda _: influence_tensor_s.value,
                 None,
             )

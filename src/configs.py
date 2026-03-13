@@ -912,7 +912,7 @@ OHO_RNN256_V3 = GodConfig(
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="train",
     logger_config=[ClearMLLoggerConfig()],
-    epochs=10_000,
+    epochs=1_000,
     checkpoint_every_n_minibatches=1,
     transition_graph={
         "x": {},

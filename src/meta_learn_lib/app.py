@@ -96,7 +96,7 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
     dataset_prng, data_loader_prng = jax.random.split(dataset_gen_prng, 2)
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
-    dataloader = prefetch(dataloader, buffer_size=2)
+    dataloader = prefetch(toolz.take(total_iterations, dataloader), buffer_size=2)
 
     meta_interfaces, count = create_meta_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
@@ -144,7 +144,7 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
 
     try:
         t_prev = time.time()
-        for k, data in enumerate(toolz.take(total_iterations, dataloader)):
+        for k, data in enumerate(dataloader):
             t_data = time.time()
             arr, stats = meta_learner_compiled(data, arr)
             jax.block_until_ready(arr)

@@ -60,34 +60,40 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             mu = config.damping
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
-            def state_fn(state: jax.Array) -> tuple[jax.Array, None]:
-                _env = learn_interface.put_state(env, state)
-                _env, _ = transition(_env, tr_data)
-                state = learn_interface.get_state(_env)
-                return state, None
+            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
+                def fn(state: jax.Array) -> tuple[jax.Array, None]:
+                    _env = learn_interface.put_state(e, state)
+                    _env, _ = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    return state, None
 
-            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                _env = learn_interface.put_param(env, param)
-                _env, stat = transition(_env, tr_data)
-                state = learn_interface.get_state(_env)
-                _arr, _ = eqx.partition(_env, eqx.is_array)
-                return state, (_arr, stat)
+                return fn
+
+            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
+                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+                    _env = learn_interface.put_param(e, param)
+                    _env, stat = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    _arr, _ = eqx.partition(_env, eqx.is_array)
+                    return state, (_arr, stat)
+
+                return fn
 
             if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
+                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
             else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
-            env = eqx.combine(arr, static)
+                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
+            new_env = eqx.combine(arr, static)
 
             hmp: JACOBIAN
             match _config:
                 case RTRLConfig():
-                    _primals, hmp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor_s.value)
+                    _primals, hmp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
                     hmp = hmp - mu * influence_tensor_s.value
-                case RTRLFiniteHvpConfig(epsilon, ___):
+                case RTRLFiniteHvpConfig(eps, ___):
 
                     def finite_hvp(v: jax.Array) -> jax.Array:
-                        return (state_fn(s + epsilon * v)[0] - state_fn(s - epsilon * v)[0]) / (2 * epsilon) - mu * v
+                        return (state_fn(env)(s + eps * v)[0] - state_fn(env)(s - eps * v)[0]) / (2 * eps) - mu * v
 
                     hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor_s.value)
 
@@ -98,15 +104,15 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 lambda _: influence_tensor_s.value,
                 None,
             )
-            env, credit_gr, readout_stat = readout_gr(env, vl_data)
+            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
-            env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
+            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
             if track_logs.influence_tensor_norm:
                 influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-                env = learn_interface.put_logs(env, Logs(influence_tensor_norm=influence_tensor_norm))
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
 
-            arr, _ = eqx.partition(env, eqx.is_array)
+            arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
         arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
@@ -154,23 +160,29 @@ def uoro[ENV, TR_DATA, VL_DATA](
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
 
-            def state_fn(state: jax.Array) -> jax.Array:
-                _env = learn_interface.put_state(env, state)
-                _env, _ = transition(_env, tr_data)
-                state = learn_interface.get_state(_env)
-                return state
+            def state_fn(e: ENV) -> Callable[[jax.Array], jax.Array]:
+                def fn(state: jax.Array) -> jax.Array:
+                    _env = learn_interface.put_state(e, state)
+                    _env, _ = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    return state
 
-            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                _env = learn_interface.put_param(env, param)
-                _env, stat = transition(_env, tr_data)
-                state = learn_interface.get_state(_env)
-                _arr, _ = eqx.partition(_env, eqx.is_array)
-                return state, (_arr, stat)
+                return fn
 
-            immediateJacobian__A_projection = eqx.filter_jvp(state_fn, (s,), (A_s.value,))[1] - mu * A_s.value
-            _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn, p, has_aux=True)
+            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
+                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+                    _env = learn_interface.put_param(e, param)
+                    _env, stat = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    _arr, _ = eqx.partition(_env, eqx.is_array)
+                    return state, (_arr, stat)
+
+                return fn
+
+            immediateJacobian__A_projection = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
+            _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn(env), p, has_aux=True)
             (immediateInfluence__random_projection,) = vjp_func(random_vector)
-            env = eqx.combine(arr, static)
+            new_env = eqx.combine(arr, static)
 
             rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(immediateJacobian__A_projection))
             rho1 = jnp.sqrt(jnp.linalg.norm(immediateInfluence__random_projection) / jnp.linalg.norm(random_vector))
@@ -178,15 +190,15 @@ def uoro[ENV, TR_DATA, VL_DATA](
             A_new: jax.Array = rho0 * immediateJacobian__A_projection + rho1 * random_vector
             B_new: jax.Array = B_s.value / rho0 + immediateInfluence__random_projection / rho1
 
-            env, credit_gr, readout_stat = readout_gr(env, vl_data)
+            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
             grad = (credit_gr[: A_new.shape[0]] @ A_new) * B_new + credit_gr[A_new.shape[0] :]
 
-            env = learn_interface.put_uoro_state(
-                env,
+            new_env = learn_interface.put_uoro_state(
+                new_env,
                 UOROState(A=A_s.set(value=A_new), B=B_s.set(value=B_new)),
             )
 
-            arr, _ = eqx.partition(env, eqx.is_array)
+            arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
         arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
@@ -223,28 +235,31 @@ def rflo[ENV, TR_DATA, VL_DATA](
             alpha = learn_interface.get_time_constant(env).value
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
-            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                _env = learn_interface.put_param(env, param)
-                _env, stat = transition(_env, tr_data)
-                state = learn_interface.get_state(_env)
-                _arr, _ = eqx.partition(_env, eqx.is_array)
-                return state, (_arr, stat)
+            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
+                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+                    _env = learn_interface.put_param(e, param)
+                    _env, stat = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    _arr, _ = eqx.partition(_env, eqx.is_array)
+                    return state, (_arr, stat)
+
+                return fn
 
             if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
+                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
             else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
-            env = eqx.combine(arr, static)
+                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
+            new_env = eqx.combine(arr, static)
 
             influence_tensor: JACOBIAN
             influence_tensor = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
 
-            env, credit_gr, readout_stat = readout_gr(env, vl_data)
+            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
-            env = learn_interface.put_forward_mode_jacobian(env, influence_tensor_s.set(value=influence_tensor))
+            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
 
-            arr, _ = eqx.partition(env, eqx.is_array)
+            arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
         arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)

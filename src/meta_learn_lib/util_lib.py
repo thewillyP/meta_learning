@@ -99,7 +99,7 @@ def get_optimizer(
             return lambda pr: optax.chain(
                 add_clipping(add_clip.threshold, add_clip.sharpness) if add_clip is not None else optax.identity(),
                 optax.add_decayed_weights(wd_forward(pr.weight_decay.value)),
-                optax.sgd(lr_forward(pr.learning_rate.value), momentum=momentum),
+                optax.sgd(lr_forward(pr.learning_rate.value), momentum=None),
                 projection_fn,
             )
         case SGDNormalizedConfig(learning_rate, weight_decay, momentum):

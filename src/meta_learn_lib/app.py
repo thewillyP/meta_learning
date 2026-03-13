@@ -96,6 +96,7 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
     dataset_prng, data_loader_prng = jax.random.split(dataset_gen_prng, 2)
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
+    x, dataloader = toolz.peek(dataloader)
     dataloader = prefetch(toolz.take(total_iterations, dataloader), buffer_size=2)
 
     meta_interfaces, count = create_meta_interfaces(config, 0)
@@ -129,7 +130,6 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
         env,
     )
 
-    x, dataloader = toolz.peek(dataloader)
     env_copy = copy.deepcopy(env)
     arr_copy, static = eqx.partition(env_copy, eqx.is_array)
     arr, _ = eqx.partition(env, eqx.is_array)

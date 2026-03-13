@@ -16,6 +16,7 @@ from meta_learn_lib.config import (
     HyperparameterConfig,
     IdentityConfig,
     RFLOConfig,
+    RTRL_IFT_Tikhonov_Config,
     RTRLConfig,
     RTRLFiniteHvpConfig,
     RTRLHessianDecompConfig,
@@ -124,8 +125,8 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
                 state = s.to_param(state)
                 __env = learn_interface.put_state(_env, state)
                 __env, stat = transition(__env, get_tr(data))
-                state = learn_interface.get_state(__env)
-                return state, None
+                new_state = learn_interface.get_state(__env)
+                return new_state - rtrl_config.momentum1 * state, None
 
             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
                 param = p.to_param(param)
@@ -162,8 +163,9 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             m1 = rtrl_config.momentum1
             m2 = rtrl_config.momentum2
 
-            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor + m1 * dhdp
-            new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+            # new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor
+            new_influence_tensor = _new_influence_tensor
+            new_influence_tensor_m = new_influence_tensor
 
             influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
             new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
@@ -184,6 +186,196 @@ def rtrl[ENV, TR_DATA, VL_DATA, DATA](
             #     _env,
             #     Logs(largest_eigenvalue=jnp.squeeze(spectral_radius)),
             # )
+
+            _arr, _ = eqx.partition(_env, eqx.is_array)
+            return _arr, (grad, tr_stat + vl_stat)
+
+        _env, (grads, stats) = jax.lax.scan(step, arr, ds.d)
+        env = eqx.combine(_env, static)
+        return env, stats, GRADIENT(jnp.sum(grads, axis=0))
+
+    return gradient_fn
+
+
+# def rtrl_ift_tikhonov[ENV, TR_DATA, VL_DATA, DATA](
+#     transition: Callable[[ENV, TR_DATA], tuple[ENV, tuple[STAT, ...]]],
+#     readout: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], LOSS]],
+#     readout_gr: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], GRADIENT]],
+#     learn_interface: LearnInterface[ENV],
+#     get_tr: Callable[[DATA], TR_DATA],
+#     get_vl: Callable[[DATA], VL_DATA],
+#     rtrl_config: RTRL_IFT_Tikhonov_Config,
+# ) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+
+#     def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+#         arr, static = eqx.partition(env, eqx.is_array)
+
+#         def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
+#             _env = eqx.combine(_arr, static)
+
+#             s = to_vector(learn_interface.get_state(_env))
+#             p = to_vector(learn_interface.get_param(_env))
+
+#             def state_fn(state: jax.Array) -> tuple[jax.Array, None]:
+#                 state = s.to_param(state)
+#                 __env = learn_interface.put_state(_env, state)
+#                 __env, stat = transition(__env, get_tr(data))
+#                 new_state = learn_interface.get_state(__env)
+#                 return new_state, None
+
+#             def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+#                 param = p.to_param(param)
+#                 __env = learn_interface.put_param(_env, param)
+#                 __env, stat = transition(__env, get_tr(data))
+#                 state = learn_interface.get_state(__env)
+#                 __arr, _ = eqx.partition(__env, eqx.is_array)
+#                 return state, (__arr, stat)
+
+#             influence_tensor = learn_interface.get_influence_tensor(_env)
+
+#             # 1. Compute state Jacobian-Matrix Product (J_z * Gamma)
+#             _, _hvp, __ = jacobian_matrix_product(state_fn, s.vector, influence_tensor)
+
+#             # 2. Compute parameter Jacobian (J_phi)
+#             if rtrl_config.use_reverse_mode:
+#                 dhdp, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
+#             else:
+#                 dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
+
+#             _env = eqx.combine(_arr, static)
+
+#             # ---------------------------------------------------------
+#             # START TIKHONOV DAMPING LOGIC
+#             # ---------------------------------------------------------
+
+#             # Standard forward sensitivity: D_tau = J_z * Gamma + J_phi
+#             D_tau = _hvp + dhdp
+
+#             # Pure state transition function to feed into jax.vjp
+#             def pure_state_fn(state_vec: jax.Array) -> jax.Array:
+#                 return state_fn(state_vec)[0]
+
+#             # Compute VJP function: returns a function that computes v^T * J_z
+#             _, vjp_fun = jax.vjp(pure_state_fn, s.vector)
+
+#             # We need to compute J_z^T * (Gamma - D_tau).
+#             # We transpose the difference to map over the parameter dimension,
+#             # apply the VJP to each column vector, and transpose back.
+#             diff = influence_tensor - D_tau
+#             correction = jax.vmap(vjp_fun)(diff.T)[0].T
+
+#             # Apply Tikhonov update rule:
+#             # Gamma_{tau+1} = (1 - (1+mu)/c)*Gamma + (1/c)*[D_tau + J_z^T*(Gamma - D_tau)]
+#             mu = rtrl_config.mu
+#             c = rtrl_config.c
+
+#             new_influence_tensor = (1.0 - (1.0 + mu) / c) * influence_tensor + (1.0 / c) * (D_tau + 0.001 * correction)
+
+#             # ---------------------------------------------------------
+#             # END TIKHONOV DAMPING LOGIC
+#             # ---------------------------------------------------------
+
+#             vl_stat, credit_gr = readout_gr(_env, get_vl(data))
+#             credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+#             output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
+#             grad = credit_assignment + output_gr
+
+#             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
+
+#             _arr, _ = eqx.partition(_env, eqx.is_array)
+#             return _arr, (grad, tr_stat + vl_stat)
+
+#         _env, (grads, stats) = jax.lax.scan(step, arr, ds.d)
+#         env = eqx.combine(_env, static)
+#         return env, stats, GRADIENT(jnp.sum(grads, axis=0))
+
+#     return gradient_fn
+
+
+def rtrl_ift_tikhonov[ENV, TR_DATA, VL_DATA, DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, tuple[STAT, ...]]],
+    readout: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], LOSS]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[tuple[STAT, ...], GRADIENT]],
+    learn_interface: LearnInterface[ENV],
+    get_tr: Callable[[DATA], TR_DATA],
+    get_vl: Callable[[DATA], VL_DATA],
+    rtrl_config: RTRL_IFT_Tikhonov_Config,
+) -> Callable[[ENV, traverse[DATA]], tuple[ENV, tuple[STAT, ...], GRADIENT]]:
+
+    def gradient_fn(env: ENV, ds: traverse[DATA]) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+        arr, static = eqx.partition(env, eqx.is_array)
+
+        def step(_arr: ENV, data: DATA) -> tuple[ENV, tuple[GRADIENT, tuple[STAT, ...]]]:
+            _env = eqx.combine(_arr, static)
+
+            s = to_vector(learn_interface.get_state(_env))
+            p = to_vector(learn_interface.get_param(_env))
+
+            def state_fn(state: jax.Array) -> jax.Array:
+                state = s.to_param(state)
+                __env = learn_interface.put_state(_env, state)
+                __env, stat = transition(__env, get_tr(data))
+                new_state = learn_interface.get_state(__env)
+                return new_state
+
+            def param_fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, tuple[STAT, ...]]]:
+                param = p.to_param(param)
+                __env = learn_interface.put_param(_env, param)
+                __env, stat = transition(__env, get_tr(data))
+                state = learn_interface.get_state(__env)
+                __arr, _ = eqx.partition(__env, eqx.is_array)
+                return state, (__arr, stat)
+
+            influence_tensor = learn_interface.get_influence_tensor(_env)
+            epsilon = rtrl_config.epsilon
+
+            # 1. Compute state Jacobian-Matrix Product (J_z * Gamma) via finite differences
+            def finite_jvp(v):
+                return (state_fn(s.vector + epsilon * v) - state_fn(s.vector - epsilon * v)) / (2 * epsilon)
+
+            _hvp = eqx.filter_vmap(finite_jvp, in_axes=1, out_axes=1)(influence_tensor)
+
+            # 2. Compute parameter Jacobian (J_phi)
+            if rtrl_config.use_reverse_mode:
+                dhdp, (_arr, tr_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p.vector)
+            else:
+                dhdp, (_arr, tr_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p.vector)
+
+            _env = eqx.combine(_arr, static)
+
+            # ---------------------------------------------------------
+            # START TIKHONOV DAMPING LOGIC
+            # ---------------------------------------------------------
+
+            # Standard forward sensitivity: D_tau = J_z * Gamma + J_phi
+            D_tau = _hvp + dhdp
+
+            # Compute VJP function: returns a function that computes v^T * J_z
+            _, vjp_fun = jax.vjp(state_fn, s.vector)
+
+            # We need to compute J_z^T * (Gamma - D_tau).
+            # We transpose the difference to map over the parameter dimension,
+            # apply the VJP to each column vector, and transpose back.
+            diff = influence_tensor - D_tau
+            correction = jax.vmap(vjp_fun)(diff.T)[0].T
+
+            # Apply Tikhonov update rule:
+            # Gamma_{tau+1} = (1 - (1+mu)/c)*Gamma + (1/c)*[D_tau + J_z^T*(Gamma - D_tau)]
+            mu = rtrl_config.mu
+            c = rtrl_config.c
+
+            new_influence_tensor = (1.0 - (1.0 + mu) / c) * influence_tensor + (1.0 / c) * (D_tau + 0.1 * correction)
+
+            # ---------------------------------------------------------
+            # END TIKHONOV DAMPING LOGIC
+            # ---------------------------------------------------------
+
+            vl_stat, credit_gr = readout_gr(_env, get_vl(data))
+            credit_assignment = GRADIENT(credit_gr @ new_influence_tensor)
+            output_gr = take_gradient(readout, learn_interface)(_env, get_vl(data))[1]
+            grad = credit_assignment + output_gr
+
+            _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
 
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
@@ -510,7 +702,9 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
             epsilon = rtrl_config.epsilon
 
             def finite_hvp(v):
-                return (state_fn(s.vector + epsilon * v) - state_fn(s.vector - epsilon * v)) / (2 * epsilon)
+                return (state_fn(s.vector + epsilon * v) - state_fn(s.vector - epsilon * v)) / (
+                    2 * epsilon
+                ) - rtrl_config.momentum1 * v
 
             hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor)
 
@@ -528,12 +722,14 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
             m1 = rtrl_config.momentum1
             m2 = rtrl_config.momentum2
 
-            new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor + m1 * dhdp
-            new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+            # new_influence_tensor = (1 - m1) * _new_influence_tensor + m1 * influence_tensor + m1 * dhdp
+            # new_influence_tensor_m = new_influence_tensor / (1 - (m1**rtrl_t))
+            new_influence_tensor = _new_influence_tensor
+            new_influence_tensor_m = new_influence_tensor
 
-            influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
-            new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
-            new_influence_tensor_squared_m = new_influence_tensor_squared / (1 - (m2**rtrl_t))
+            # influence_tensor_squared = learn_interface.get_influence_tensor_squared(_env)
+            # new_influence_tensor_squared = (1 - m2) * (_new_influence_tensor**2) + m2 * influence_tensor_squared
+            # new_influence_tensor_squared_m = new_influence_tensor_squared / (1 - (m2**rtrl_t))
 
             # new_influence_tensor_for_grad = new_influence_tensor_m / (jnp.sqrt(new_influence_tensor_squared_m) + 1e-6)
             new_influence_tensor_for_grad = new_influence_tensor_m
@@ -544,7 +740,7 @@ def rtrl_finite_hvp[ENV, TR_DATA, VL_DATA, DATA](
             grad = credit_assignment + output_gr
 
             _env = learn_interface.put_influence_tensor(_env, new_influence_tensor)
-            _env = learn_interface.put_influence_tensor_squared(_env, new_influence_tensor_squared)
+            # _env = learn_interface.put_influence_tensor_squared(_env, new_influence_tensor_squared)
 
             _arr, _ = eqx.partition(_env, eqx.is_array)
             return _arr, (grad, tr_stat + vl_stat)
@@ -689,6 +885,27 @@ def create_meta_learner[ENV, DATA](
         readout_gr = take_jacobian(statistic_fn, learn_interface)
 
         match config.learners[0].learner:
+            case RTRL_IFT_Tikhonov_Config() as rtrl_ift_tikhonov_config:
+
+                def _learner(
+                    env: ENV,
+                    data: tuple[traverse[DATA], jax.Array],
+                    transition_fn=transition_fn,
+                    statistic_fn=statistic_fn,
+                    readout_gr=readout_gr,
+                    learn_interface=learn_interface,
+                    rtrl_ift_tikhonov_config=rtrl_ift_tikhonov_config,
+                ) -> tuple[ENV, tuple[STAT, ...], GRADIENT]:
+                    tr_data, mask = data
+                    return rtrl_ift_tikhonov(
+                        lambda e, d: (transition_fn(e, d), ()),
+                        statistic_fn,
+                        readout_gr,
+                        learn_interface,
+                        lambda x: x,
+                        lambda x: (x, mask),
+                        rtrl_ift_tikhonov_config,
+                    )(env, tr_data)
             case RTRLConfig() as rtrl_config:
 
                 def _learner(
@@ -883,6 +1100,16 @@ def create_meta_learner[ENV, DATA](
         learner0 = lambda env, data, r=vl_reset, l=learner0: l(r(env), data)
 
         match learn_config.learner:
+            case RTRL_IFT_Tikhonov_Config() as rtrl_ift_tikhonov_config:
+                _learner = rtrl_ift_tikhonov(
+                    learner0,
+                    vl_readout,
+                    vl_readout_gr,
+                    learn_interface,
+                    lambda x: x[0],
+                    lambda x: x[1],
+                    rtrl_ift_tikhonov_config,
+                )
             case RTRLConfig() as rtrl_config:
                 _learner = rtrl(
                     learner0,

@@ -30,58 +30,61 @@ def main():
         auto_resource_monitoring=False,
     )
 
+    # class SlurmParams:
+    # memory: str
+    # time: str
+    # cpu: int
+    # gpu: int
+    # log_dir: str
+    # skip_python_env_install: bool
+
     # Values dont matter because can change in UI
     slurm_params = SlurmParams(
         memory="8GB",
         time="01:00:00",
         cpu=2,
         gpu=0,
-        log_dir="/vast/wlp9800/logs",
-        singularity_overlay="",
-        singularity_binds="/scratch/wlp9800/clearml:/scratch",
-        container_source=SifContainerSource(sif_path="/scratch/wlp9800/images/devenv-cpu.sif"),
-        use_singularity=True,
-        setup_commands="module load python/intel/3.8.6",
+        log_dir="/scratch/wlp9800/logs",
         skip_python_env_install=True,
     )
     task.connect(unstructure(slurm_params), name="slurm")
 
     config = GodConfig(
-        clearml_run=False,
-        data_root_dir="/scratch/datasets",
-        log_dir="/scratch/offline_logs",
+        clearml_run=True,
+        data_root_dir="/scratch/wlp9800/datasets",
+        log_dir="/scratch/wlp9800/offline_logs",
         dataset=CIFAR10Config(96),
         # dataset=FashionMnistConfig(784),
         # dataset=MnistConfig(28, False),
         # dataset=DelayAddOnlineConfig(15, 17, 1, 100_000, 5000),
         # dataset=MnistConfig(28, False),
-        num_base_epochs=1000,
+        num_base_epochs=5000,
         checkpoint_every_n_minibatches=1,
         seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, test_seed=12345),
         loss_fn="cross_entropy_with_integer_labels",
         # loss_fn="cross_entropy",
         transition_function={
             # 0: IdentityLayer(activation_fn="identity"),
-            0: GRULayer(
-                n=128,
-                use_bias=True,
-                use_in_readout=True,
-                use_random_init=False,
-            ),
+            # 0: GRULayer(
+            #     n=128,
+            #     use_bias=True,
+            #     use_in_readout=True,
+            #     use_random_init=False,
+            # ),
             # 0: LSTMLayer(
             #     n=128,
             #     use_bias=True,
             #     use_in_readout=True,
             #     use_random_init=False,
             # ),
-            # 0: NNLayer(
-            #     n=256,
-            #     activation_fn="tanh",
-            #     use_bias=True,
-            #     use_in_readout=True,
-            #     layer_norm=None,
-            #     use_random_init=False,
-            # ),
+            0: NNLayer(
+                n=256,
+                activation_fn="tanh",
+                use_bias=True,
+                use_in_readout=True,
+                layer_norm=None,
+                use_random_init=False,
+            ),
             # 1: NNLayer(
             #     n=128,
             #     activation_fn="tanh",
@@ -266,17 +269,18 @@ def main():
             1: LearnConfig(
                 # learner=IdentityConfig(),
                 # learner=RFLOConfig(0.4),
+                learner=RTRL_IFT_Tikhonov_Config(use_reverse_mode=False, mu=0.0001, c=1.0, epsilon=1e-3),
                 # learner=RTRLFiniteHvpConfig(
-                #     1e-3, start_at_step=0, momentum1=0.9, momentum2=0.9, use_reverse_mode=False
+                #     1e-3, start_at_step=0, momentum1=0.0001, momentum2=0.0, use_reverse_mode=False
                 # ),
                 # learner=RTRLHessianDecompConfig(
                 #     epsilon=1e-4, start_at_step=0, momentum1=0.9, momentum2=0.0, use_reverse_mode=False
                 # ),
-                learner=RTRLConfig(start_at_step=0, momentum1=0.9, momentum2=0.0, use_reverse_mode=False),
+                # learner=RTRLConfig(start_at_step=0, momentum1=0.05, momentum2=0.0, use_reverse_mode=False),
                 # learner=UOROConfig(1.0),
                 optimizer=SGDConfig(
                     learning_rate=HyperparameterConfig(
-                        value=0.0001,
+                        value=1e-5,
                         learnable=False,
                         hyperparameter_parametrization=HyperparameterConfig.identity(),
                         min_value=0.0,
@@ -294,14 +298,18 @@ def main():
                 ),
                 # optimizer=AdamConfig(
                 #     learning_rate=HyperparameterConfig(
-                #         value=1e-4,
+                #         value=1e-3,
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #         min_value=0.0,
+                #         max_value=jnp.inf,
                 #     ),
                 #     weight_decay=HyperparameterConfig(
                 #         value=0.0,
                 #         learnable=False,
                 #         hyperparameter_parametrization=HyperparameterConfig.identity(),
+                #         min_value=0.0,
+                #         max_value=jnp.inf,
                 #     ),
                 #     add_clip=None,
                 # ),
@@ -321,19 +329,19 @@ def main():
                 lanczos_iterations=0,
                 track_logs=True,
                 track_special_logs=False,
-                num_virtual_minibatches_per_turn=10,
+                num_virtual_minibatches_per_turn=400,
             ),
         },
         data={
             0: DataConfig(
-                train_percent=80,
-                num_examples_in_minibatch=4000,
+                train_percent=80.0,
+                num_examples_in_minibatch=100,
                 num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
             1: DataConfig(
-                train_percent=20,
-                num_examples_in_minibatch=4000,
+                train_percent=20.0,
+                num_examples_in_minibatch=100,
                 num_steps_in_timeseries=32,
                 num_times_to_avg_in_timeseries=1,
             ),
@@ -362,7 +370,14 @@ def main():
     setup_flattened_union(
         converter,
         Union[
-            RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
+            RTRLConfig,
+            BPTTConfig,
+            IdentityConfig,
+            RFLOConfig,
+            UOROConfig,
+            RTRLHessianDecompConfig,
+            RTRLFiniteHvpConfig,
+            RTRL_IFT_Tikhonov_Config,
         ],
     )
     setup_flattened_union(

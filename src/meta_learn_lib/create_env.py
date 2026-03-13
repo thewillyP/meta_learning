@@ -245,7 +245,9 @@ def create_learning_state(
     flat_state = learn_interface.get_state(env)
     flat_param = filter_hyperparam(parameter)
     match learn_config.learner:
-        case RTRLConfig() | RFLOConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
+        case (
+            RTRLConfig() | RFLOConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig() | RTRL_IFT_Tikhonov_Config()
+        ):
             # prng1, prng = jax.random.split(prng, 2)
             influence_tensor = jnp.zeros((flat_state.size, flat_param.size))
             influence_tensor_squared = jnp.zeros((flat_state.size, flat_param.size))

@@ -4,36 +4,12 @@ from typing import Literal, Optional, Union
 
 
 @dataclass(frozen=True)
-class DockerContainerSource:
-    docker_url: str
-    type: str = "docker_url"
-
-
-@dataclass(frozen=True)
-class SifContainerSource:
-    sif_path: str
-    type: str = "sif_path"
-
-
-@dataclass(frozen=True)
-class ArtifactContainerSource:
-    project: str
-    dataset_name: str
-    type: str = "artifact_task"
-
-
-@dataclass(frozen=True)
 class SlurmParams:
     memory: str
     time: str
     cpu: int
     gpu: int
     log_dir: str
-    singularity_overlay: str
-    singularity_binds: str
-    container_source: Union[DockerContainerSource, SifContainerSource, ArtifactContainerSource]
-    use_singularity: bool
-    setup_commands: str
     skip_python_env_install: bool
 
 
@@ -82,6 +58,14 @@ class RTRLConfig:
     momentum1: float
     momentum2: float
     use_reverse_mode: bool
+
+
+@dataclass(frozen=True)
+class RTRL_IFT_Tikhonov_Config:
+    use_reverse_mode: bool
+    mu: float
+    c: float
+    epsilon: float
 
 
 @dataclass(frozen=True)
@@ -231,7 +215,14 @@ class DataConfig:
 @dataclass(frozen=True)
 class LearnConfig:
     learner: Union[
-        RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
+        RTRLConfig,
+        BPTTConfig,
+        IdentityConfig,
+        RFLOConfig,
+        UOROConfig,
+        RTRLHessianDecompConfig,
+        RTRLFiniteHvpConfig,
+        RTRL_IFT_Tikhonov_Config,
     ]
     optimizer: Optimizer
     lanczos_iterations: int

@@ -4,7 +4,6 @@ import clearml
 import random
 import string
 from cattrs import Converter
-import random
 import argparse
 import time
 from configs import *
@@ -29,6 +28,20 @@ def make_converter() -> Converter:
     converter.register_structure_hook(frozenset, lambda val, _: frozenset(val))
     converter.register_unstructure_hook(set, lambda s: sorted(s, key=str))
     converter.register_structure_hook(set, lambda val, _: set(val))
+
+    # -- list <-> index-keyed dict: so ClearML task.connect() flattens list elements --
+    converter.register_unstructure_hook_func(
+        lambda tp: getattr(tp, "__origin__", None) is list or tp is list,
+        lambda lst: {str(i): converter.unstructure(v) for i, v in enumerate(lst)},
+    )
+    converter.register_structure_hook_func(
+        lambda tp: getattr(tp, "__origin__", None) is list,
+        lambda val, tp: (
+            [converter.structure(val[k], tp.__args__[0]) for k in sorted(val, key=lambda k: int(k))]
+            if isinstance(val, dict)
+            else [converter.structure(v, tp.__args__[0]) for v in val]
+        ),
+    )
 
     # -- jnp.inf: serialize as string so JSON doesn't choke --
     original_float_unstructure = converter._unstructure_func.dispatch(float)
@@ -142,7 +155,7 @@ def main(skip_jitter: bool):
     converter = make_converter()
     task.connect(converter.unstructure(slurm_params), name="slurm")
 
-    config = OHO_RNN256
+    config = OHO_RNN256_V3
     config = copy.replace(config, logger_config=[ClearMLLoggerConfig()])
 
     def _deep_convert(obj):

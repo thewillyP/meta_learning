@@ -231,17 +231,12 @@ class ScalarLogger:
                             batch_pos += 1
 
                     if has_time:
-                        time_slice = value[tuple(full_idx)]
-                        offset = self.counters.get(series, 0)
-                        logged = 0
-                        for v in time_slice:
-                            v = float(v)
-                            if not np.isnan(v):
-                                self.logger.log_scalar(
-                                    context, series, self.log_title, v, offset + logged, self.total_iterations
-                                )
-                                logged += 1
-                        self.counters[series] = offset + logged
+                        time_slice = np.asarray(value[tuple(full_idx)], dtype=np.float64)
+                        mean_v = float(np.nanmean(time_slice))
+                        if not np.isnan(mean_v):
+                            self.logger.log_scalar(
+                                context, series, self.log_title, mean_v, iteration, self.total_iterations
+                            )
                     else:
                         v = float(value[tuple(full_idx)])
                         if not np.isnan(v):

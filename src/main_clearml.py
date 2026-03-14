@@ -12,6 +12,7 @@ from meta_learn_lib.config import *
 from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, PrintLogger
 from meta_learn_lib.util import setup_flattened_union
 import jax.numpy as jnp
+import equinox as eqx
 
 # jax.config.update("jax_platform_name", "cpu")
 # jax.config.update("jax_enable_x64", True)
@@ -155,7 +156,7 @@ def main(skip_jitter: bool):
     converter = make_converter()
     task.connect(converter.unstructure(slurm_params), name="slurm")
 
-    config = OHO_RNN256_V3
+    config = OHO_GRU128_CIFAR10
     config = copy.replace(config, logger_config=[ClearMLLoggerConfig()])
 
     def _deep_convert(obj):
@@ -175,6 +176,8 @@ def main(skip_jitter: bool):
 
     _config = task.connect(_deep_convert(converter.unstructure(config)), name="config")
     config = converter.structure(_config, GodConfig)
+
+    eqx.tree_pprint(config)
 
     loggers = []
     for log_config in config.logger_config:

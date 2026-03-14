@@ -250,6 +250,7 @@ class GRULayer:
     n: int
     use_bias: bool
     use_random_init: bool
+    time_constant: HP
 
 
 @dataclass(frozen=True)
@@ -257,6 +258,7 @@ class LSTMLayer:
     n: int
     use_bias: bool
     use_random_init: bool
+    time_constant: HP
 
 
 @dataclass(frozen=True)

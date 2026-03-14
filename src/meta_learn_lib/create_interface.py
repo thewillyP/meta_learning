@@ -382,7 +382,7 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                             config.hyperparameters[time_constant].level,
                         ),
                     )
-                case GRULayer():
+                case GRULayer(n, use_bias, use_random_init, time_constant):
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
@@ -393,8 +393,12 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_gru_state=put_gru_state(i, level),
                         get_gru_param=get_gru_param(ni, 0),
                         put_gru_param=put_gru_param(ni, 0),
+                        get_time_constant=get_time_constant(
+                            [*config.hyperparameters].index(time_constant),
+                            config.hyperparameters[time_constant].level,
+                        ),
                     )
-                case LSTMLayer():
+                case LSTMLayer(n, use_bias, use_random_init, time_constant):
                     interface = copy.replace(
                         default_interface,
                         put_logs=put_logs(level),
@@ -405,6 +409,10 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         put_lstm_state=put_lstm_state(i, level),
                         get_lstm_param=get_lstm_param(ni, 0),
                         put_lstm_param=put_lstm_param(ni, 0),
+                        get_time_constant=get_time_constant(
+                            [*config.hyperparameters].index(time_constant),
+                            config.hyperparameters[time_constant].level,
+                        ),
                     )
                 case Scan():
                     interface = copy.replace(

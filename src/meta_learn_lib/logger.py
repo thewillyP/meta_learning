@@ -12,6 +12,7 @@ import threading
 import queue
 import itertools
 import math
+import re
 import jax
 
 
@@ -143,9 +144,11 @@ class MultiLogger:
 
 
 def infer_level(key: str) -> int:
-    """Extract level number from stat key like 'level0/loss' -> 0."""
-    prefix = key.split("/")[0]
-    return int(prefix.replace("level", ""))
+    """Extract level number from stat key, e.g. 'train/level0/loss' -> 0."""
+    match = re.search(r"level(\d+)", key)
+    if match is None:
+        raise ValueError(f"Could not find 'levelN' in key: {key}")
+    return int(match.group(1))
 
 
 def compute_strides(shape: tuple[int, ...]) -> list[int]:

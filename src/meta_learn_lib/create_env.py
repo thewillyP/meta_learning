@@ -1,413 +1,840 @@
+import math
+from typing import Callable
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from itertools import islice
 from pyrsistent import pmap
-from pyrsistent.typing import PMap
+import functools
+from pyrsistent import pmap, pvector
+from toposort import toposort_flatten
+
 
 from meta_learn_lib.config import *
-from meta_learn_lib.create_interface import filter_hyperparam
-from meta_learn_lib.env import (
-    RNN,
-    CustomSequential,
-    General,
-    GodState,
-    Hyperparameter,
-    InferenceParameter,
-    InferenceState,
-    LSTMState,
-    LearningParameter,
-    LearningState,
-    Logs,
-    Parameter,
-    RNNState,
-    SpecialLogs,
-    TransitionParameter,
-    UOROState,
-)
-from meta_learn_lib.interface import LearnInterface
+from meta_learn_lib.create_axes import diff_axes
+from meta_learn_lib.env import *
+from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
-from meta_learn_lib.util import (
-    get_activation_fn,
-    hyperparameter_reparametrization,
-)
+from meta_learn_lib.optimizer import get_opt_state
+from meta_learn_lib.util import filter_cond, get_activation_fn, hyperparameter_reparametrization
 
 
-def create_state(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> PMap[int, InferenceState]:
-    transition_state: PMap[int, InferenceState] = pmap({})
-    n_in, *_ = n_in_shape
-    for i, transition_fn in config.transition_function.items():
-        match transition_fn:
-            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm, use_random_init):
-                prng1, prng = jax.random.split(prng, 2)
-                if use_random_init:
-                    activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                else:
-                    activation = ACTIVATION(jnp.zeros((n_h,)))
-                transition_state = transition_state.set(
-                    i,
-                    InferenceState(
-                        rnn=RNNState(
-                            activation=activation,
-                            n_h=n_h,
-                            n_in=n_in,
-                            activation_fn=activation_fn,
-                        ),
-                        lstm=None,
-                    ),
-                )
-                n_in = n_h  # Update n_in for the next layer
-            case GRULayer(n_h, use_bias, use_in_readout, use_random_init):
-                prng1, prng = jax.random.split(prng, 2)
-                if use_random_init:
-                    activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                else:
-                    activation = ACTIVATION(jnp.zeros((n_h,)))
-
-                transition_state = transition_state.set(
-                    i,
-                    InferenceState(
-                        rnn=RNNState(
-                            activation=activation,
-                            n_h=n_h,
-                            n_in=n_in,
-                            activation_fn="",
-                        ),
-                        lstm=None,
-                    ),
-                )
-                n_in = n_h
-            case LSTMLayer(n_h, use_bias, use_in_readout, use_random_init):
-                prng1, prng2, prng = jax.random.split(prng, 3)
-                if use_random_init:
-                    activation = ACTIVATION(jax.random.normal(prng1, (n_h,)))
-                    cell = ACTIVATION(jax.random.normal(prng2, (n_h,)))
-                else:
-                    activation = ACTIVATION(jnp.zeros((n_h,)))
-                    cell = ACTIVATION(jnp.zeros((n_h,)))
-
-                transition_state = transition_state.set(
-                    i,
-                    InferenceState(
-                        lstm=LSTMState(h=activation, c=cell, n_h=n_h, n_in=n_in),
-                        rnn=None,
-                    ),
-                )
-                n_in = n_h
-            case IdentityLayer():
-                transition_state = transition_state.set(
-                    i,
-                    InferenceState(
-                        rnn=None,
-                        lstm=None,
-                    ),
-                )
+def get_output_shapes(
+    node_features: dict[str, tuple[int, ...]],
+    node_graph: dict[str, set[str]],
+    nodes: dict[str, Node],
+    data_shape: tuple[tuple[int, ...], tuple[int, ...]],
+) -> dict[str, tuple[int, ...]]:
+    x_shape, y_shape = data_shape
+    for node_name in toposort_flatten(node_graph):
+        match nodes[node_name]:
+            case NNLayer(n, activation_fn, use_bias, layer_norm):
+                node_features[node_name] = (n,)
+            case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
+                node_features[node_name] = (nn_layer.n,)
+            case GRULayer(n, use_bias, use_random_init):
+                node_features[node_name] = (n,)
+            case LSTMLayer(n, use_bias, use_random_init):
+                node_features[node_name] = (n,)
+            case Scan(graph, autoregressive_mask, pred_source, start_token):
+                # Because I dont know how to concatenate your multiple dependencies, im just going to take the last one
+                scan_x_shape = [node_features[n] for n in node_graph[node_name] if n != pred_source][-1]
+                scan_y_shape = node_features[pred_source]
+                last_sub_node = toposort_flatten(graph)[-1]
+                node_features = get_output_shapes(node_features, graph, nodes, (scan_x_shape[1:], scan_y_shape[1:]))
+                n_out = (scan_x_shape[0],) + node_features[last_sub_node]
+                node_features[node_name] = n_out
+            case Repeat(n):
+                # same issue as scan, just take the last one
+                n_in = [node_features[n] for n in node_graph[node_name]][-1]
+                node_features[node_name] = (n,) + n_in
+            case Concat():
+                n_in = sum([math.prod(node_features[n]) for n in node_graph[node_name]])
+                node_features[node_name] = (n_in,)
+            case ToEmpty():
+                node_features[node_name] = ()
+            case UnlabeledSource():
+                node_features[node_name] = x_shape
+            case LabeledSource():
+                node_features[node_name] = y_shape
             case _:
-                raise ValueError("Unsupported transition function")
-    return transition_state
+                node_features[node_name] = ()
+
+    return node_features
 
 
-def create_inference_parameter(config: GodConfig, n_in_shape: tuple[int, ...], prng: PRNG) -> Parameter:
-    transition_parameter: PMap[int, InferenceParameter] = pmap({})
-    n_in_size = 0
-    n_in, *_ = n_in_shape
-    for i, transition_fn in config.transition_function.items():
-        match transition_fn:
-            case NNLayer(n_h, activation_fn, use_bias, use_in_readout, layer_norm, use_random_init):
-                prgn1, prng2, prng = jax.random.split(prng, 3)
-                W_in = jax.random.normal(prgn1, (n_h, n_in)) * jnp.sqrt(1 / n_in)
-                W_rec = jnp.linalg.qr(jax.random.normal(prng2, (n_h, n_h)))[0]
-                w_rec = jnp.hstack([W_rec, W_in])
-                b_rec: jax.Array | None = jnp.zeros((n_h,)) if use_bias else None
+def create_inference_state[ENV](
+    nodes: dict[str, Node],
+    meta_interface: dict[str, GodInterface[ENV]],
+    node_features: dict[str, tuple[int, ...]],
+    track_influence_in: frozenset[int],
+    is_init: bool,
+    env: ENV,
+    prng: PRNG,
+) -> ENV:
+
+    for node_name, node in nodes.items():
+        interface = meta_interface[node_name]
+        match node:
+            case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
+                k1, k2, prng = jax.random.split(prng, 3)
+                if use_random_init:
+                    activation = ACTIVATION(jax.random.normal(k1, (nn_layer.n,)))
+                else:
+                    activation = ACTIVATION(jnp.zeros((nn_layer.n,)))
+
+                rnn_state = VanillaRecurrentState(
+                    activation=State(
+                        value=activation,
+                        is_stateful=track_influence_in,
+                    ),
+                    activation_fn=nn_layer.activation_fn,
+                )
+                env = interface.put_vanilla_rnn_state(env, rnn_state)
+                env = interface.put_prng(env, k2)
+            case GRULayer(n, use_bias, use_random_init):
+                k1, k2, prng = jax.random.split(prng, 3)
+                if use_random_init:
+                    activation = ACTIVATION(jax.random.normal(k1, (n,)))
+                else:
+                    activation = ACTIVATION(jnp.zeros((n,)))
+
+                gru_state = RecurrentState(activation=State(value=activation, is_stateful=track_influence_in))
+                env = interface.put_gru_state(env, gru_state)
+                env = interface.put_prng(env, k2)
+            case LSTMLayer(n, use_bias, use_random_init):
+                k1, k2, k3, prng = jax.random.split(prng, 4)
+                if use_random_init:
+                    activation = ACTIVATION(jax.random.normal(k1, (n,)))
+                    cell = ACTIVATION(jax.random.normal(k2, (n,)))
+                else:
+                    activation = ACTIVATION(jnp.zeros((n,)))
+                    cell = ACTIVATION(jnp.zeros((n,)))
+
+                lstm_state = LSTMState(
+                    h=State(value=activation, is_stateful=track_influence_in),
+                    c=State(value=cell, is_stateful=track_influence_in),
+                )
+                env = interface.put_lstm_state(env, lstm_state)
+                env = interface.put_prng(env, k3)
+            case Scan(graph, autoregressive_mask, pred_source, start_token):
+                k1, prng = jax.random.split(prng, 2)
+                shape = node_features[node_name][1:]  # remove time dimension
+                match start_token:
+                    case "zeros":
+                        token = jnp.zeros(shape)
+                env = interface.put_autoregressive_predictions(env, State(value=token, is_stateful=track_influence_in))
+                env = interface.put_prng(env, k1)
+            case _:
+                # could save space here on deterministic nodes
+                k1, prng = jax.random.split(prng, 2)
+                env = interface.put_prng(env, k1)
+
+    return env
+
+
+def create_inference_parameters[ENV](
+    nodes: dict[str, Node],
+    transition_graph: dict[str, set[str]],
+    readout_graph: dict[str, set[str]],
+    meta_interface: dict[str, GodInterface[ENV]],
+    node_features: dict[str, tuple[int, ...]],
+    learnables: frozenset[str],
+    env: ENV,
+    prng: PRNG,
+) -> ENV:
+
+    node_graph = transition_graph | readout_graph
+
+    for node_name, node in nodes.items():
+        interface = meta_interface[node_name]
+        is_learnable = node_name in learnables
+        match node:
+            case NNLayer(n, activation_fn, use_bias, layer_norm):
+                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                k1, k2, prng = jax.random.split(prng, 3)
+
+                linear = eqx.nn.Linear(n_in, n, use_bias=use_bias, key=k1)
+                new_weight = jax.random.normal(k1, (n, n_in)) * jnp.sqrt(1 / n_in)
+                new_bias = jnp.zeros((n,)) if use_bias else None
+                where = lambda l: (l.weight, l.bias)
+                new_linear: eqx.Module = eqx.tree_at(where, linear, (new_weight, new_bias))
+
                 match layer_norm:
                     case LayerNorm(epsilon, use_weight, use_bias):
-                        layer = eqx.nn.LayerNorm(n_h, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
+                        layer = eqx.nn.LayerNorm(n, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
                     case None:
-                        layer = None
+                        layer = eqx.nn.Identity()
 
-                transition_parameter = transition_parameter.set(
-                    i,
-                    InferenceParameter(
-                        rnn=RNN(
-                            w_rec=w_rec,
-                            b_rec=b_rec,
-                            layer_norm=layer,
-                        ),
-                        gru=None,
-                        lstm=None,
+                nn_layer = eqx.nn.Sequential([new_linear, layer, eqx.nn.Lambda(get_activation_fn(activation_fn))])
+                env = interface.put_mlp_param(
+                    env,
+                    MLP(
+                        model=Parameter[eqx.nn.Sequential](
+                            value=nn_layer,
+                            is_learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=node_name not in readout_graph,
+                        )
                     ),
                 )
-                if use_in_readout:
-                    n_in_size += n_h
-                n_in = n_h  # Update n_in for the next layer
-            case GRULayer(n_h, use_bias, use_in_readout, use_random_init):
-                prng1, prng = jax.random.split(prng, 2)
-                gru = eqx.nn.GRUCell(n_in, n_h, use_bias=use_bias, key=prng1)
-                transition_parameter = transition_parameter.set(i, InferenceParameter(gru=gru, rnn=None, lstm=None))
-                if use_in_readout:
-                    n_in_size += n_h
-                n_in = n_h
-            case LSTMLayer(n_h, use_bias, use_in_readout, use_random_init):
-                prng1, prng = jax.random.split(prng, 2)
-                lstm = eqx.nn.LSTMCell(n_in, n_h, use_bias=use_bias, key=prng1)
-                transition_parameter = transition_parameter.set(i, InferenceParameter(lstm=lstm, rnn=None, gru=None))
-                if use_in_readout:
-                    n_in_size += n_h
-                n_in = n_h
-            case IdentityLayer():
-                pass
+                env = interface.put_prng(env, k2)
+
+            case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
+                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                k1, k2, k3, prng = jax.random.split(prng, 4)
+
+                W_in = jax.random.normal(k1, (nn_layer.n, n_in)) * jnp.sqrt(1 / n_in)
+                W_rec = jnp.linalg.qr(jax.random.normal(k2, (nn_layer.n, nn_layer.n)))[0]
+                w_rec = Parameter(
+                    value=jnp.hstack([W_rec, W_in]),
+                    is_learnable=is_learnable,
+                    min_value=-math.inf,
+                    max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
+                )
+                b_rec: jax.Array = Parameter(
+                    value=jnp.zeros((nn_layer.n,)),
+                    is_learnable=nn_layer.use_bias,
+                    min_value=-math.inf,
+                    max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
+                )
+
+                match nn_layer.layer_norm:
+                    case LayerNorm(epsilon, use_weight, use_bias):
+                        layer = Parameter(
+                            value=eqx.nn.LayerNorm(n, eps=epsilon, use_weight=use_weight, use_bias=use_bias),
+                            is_learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=node_name not in readout_graph,
+                        )
+                    case None:
+                        layer = Parameter(
+                            value=eqx.nn.Identity(),
+                            is_learnable=False,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=node_name not in readout_graph,
+                        )
+
+                rnn_param = RNN(w_rec=w_rec, b_rec=b_rec, layer_norm=layer)
+                env = interface.put_vanilla_rnn_param(env, rnn_param)
+                env = interface.put_prng(env, k3)
+            case GRULayer(n, use_bias, use_random_init):
+                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                k1, k2, prng = jax.random.split(prng, 3)
+
+                gru = Parameter(
+                    value=eqx.nn.GRUCell(n_in, n, use_bias=use_bias, key=k1),
+                    is_learnable=is_learnable,
+                    min_value=-math.inf,
+                    max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
+                )
+                env = interface.put_gru_param(env, gru)
+                env = interface.put_prng(env, k2)
+
+            case LSTMLayer(n, use_bias, use_random_init):
+                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                k1, k2, prng = jax.random.split(prng, 3)
+
+                lstm = Parameter(
+                    value=eqx.nn.LSTMCell(n_in, n, use_bias=use_bias, key=k1),
+                    is_learnable=is_learnable,
+                    min_value=-math.inf,
+                    max_value=math.inf,
+                    parametrizes_transition=node_name not in readout_graph,
+                )
+                env = interface.put_lstm_param(env, lstm)
+                env = interface.put_prng(env, k2)
             case _:
-                raise ValueError("Unsupported transition function")
+                # could save space here on deterministic nodes
+                k1, prng = jax.random.split(prng, 2)
+                env = interface.put_prng(env, k1)
 
-    match config.readout_function:
-        case FeedForwardConfig(ffw_layers):
-            layers = []
-            data_in, *_ = n_in_shape
-            n_in_size += data_in
-            for i, layer in ffw_layers.items():
-                match layer:  # purely for pattern matching, no other case should actually exist
-                    case NNLayer(n, activation_fn, use_bias, use_in_readout, layer_norm, use_random_init):
-                        match layer_norm:
-                            case LayerNorm(epsilon, use_weight, use_bias):
-                                layer = eqx.nn.LayerNorm(n, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
-                            case None:
-                                layer = None
-
-                        layers.append((n, use_bias, get_activation_fn(activation_fn), layer))
-            prng1, prng = jax.random.split(prng, 2)
-            readout_fn = CustomSequential(layers, n_in_size, prng1)
-        case _:
-            raise ValueError("Unsupported readout function")
-
-    return Parameter(
-        transition_parameter=TransitionParameter(param=transition_parameter),
-        readout_fn=readout_fn,
-        learning_parameter=None,
-    )
+    return env
 
 
-def create_optimizer_parameter(optimizer: Optimizer) -> LearningParameter:
-    parameter = LearningParameter(
-        learning_rate=None, weight_decay=None, rflo_timeconstant=None, multiple_parameters=None
-    )
-    match optimizer:
-        case (
-            SGDConfig()
-            | SGDNormalizedConfig()
-            | AdamConfig()
-            | ExponentiatedGradientConfig()
-            | ExponentiatedGradientAdamConfig() as opt
-        ):
-            _, lr_backward = hyperparameter_reparametrization(opt.learning_rate.hyperparameter_parametrization)
-            _, wd_backward = hyperparameter_reparametrization(opt.weight_decay.hyperparameter_parametrization)
-            parameter = parameter.set(
-                learning_rate=Hyperparameter(
-                    value=lr_backward(jnp.array([opt.learning_rate.value])),
-                    learnable=opt.learning_rate.learnable,
-                    min_value=opt.learning_rate.min_value,
-                    max_value=opt.learning_rate.max_value,
-                ),
-                weight_decay=Hyperparameter(
-                    value=wd_backward(jnp.array([opt.weight_decay.value])),
-                    learnable=opt.weight_decay.learnable,
-                    min_value=opt.weight_decay.min_value,
-                    max_value=opt.weight_decay.max_value,
-                ),
-            )
-        case RecurrenceConfig(recurrence_optimizer, out_optimizer):
-            recurrence_param = create_optimizer_parameter(recurrence_optimizer)
-            out_param = create_optimizer_parameter(out_optimizer)
-            parameter = parameter.set(multiple_parameters=(recurrence_param, out_param))
-
-    return parameter
-
-
-def create_learning_parameter(learn_config: LearnConfig) -> LearningParameter:
-    parameter = create_optimizer_parameter(learn_config.optimizer)
-
-    match learn_config.learner:
-        case RFLOConfig(time_constant, use_reverse_mode):
-            parameter = parameter.set(rflo_timeconstant=time_constant)
-
-    return parameter
-
-
-def create_learning_state(
-    learn_config: LearnConfig,
-    env: GodState,
-    parameter: Parameter,
-    learn_interface: LearnInterface[GodState],
+def create_hyperparameters[ENV](
+    hps: dict[HP, HyperparameterConfig],
+    meta_interface: dict[str, GodInterface[ENV]],
+    learnables: frozenset[str],
+    env: ENV,
     prng: PRNG,
-) -> LearningState:
-    state = LearningState(
-        influence_tensor=None, influence_tensor_squared=None, uoro=None, opt_state=None, rflo_t=None, rtrl_t=None
-    )
-    flat_state = learn_interface.get_state(env)
-    flat_param = filter_hyperparam(parameter)
-    match learn_config.learner:
-        case RTRLConfig() | RFLOConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
-            # prng1, prng = jax.random.split(prng, 2)
-            influence_tensor = jnp.zeros((flat_state.size, flat_param.size))
-            influence_tensor_squared = jnp.zeros((flat_state.size, flat_param.size))
-            state = state.set(
-                influence_tensor=JACOBIAN(influence_tensor), influence_tensor_squared=JACOBIAN(influence_tensor_squared)
-            )
+) -> ENV:
+    # make sure to loop through current meta interface's hyperparameters only. not ALL hyperparameters
+    for hp_name, interface in meta_interface.items():
+        if hp_name in hps:
+            hp_config = hps[hp_name]
+            is_learnable = hp_name in learnables
+            _, invert = hyperparameter_reparametrization(hp_config.hyperparameter_parametrization)
+            match hp_config.kind:
+                case "learning_rate":
+                    k1, prng = jax.random.split(prng, 2)
+                    lrs = Parameter(
+                        value=jnp.full((hp_config.count,), invert(hp_config.value)),
+                        is_learnable=is_learnable,
+                        min_value=hp_config.min_value,
+                        max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
+                    )
+                    env = interface.put_learning_rate(env, lrs)
+                    env = interface.put_prng(env, k1)
+                case "weight_decay":
+                    k1, prng = jax.random.split(prng, 2)
+                    wds = Parameter(
+                        value=jnp.full((hp_config.count,), invert(hp_config.value)),
+                        is_learnable=is_learnable,
+                        min_value=hp_config.min_value,
+                        max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
+                    )
+                    env = interface.put_weight_decay(env, wds)
+                    env = interface.put_prng(env, k1)
+                case "momentum":
+                    k1, prng = jax.random.split(prng, 2)
+                    ms = Parameter(
+                        value=jnp.full((hp_config.count,), invert(hp_config.value)),
+                        is_learnable=is_learnable,
+                        min_value=hp_config.min_value,
+                        max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
+                    )
+                    env = interface.put_momentum(env, ms)
+                    env = interface.put_prng(env, k1)
+                case "time_constant":
+                    k1, prng = jax.random.split(prng, 2)
+                    tcs = Parameter(
+                        value=jnp.full((hp_config.count,), invert(hp_config.value)),
+                        is_learnable=is_learnable,
+                        min_value=hp_config.min_value,
+                        max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
+                    )
+                    env = interface.put_time_constant(env, tcs)
+                    env = interface.put_prng(env, k1)
+                case "kl_regularizer_beta":
+                    k1, prng = jax.random.split(prng, 2)
+                    kl_betas = Parameter(
+                        value=jnp.full((hp_config.count,), invert(hp_config.value)),
+                        is_learnable=is_learnable,
+                        min_value=hp_config.min_value,
+                        max_value=hp_config.max_value,
+                        parametrizes_transition=hp_config.parametrizes_transition,
+                    )
+                    env = interface.put_kl_regularizer_beta(env, kl_betas)
+                    env = interface.put_prng(env, k1)
+
+    return env
+
+
+def create_learner_states[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    method: GradientMethod,
+    interface: GodInterface[ENV],
+    track_influence_in: frozenset[int],
+    env: ENV,
+    prng: PRNG,
+) -> ENV:
+    match method:
+        case RTRLConfig() | RTRLFiniteHvpConfig() | RFLOConfig():
+            k1, k2, prng = jax.random.split(prng, 3)
+            new_env = factory(env, k1)
+            param = interface.get_param(new_env)
+            state = interface.get_state(new_env)
+
+            def infl_fn(p: jax.Array) -> jax.Array:
+                _env = interface.put_param(new_env, p)
+                _env = factory(_env, k1)
+                s = interface.get_state(_env)
+                return s
+
+            if state.shape[0] > param.shape[0]:
+                dhdp = eqx.filter_jacfwd(infl_fn)(param)
+            else:
+                dhdp = eqx.filter_jacrev(infl_fn)(param)
+            env = interface.put_forward_mode_jacobian(new_env, State(value=dhdp, is_stateful=track_influence_in))
+            env = interface.put_prng(env, k2)
         case UOROConfig():
-            prng1, prng2, prng = jax.random.split(prng, 3)
+            k0, k1, k2, k3, prng = jax.random.split(prng, 5)
+            env = factory(env, k0)
 
-            # Step 1: Get the tree structure and leaves
-            leaves = jax.tree_util.tree_leaves(parameter, is_leaf=lambda x: isinstance(x, CustomSequential))
-            treedef = jax.tree_util.tree_structure(parameter, is_leaf=lambda x: isinstance(x, CustomSequential))
+            param = interface.get_param(env)
+            state = interface.get_state(env)
 
-            # Step 2: Split keys for each leaf
-            keys = jax.random.split(prng1, len(leaves))
-            keys_tree = jax.tree_util.tree_unflatten(treedef, keys)
+            # A: random init, shape = (|h|,)
+            a = jax.random.normal(k1, state.shape)
 
-            # Step 3: Function to edit each leaf
-            def edit_fn(leaf, key):
-                if isinstance(leaf, CustomSequential):
-                    return jax.tree.map(lambda x: jnp.zeros_like(x) if eqx.is_array(x) else x, leaf)
-                else:
-                    return jax.random.normal(key, leaf.shape) if eqx.is_array(leaf) else leaf
+            # B: start fully random, then zero out nonrecurrent params
+            b_env = interface.put_param(env, jax.random.normal(k2, param.shape))
 
-            _parameter = jax.tree.map(edit_fn, parameter, keys_tree, is_leaf=lambda x: isinstance(x, CustomSequential))
+            def zero_readout(x):
+                if isinstance(x, Parameter) and not x.parametrizes_transition:
+                    arrays, non_arrays = eqx.partition(x, eqx.is_inexact_array)
+                    zeroed = jax.tree.map(lambda v: jnp.zeros_like(v), arrays)
+                    return eqx.combine(zeroed, non_arrays)
+                return x
 
-            a = jax.random.normal(prng2, (flat_state.size,))
-            b = filter_hyperparam(_parameter)
-            uoro = UOROState(A=a, B=b)
-            state = state.set(uoro=uoro)
-        case BPTTConfig():
-            ...
-        case IdentityConfig():
-            ...
+            b_env = jax.tree.map(zero_readout, b_env, is_leaf=lambda x: isinstance(x, Parameter))
 
-    match learn_config.learner:
-        case RFLOConfig():
-            state = state.set(rflo_t=jax.lax.stop_gradient(jnp.array(1)))
-        case RTRLConfig() | RTRLHessianDecompConfig() | RTRLFiniteHvpConfig():
-            state = state.set(rtrl_t=jax.lax.stop_gradient(jnp.array(1)))
+            b = interface.get_param(b_env)
 
-    _opt = learn_interface.get_optimizer(env)
-    if _opt is not None:
-        opt_state = _opt.init(flat_param)
-        state = state.set(opt_state=opt_state)
+            uoro = UOROState(
+                A=State(value=a, is_stateful=track_influence_in),
+                B=State(value=b, is_stateful=track_influence_in),
+            )
+            env = interface.put_uoro_state(env, uoro)
+            env = interface.put_prng(env, k3)
+        case _:
+            k1, k2, prng = jax.random.split(prng, 3)
+            env = factory(env, k1)
+            env = interface.put_prng(env, k2)
 
-    return state
+    env = interface.put_tick(env, jnp.array(0))
+    return env
+
+
+def vmap_factory[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    batches: list[int],
+) -> Callable[[ENV, PRNG], ENV]:
+    def vmap_env(env: ENV, prng: PRNG) -> ENV:
+        k1, k2, prng = jax.random.split(prng, 3)
+        new_env = factory(env, k1)
+        axes = diff_axes(env, new_env)
+        _, static = eqx.partition(new_env, eqx.is_array)
+
+        def f_init(e, k):
+            e = factory(e, k)
+            arr, _ = eqx.partition(e, eqx.is_array)
+            return arr
+
+        batched_keys = jax.random.split(k2, math.prod(batches)).reshape(*batches)
+        b_fn = functools.reduce(
+            lambda f, _: eqx.filter_vmap(f, in_axes=(None, 0), out_axes=axes),
+            batches,
+            f_init,
+        )
+        arr = b_fn(env, batched_keys)
+        return eqx.combine(arr, static)
+
+    return vmap_env
+
+
+def reset_validation[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    meta_interface: dict[str, GodInterface[ENV]],
+    vl_learner: GodInterface[ENV],
+    meta_config: MetaConfig,
+    nodes: dict[str, Node],
+    node_features: dict[str, tuple[int, ...]],
+    is_init: bool,
+) -> Callable[[ENV, PRNG], ENV]:
+
+    def create_env(env: ENV, prng: PRNG) -> ENV:
+        # 1. Create inference state
+        k1, prng = jax.random.split(prng, 2)
+        f1 = lambda e, k: create_inference_state(
+            nodes, meta_interface, node_features, meta_config.validation.track_influence_in, is_init, e, k
+        )
+        batch_size = [
+            meta_config.validation.batch,
+            meta_config.dataset.num_examples_in_minibatch,
+        ]
+        env = vmap_factory(f1, batch_size)(env, k1)
+
+        # 2. use it for learning states
+        k1, k2, prng = jax.random.split(prng, 3)
+        env = create_learner_states(
+            factory,
+            meta_config.learner.model_learner.method,
+            vl_learner,
+            meta_config.validation.track_influence_in,
+            env,
+            k2,
+        )
+
+        return env
+
+    return create_env
+
+
+def reset_params_hyperparams_optimizer[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    meta_interface: dict[str, GodInterface[ENV]],
+    meta_config: MetaConfig,
+    hyperparameters: dict[HP, HyperparameterConfig],
+    nodes: dict[str, Node],
+    transition_graph: dict[str, set[str]],
+    readout_graph: dict[str, set[str]],
+    node_features: dict[str, tuple[int, ...]],
+    create_inference_param: bool,
+) -> Callable[[ENV, PRNG], ENV]:
+    """Creates params, hyperparams, optimizer states, then calls factory."""
+
+    learnables: frozenset[str] = frozenset().union(*[v.target for v in meta_config.learner.optimizer.values()])
+
+    def create_env(env: ENV, prng: PRNG) -> ENV:
+        if create_inference_param:
+            k1, prng = jax.random.split(prng, 2)
+            env = create_inference_parameters(
+                nodes, transition_graph, readout_graph, meta_interface, node_features, learnables, env, k1
+            )
+
+        k2, prng = jax.random.split(prng, 2)
+        env = create_hyperparameters(hyperparameters, meta_interface, learnables, env, k2)
+
+        env = get_opt_state(
+            meta_config.learner.optimizer,
+            meta_interface,
+            env,
+            hyperparameters,
+            meta_config.nested.track_influence_in,
+        )
+
+        k3, prng = jax.random.split(prng, 2)
+        env = factory(env, k3)
+
+        return env
+
+    return create_env
+
+
+def reset_nested_learner[ENV](
+    factory: Callable[[ENV, PRNG], ENV],
+    meta_learner: GodInterface[ENV],
+    meta_config: MetaConfig,
+) -> Callable[[ENV, PRNG], ENV]:
+    """Creates nest learner states and logs. Must run inside vmap to see unbatched shapes."""
+
+    def create_env(env: ENV, prng: PRNG) -> ENV:
+        k1, k2, prng = jax.random.split(prng, 3)
+        env = factory(env, k1)
+
+        env = create_learner_states(
+            factory,
+            meta_config.learner.optimizer_learner.method,
+            meta_learner,
+            meta_config.nested.track_influence_in,
+            env,
+            k2,
+        )
+
+        logs = Logs(
+            gradient=jnp.zeros_like(meta_learner.get_param(env)) if meta_config.track_logs.gradient else None,
+            hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
+            largest_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_eigenvalue else None,
+            influence_tensor_norm=jnp.array(0.0) if meta_config.track_logs.influence_tensor_norm else None,
+            immediate_influence_tensor=jnp.zeros(
+                (meta_learner.get_state(env).shape[0], meta_learner.get_param(env).shape[0])
+            )
+            if meta_config.track_logs.immediate_influence_tensor
+            else None,
+            largest_jac_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_jac_eigenvalue else None,
+            jacobian=jnp.zeros((meta_learner.get_state(env).shape[0], meta_learner.get_state(env).shape[0]))
+            if meta_config.track_logs.jacobian
+            else None,
+        )
+        env = meta_learner.put_logs(env, logs)
+
+        return env
+
+    return create_env
+
+
+def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
+
+    k1, prng = jax.random.split(prng, 2)
+    env = GodState(
+        model_states=pvector(
+            [
+                ModelStates(
+                    recurrent_states=pmap({}),
+                    vanilla_recurrent_states=pmap({}),
+                    lstm_states=pmap({}),
+                    autoregressive_predictions=pmap({}),
+                )
+                for _ in range(len(config.levels))
+            ]
+        ),
+        learning_states=pvector(
+            [
+                LearningStates(
+                    influence_tensors=pmap({}),
+                    uoros=pmap({}),
+                    opt_states=pmap({}),
+                )
+                for _ in range(len(config.levels))
+            ]
+        ),
+        meta_parameters=pvector(
+            [
+                Parameters(
+                    mlps=pmap({}),
+                    rnns=pmap({}),
+                    grus=pmap({}),
+                    lstms=pmap({}),
+                    learning_rates=pmap({}),
+                    weight_decays=pmap({}),
+                    time_constants=pmap({}),
+                    momentums=pmap({}),
+                    kl_regularizer_betas=pmap({}),
+                )
+                for _ in range(len(config.levels))
+            ]
+        ),
+        level_meta=pvector(
+            [
+                LevelMeta(
+                    log=State(value=Logs(), is_stateful=frozenset()),
+                    prngs=pmap({}),
+                    ticks=pmap({}),
+                )
+                for _ in range(len(config.levels) + 1)
+            ]
+        ),
+        prng=k1,
+    )
+
+    return env
 
 
 def create_env(
     config: GodConfig,
-    n_in_shape: tuple[int, ...],
-    learn_interfaces: dict[int, LearnInterface[GodState]],
-    validation_learn_interfaces: dict[int, LearnInterface[GodState]],
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[GodState]]],
+    learn_interfaces: list[tuple[GodInterface[GodState], GodInterface[GodState]]],
     prng: PRNG,
 ) -> GodState:
-    prng1, prng2, prng3, prng = jax.random.split(prng, 4)
-    env = GodState(
-        learning_states=pmap({}),
-        inference_states=pmap({}),
-        validation_learning_states=pmap({}),
-        parameters=pmap({}),
-        general=pmap({}),
-        prng=pmap(
-            {
-                i: batched(jax.random.split(key, v.num_examples_in_minibatch))
-                for i, (v, key) in enumerate(zip(config.data.values(), jax.random.split(prng1, len(config.data))))
-            }
-        ),
-        prng_learning=pmap({i: key for i, key in enumerate(jax.random.split(prng2, len(config.learners)))}),
-        start_epoch=jnp.array(0),
+    k1, k2, prng = jax.random.split(prng, 3)
+    env = create_empty_env(config, k1)
+    creator = env_creator(
+        config,
+        shapes,
+        meta_interfaces,
+        learn_interfaces,
+        is_inits=[True] * len(config.levels),
     )
-    general: PMap[int, General] = pmap({})
-
-    # Create inference states
-    load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
-    for _, data_config in sorted(config.data.items()):
-        prng1, prng = jax.random.split(prng, 2)
-        vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
-        transition_state_vl: PMap[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        env: GodState = env.transform(["inference_states", len(env.inference_states)], lambda _: transition_state_vl)
-
-    parameter = create_inference_parameter(config, n_in_shape, prng3)
-    env = env.transform(["parameters", len(env.parameters)], lambda _: parameter)
-    for i, (_, learn_config) in enumerate(sorted(config.learners.items())):
-        prng1, prng = jax.random.split(prng, 2)
-
-        # Create learning state and new parameter
-        prev_parameter = parameter
-        learning_parameter = create_learning_parameter(learn_config)
-        parameter = Parameter(transition_parameter=None, readout_fn=None, learning_parameter=learning_parameter)
-        env = env.transform(["parameters", len(env.parameters)], lambda _: parameter)
-        learning_state_vl = create_learning_state(learn_config, env, prev_parameter, learn_interfaces[i], prng1)
-
-        if learn_config.track_logs:
-            logs = Logs(
-                gradient=jnp.zeros_like(filter_hyperparam(prev_parameter)),
-                hessian_contains_nans=jnp.array(False),
-                immediate_influence_contains_nans=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-                largest_eigenvalue=jnp.array(0.0),
-            )
-        else:
-            logs = None
-
-        if learn_config.track_special_logs:
-            special_logs = SpecialLogs(
-                influence_tensor=(
-                    jnp.zeros_like(it) if (it := learning_state_vl.influence_tensor) is not None else None
-                ),
-                immediate_influence_tensor=(
-                    jnp.zeros_like(it) if (it := learning_state_vl.influence_tensor) is not None else None
-                ),
-                largest_jac_eigenvalue=jnp.array(0.0),
-                jacobian=jnp.zeros((filter_hyperparam(env).size, filter_hyperparam(prev_parameter).size)),
-            )
-        else:
-            special_logs = None
-
-        general = general.set(
-            len(general),
-            General(
-                current_virtual_minibatch=jnp.array(0),
-                logs=logs,
-                special_logs=special_logs,
-            ),
-        )
-
-        env = env.transform(["learning_states", len(env.learning_states)], lambda _: learning_state_vl)
-
-    env = env.set(general=general)
-
-    # create learning states for validation
-    validation_learning_states: PMap[int, LearningState] = pmap({})
-    for i, _ in enumerate(islice(config.learners.items(), 1, None), 1):
-        prng1, prng = jax.random.split(prng, 2)
-        learning_state_vl = create_learning_state(
-            config.learners[min(config.learners.keys())],
-            env,
-            learn_interfaces[i].get_state_pytree(env),
-            validation_learn_interfaces[i],
-            prng1,
-        )
-        validation_learning_states = validation_learning_states.set(i, learning_state_vl)
-    env = env.set(validation_learning_states=validation_learning_states)
-
-    return env
+    return creator(env, k2)
 
 
-def reinitialize_env(
-    env: GodState,
+def env_validation_resetters[ENV](
     config: GodConfig,
-    n_in_shape: tuple[int, ...],
-    prng: PRNG,
-) -> GodState:
-    # Create inference states
-    inference_states: PMap[int, PMap[int, InferenceState]] = pmap({})
-    load_state = eqx.filter_vmap(create_state, in_axes=(None, None, 0))
-    for i, (_, data_config) in enumerate(sorted(config.data.items())):
-        prng1, prng = jax.random.split(prng, 2)
-        vl_prngs = jax.random.split(prng1, data_config.num_examples_in_minibatch)
-        transition_state_vl: PMap[int, InferenceState] = load_state(config, n_in_shape, vl_prngs)
-        inference_states = inference_states.set(i, transition_state_vl)
-    env = env.set(inference_states=inference_states)
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    val_learn_interfaces: list[GodInterface[ENV]],
+) -> list[Callable[[ENV, PRNG], ENV]]:
 
-    return env
+    resetters: list[Callable[[ENV, PRNG], ENV]] = []
+    is_inits = [False] * len(config.levels)
+
+    for shape, meta_interface, learn_interface, meta_config, is_init in zip(
+        shapes,
+        meta_interfaces,
+        val_learn_interfaces,
+        config.levels,
+        is_inits,
+    ):
+        node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+
+        resetter = reset_validation(
+            lambda e, k: e,
+            meta_interface,
+            learn_interface,
+            meta_config,
+            config.nodes,
+            node_features,
+            is_init,
+        )
+        resetters.append(resetter)
+
+    return resetters
+
+
+def env_resetters[ENV](
+    config: GodConfig,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    learn_interfaces: list[tuple[GodInterface[ENV], GodInterface[ENV]]],
+    is_inits: list[bool],
+) -> list[tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]]:
+    create_inference_params = [True] + [False] * (len(config.levels) - 1)
+    factory: Callable[[ENV, PRNG], ENV] = lambda e, k: e
+
+    def fold(
+        accum: Callable[[ENV, PRNG], ENV],
+        shape: tuple[tuple[int, ...], tuple[int, ...]],
+        meta_interface: dict[str, GodInterface[ENV]],
+        learn_interface: tuple[GodInterface[ENV], GodInterface[ENV]],
+        meta_config: MetaConfig,
+        create_inference_param: bool,
+        is_init: bool,
+    ) -> tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]:
+        node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+        val_interface, nest_interface = learn_interface
+
+        _reset_validation = reset_validation(
+            accum,
+            meta_interface,
+            val_interface,
+            meta_config,
+            config.nodes,
+            node_features,
+            is_init,
+        )
+        _reset_nested_learner = reset_nested_learner(
+            _reset_validation,
+            nest_interface,
+            meta_config,
+        )
+
+        inner = vmap_factory(_reset_nested_learner, [meta_config.nested.batch])
+
+        full = reset_params_hyperparams_optimizer(
+            inner,
+            meta_interface,
+            meta_config,
+            config.hyperparameters,
+            config.nodes,
+            config.transition_graph,
+            config.readout_graph,
+            node_features,
+            create_inference_param,
+        )
+        return inner, full
+
+    nested_resetters: list[tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]] = []
+    accum: Callable[[ENV, PRNG], ENV] = factory
+    for shape, meta_interface, learn_interface, meta_config, create_inference_param, is_init in zip(
+        shapes,
+        meta_interfaces,
+        learn_interfaces,
+        config.levels,
+        create_inference_params,
+        is_inits,
+    ):
+        inner, full = fold(accum, shape, meta_interface, learn_interface, meta_config, create_inference_param, is_init)
+        nested_resetters.append((inner, full))
+        accum = full
+
+    # Build correctly-batched validation resetters
+    val_resetters = env_validation_resetters(
+        config,
+        shapes,
+        meta_interfaces,
+        [li[0] for li in learn_interfaces],
+    )
+    batches = [mc.nested.batch for mc in reversed(config.levels)]
+    batched_val_resetters = [vmap_factory(vr, batches) for vr in val_resetters]
+
+    def compose(
+        nested_inner: Callable[[ENV, PRNG], ENV],
+        nested_full: Callable[[ENV, PRNG], ENV],
+        batched_vrs: list[Callable[[ENV, PRNG], ENV]],
+    ) -> tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]:
+        def composed_inner(env: ENV, prng: PRNG) -> ENV:
+            k1, prng = jax.random.split(prng, 2)
+            env = nested_inner(env, k1)
+            for bvr in batched_vrs:
+                k, prng = jax.random.split(prng, 2)
+                env = bvr(env, k)
+            return env
+
+        def composed_full(env: ENV, prng: PRNG) -> ENV:
+            k1, prng = jax.random.split(prng, 2)
+            env = nested_full(env, k1)
+            for bvr in batched_vrs:
+                k, prng = jax.random.split(prng, 2)
+                env = bvr(env, k)
+            return env
+
+        return composed_inner, composed_full
+
+    return [
+        compose(inner, full, batched_val_resetters[: level + 1]) for level, (inner, full) in enumerate(nested_resetters)
+    ]
+
+
+def env_creator[ENV](
+    config: GodConfig,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    learn_interfaces: list[tuple[GodInterface[ENV], GodInterface[ENV]]],
+    is_inits: list[bool],
+) -> Callable[[ENV, PRNG], ENV]:
+    return env_resetters(config, shapes, meta_interfaces, learn_interfaces, is_inits)[-1][1]
+
+
+def make_tick_advancer[ENV](learn_interface: GodInterface[ENV]):
+    def advance(env: ENV) -> ENV:
+        return learn_interface.advance_tick(env)
+
+    return advance
+
+
+def make_reset_checker[ENV](
+    learn_interface: GodInterface[ENV],
+    resetter: Callable[[ENV, PRNG], ENV],
+    reset_t: int | None,
+):
+    def check_reset(env: ENV) -> ENV:
+        if reset_t is None:
+            return env
+        tick = learn_interface.get_tick(env)
+
+        def do_reset(e):
+            prng, e = learn_interface.take_prng(e)
+            return resetter(e, prng)
+
+        def no_reset(e):
+            return e
+
+        return filter_cond(tick % reset_t == 0, do_reset, no_reset, env)
+
+    return check_reset
+
+
+def create_transition_fns[ENV](
+    config: GodConfig,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    val_learn_interfaces: list[GodInterface[ENV]],
+    transitions: list[Callable[[ENV, tuple[jax.Array, jax.Array]], ENV]],
+) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, STAT]]]:
+
+    def make_composed(check, advance, transition):
+        def composed(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, STAT]:
+            env = check(env)
+            env = advance(env)
+            return transition(env, data), {}
+
+        return composed
+
+    resetters = env_validation_resetters(config, shapes, meta_interfaces, val_learn_interfaces)
+
+    return [
+        make_composed(
+            make_reset_checker(val_interface, resetter, meta_config.validation.reset_t),
+            make_tick_advancer(val_interface),
+            transition,
+        )
+        for val_interface, resetter, meta_config, transition in zip(
+            val_learn_interfaces, resetters, config.levels, transitions
+        )
+    ]
+
+
+def create_inference_axes[ENV](
+    env: ENV,
+    config: GodConfig,
+    meta_interface: dict[str, GodInterface[ENV]],
+    shape: tuple[tuple[int, ...], tuple[int, ...]],
+    meta_config: MetaConfig,
+) -> ENV:
+    node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+    f = lambda e, k: create_inference_state(
+        config.nodes, meta_interface, node_features, meta_config.validation.track_influence_in, False, e, k
+    )
+    return diff_axes(env, f(env, jax.random.key(0)))

@@ -3,13 +3,17 @@ import h5py
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Protocol
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from itertools import accumulate
+from operator import mul
 import threading
 import queue
-from dataclasses import dataclass
-import jax.numpy as jnp
+import itertools
+import math
+import re
+import jax
 
 
 class Logger(Protocol):
@@ -118,7 +122,7 @@ class MatplotlibLogger:
             ax.set_title(f"{data['title']} - {series}")
             ax.grid(True, alpha=0.3)
 
-            save_path = self.save_dir / f"{series}.png"
+            save_path = self.save_dir / f"{series.replace('/', '_')}.png"
             fig.savefig(save_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
 
@@ -139,278 +143,171 @@ class MultiLogger:
             logger.log_scalar(context, title, series, value, iteration, max_count)
 
 
-@dataclass
-class LogJob:
-    """Represents a single log_scalar job to be processed"""
-
-    title: str
-    series: str
-    value: float
-    iteration: int
-    max_count: int
+def infer_level(key: str) -> int:
+    """Extract level number from stat key, e.g. 'train/level0/loss' -> 0."""
+    match = re.search(r"level(\d+)", key)
+    if match is None:
+        raise ValueError(f"Could not find 'levelN' in key: {key}")
+    return int(match.group(1))
 
 
-class ThreadedLogger:
-    """Wrapper logger that processes log_scalar calls asynchronously in a background thread"""
+def compute_strides(shape: tuple[int, ...]) -> list[int]:
+    strides = list(accumulate(reversed(shape), mul, initial=1))
+    return list(reversed(strides[:-1]))
 
-    def __init__(self, logger: Logger):
+
+class ScalarLogger:
+    """Logs dict[str, jax.Array] stats.
+
+    Each stat has shape (..., time) where dims before time are a mix of
+    scan and batch dims. Scan dims advance the shared iteration counter.
+    Batch dims become separate named series.
+    """
+
+    def __init__(self, logger: Logger, num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str):
         self.logger = logger
-        self.job_queue = queue.Queue()  # Unbounded queue
+        self.num_levels = num_levels
+        self.total_iterations = total_iterations
+        self.checkpoint_every = checkpoint_every
+        self.log_title = log_title
+        self.counters: dict[str, int] = {}
+        self.global_step = 0
+
+    def log(self, stats: dict[str, jax.Array]):
+        # ref_shape from deepest level's scan dims (exclude time)
+        max_ndim = max(v.ndim for v in stats.values())
+        for k, v in stats.items():
+            if v.ndim == max_ndim:
+                ref_level = infer_level(k)
+                n_ref_pairs = self.num_levels - ref_level
+                ref_shape = tuple(v.shape[i] for i in range(0, 2 * n_ref_pairs, 2))
+                break
+
+        strides = compute_strides(ref_shape)
+        context = self.logger.get_context()
+
+        for idx in itertools.product(*(range(d) for d in ref_shape)):
+            local_step = sum(i * st for i, st in zip(idx, strides))
+            iteration = self.global_step + local_step + 1
+
+            if iteration % self.checkpoint_every != 0:
+                continue
+
+            for key, value in stats.items():
+                level = infer_level(key)
+                n_scan_vmap_pairs = self.num_levels - level
+                n_paired_dims = 2 * n_scan_vmap_pairs
+                expected_with_time = n_paired_dims + level + 1
+                has_time = value.ndim >= expected_with_time
+
+                if has_time:
+                    n_before_time = value.ndim - 1
+                else:
+                    n_before_time = value.ndim
+
+                actual_paired = min(n_paired_dims, n_before_time)
+                actual_paired = actual_paired - (actual_paired % 2)
+
+                batch_axes = list(range(1, actual_paired, 2)) + list(range(actual_paired, n_before_time))
+
+                n_scan = actual_paired // 2
+                scan_idx = idx[:n_scan]
+                extra_idx = idx[n_scan:]
+
+                if any(i != 0 for i in extra_idx):
+                    continue
+
+                batch_shape = tuple(value.shape[ax] for ax in batch_axes)
+                for batch_idx in itertools.product(*(range(d) for d in batch_shape)):
+                    suffix = "/".join(str(i) for i in batch_idx)
+                    series = f"{key}/{suffix}" if suffix else key
+
+                    full_idx = [None] * n_before_time
+                    scan_pos = 0
+                    batch_pos = 0
+                    for ax in range(n_before_time):
+                        if ax < actual_paired and ax % 2 == 0:
+                            full_idx[ax] = scan_idx[scan_pos]
+                            scan_pos += 1
+                        else:
+                            full_idx[ax] = batch_idx[batch_pos]
+                            batch_pos += 1
+
+                    if has_time:
+                        time_slice = np.asarray(value[tuple(full_idx)], dtype=np.float64)
+                        mean_v = float(np.nanmean(time_slice))
+                        if not np.isnan(mean_v):
+                            self.logger.log_scalar(
+                                context, series, self.log_title, mean_v, iteration, self.total_iterations
+                            )
+                    else:
+                        v = float(value[tuple(full_idx)])
+                        if not np.isnan(v):
+                            self.logger.log_scalar(context, series, self.log_title, v, iteration, self.total_iterations)
+
+        self.global_step += math.prod(ref_shape)
+        self.logger.close_context(context)
+
+
+class ThreadedScalarLogger:
+    """Async wrapper that processes log calls in a background thread."""
+
+    def __init__(
+        self,
+        logger: Logger,
+        loggers: list[Logger],
+        num_levels: int,
+        total_iterations: int,
+        checkpoint_every: int,
+        log_title: str,
+    ):
+        self.scalar_logger = ScalarLogger(logger, num_levels, total_iterations, checkpoint_every, log_title)
+        self.loggers = loggers
+        self.job_queue = queue.Queue()
         self.stop_event = threading.Event()
-        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
-        self.context = None
-        self.worker_thread.start()
+        self.worker = threading.Thread(target=self._process, daemon=True)
+        self.worker.start()
 
-    def _worker(self):
-        """Background worker that processes jobs from the queue"""
-        # Get context once for the worker thread
-        self.context = self.logger.get_context()
-
+    def _process(self):
         while not self.stop_event.is_set():
             try:
-                # Get job with timeout to allow periodic checking of stop_event
-                job = self.job_queue.get(timeout=0.001)
-
-                # Process the job
-                self.logger.log_scalar(self.context, job.title, job.series, job.value, job.iteration, job.max_count)
-
-                # Mark job as done
+                stats = self.job_queue.get(timeout=0.1)
+                if stats is None:
+                    self.job_queue.task_done()
+                    break
+                self.scalar_logger.log(stats)
                 self.job_queue.task_done()
-
             except queue.Empty:
                 continue
-            except Exception as e:
-                print(f"Error in ThreadedLogger worker: {e}")
 
-    def get_context(self):
-        """Return None as context is managed internally by the worker thread"""
-        return None
-
-    def close_context(self, context):
-        """No external context to close"""
-        pass
-
-    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
-        """Queue a log_scalar job to be processed asynchronously"""
-        job = LogJob(title, series, value, iteration, max_count)
-        self.job_queue.put(job)
+    def log(self, stats: dict[str, jax.Array]):
+        if self.stop_event.is_set():
+            return
+        self.job_queue.put(stats)
 
     def flush(self):
-        """Wait for all queued jobs to be processed"""
         self.job_queue.join()
 
     def shutdown(self):
-        """Gracefully shutdown the worker thread"""
-        # First flush all pending jobs
-        self.flush()
-
-        # Signal worker to stop
         self.stop_event.set()
-
-        # Wait for worker thread to finish
-        self.worker_thread.join(timeout=5.0)
-
-        # Close the logger context if it exists
-        if self.context is not None:
-            self.logger.close_context(self.context)
+        # Drain the queue so .join() doesn't block forever
+        while not self.job_queue.empty():
+            try:
+                self.job_queue.get_nowait()
+                self.job_queue.task_done()
+            except queue.Empty:
+                break
+        self.job_queue.put(None)  # sentinel to unblock get()
+        self.worker.join(timeout=5.0)
 
     def __del__(self):
-        """Ensure cleanup on deletion"""
         if hasattr(self, "stop_event") and not self.stop_event.is_set():
             self.shutdown()
 
 
-@dataclass
-class IterationData:
-    """Bundle all data needed for logging an iteration"""
-
-    k: int
-    tr_loss: Any
-    tr_acc: Any
-    lrs1: Any
-    lrs2: Any
-    wds1: Any
-    wds2: Any
-    tr_grs: Any
-    vl_loss: Any
-    vl_acc: Any
-    meta_grs: Any
-    hT: Any
-    aT: Any  # Remove aT_buffer from here!
-    te_loss: Any
-    te_acc: Any
-    config: Any
-    total_tr_vb: int
-
-
-class SequentialLoggingThread:
-    """Processes logging iterations sequentially in a background thread"""
-
-    def __init__(self, logger, window_size=100):
-        self.logger = logger
-        self.queue = queue.Queue()
-        self.window_size = window_size
-        self.aT_buffer = []
-        self.worker = threading.Thread(target=self._process_iterations, daemon=False)
-        self.worker.start()
-
-    def _process_iterations(self):
-        """Process iterations in order"""
-        while True:
-            data = self.queue.get()  # Block indefinitely
-            if data is None:  # Shutdown signal
-                break
-
-            self._log_iteration(data)
-            self.queue.task_done()
-
-    def _log_iteration(self, data: IterationData):
-        """Your nested loop logic"""
-        context = self.logger.get_context()
-
-        def corr_per_example_dot(a_prev, a_curr, eps=1e-8):
-            dot = jnp.sum(a_prev * a_curr, axis=1)
-            norm_prev = jnp.linalg.norm(a_prev, axis=1)
-            norm_curr = jnp.linalg.norm(a_curr, axis=1)
-            corr_per_ex = dot / (norm_prev * norm_curr + eps)
-            return jnp.mean(corr_per_ex)
-
-        for i in range(data.tr_loss.shape[0]):
-            for j in range(data.tr_loss.shape[1]):
-                iteration = data.k * data.tr_loss.shape[0] * data.tr_loss.shape[1] + i * data.tr_loss.shape[1] + j + 1
-                if iteration % data.config.checkpoint_every_n_minibatches == 0:
-                    self.logger.log_scalar(
-                        context,
-                        "train/loss",
-                        "train_loss",
-                        data.tr_loss[i, j],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "train/accuracy",
-                        "train_accuracy",
-                        data.tr_acc[i, j],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "train/recurrent_learning_rate",
-                        "train_recurrent_learning_rate",
-                        data.lrs1[i, j][0],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "train/readout_learning_rate",
-                        "train_readout_learning_rate",
-                        data.lrs2[i, j][0],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "train/recurrent_weight_decay",
-                        "train_recurrent_weight_decay",
-                        data.wds1[i, j][0],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "train/readout_weight_decay",
-                        "train_readout_weight_decay",
-                        data.wds2[i, j][0],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "train/gradient_norm",
-                        "train_gradient_norm",
-                        jnp.linalg.norm(data.tr_grs[i, j]),
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "validation/loss",
-                        "validation_loss",
-                        data.vl_loss[i, j],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "validation/accuracy",
-                        "validation_accuracy",
-                        data.vl_acc[i, j],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "meta/gradient_norm",
-                        "meta_gradient_norm",
-                        jnp.linalg.norm(data.meta_grs[i, j]),
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-                    self.logger.log_scalar(
-                        context,
-                        "train/final_rnn_activation_norm",
-                        "train_final_rnn_activation_norm",
-                        data.hT[i, j],
-                        iteration,
-                        data.total_tr_vb * data.config.num_base_epochs,
-                    )
-
-                    aT_curr = data.aT[i, j]
-
-                    # Use self.aT_buffer, not data.aT_buffer!
-                    self.aT_buffer.append(aT_curr)
-                    if len(self.aT_buffer) > self.window_size:
-                        self.aT_buffer.pop(0)
-
-                    if len(self.aT_buffer) > 1:
-                        corrs = [corr_per_example_dot(prev, aT_curr) for prev in self.aT_buffer[:-1]]
-                        at_corr = jnp.mean(jnp.array(corrs))
-                        self.logger.log_scalar(
-                            context,
-                            "train/aT_correlation_window",
-                            "train_aT_correlation_window",
-                            at_corr,
-                            iteration,
-                            data.total_tr_vb * data.config.num_base_epochs,
-                        )
-
-            self.logger.log_scalar(
-                context,
-                "test/loss",
-                "test_loss",
-                data.te_loss[i],
-                iteration,
-                data.total_tr_vb * data.config.num_base_epochs,
-            )
-            self.logger.log_scalar(
-                context,
-                "test/accuracy",
-                "test_accuracy",
-                data.te_acc[i],
-                iteration,
-                data.total_tr_vb * data.config.num_base_epochs,
-            )
-
-        self.logger.close_context(context)
-
-    def add_iteration(self, data: IterationData):
-        """Queue an iteration for logging"""
-        self.queue.put(data)
-
-    def shutdown(self):
-        """Wait for all iterations and shutdown"""
-        self.queue.put(None)  # Signal shutdown
-        self.worker.join()
+def create_logger(
+    loggers: list[Logger], num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str
+) -> ThreadedScalarLogger:
+    """Construct a ThreadedScalarLogger from a list of loggers."""
+    logger = MultiLogger(loggers)
+    return ThreadedScalarLogger(logger, loggers, num_levels, total_iterations, checkpoint_every, log_title)

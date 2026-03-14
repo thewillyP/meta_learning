@@ -1,16 +1,60 @@
+import itertools
 import jax
 import jax.numpy as jnp
-from typing import Callable, Iterator
+from typing import Iterator
 from torch.utils.data import Dataset, DataLoader, IterableDataset, random_split
 import torch
 import torchvision
-from toolz import mapcat
+from toolz import mapcat, concat
 import math
 import numpy as np
+from torchvision.transforms.transforms import Lambda
+from PIL import Image
 
 from meta_learn_lib.config import *
-from meta_learn_lib.lib_types import PRNG, FractionalList
-from meta_learn_lib.util import infinite_keys, reshape_timeseries, subset_n
+from meta_learn_lib.constants import *
+from meta_learn_lib.lib_types import PRNG
+from meta_learn_lib.util import infinite_keys
+
+
+class SpuriousMNISTDataset(Dataset):
+    def __init__(self, dataset: Dataset, k: int = 1):
+        self.dataset = dataset
+        self.k = k
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, idx: int) -> tuple:
+        image, label = self.dataset[idx]
+        image = np.array(image)
+        pixel_location = (label * 10) % image.shape[0]
+        h_end = min(pixel_location + self.k, image.shape[0])
+        w_end = min(pixel_location + self.k, image.shape[1])
+        image[pixel_location:h_end, pixel_location:w_end] = 255
+        return Image.fromarray(image), label
+
+
+class TransformedDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset: torch.utils.data.Dataset, transform: Lambda, target_transform: Lambda):
+        self.dataset = dataset
+        self.transform = transform
+        self.target_transform = target_transform
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, idx: int) -> tuple:
+        x, y = self.dataset[idx]
+        return self.transform(x), self.target_transform(y)
+
+
+class IteratorDataset(IterableDataset):
+    def __init__(self, iterator: Iterator):
+        self.iterator = iterator
+
+    def __iter__(self):
+        return self.iterator
 
 
 class PyTreeDataset(Dataset):
@@ -28,384 +72,24 @@ class PyTreeDataset(Dataset):
         return jax.tree.map(lambda x: x[idx], self.data)
 
 
-def create_dataloader(config: GodConfig, percentages: FractionalList, prng: PRNG, test_prng: PRNG):
-    dataloader_prng, dataset_gen_prng = jax.random.split(prng, 2)
-
-    def make_dataloader_fn(X, Y, batch_size):
-        def get_dataloader(rng: PRNG):
-            return standard_dataloader(X, Y, X.shape[0], batch_size, rng)
-
-        return get_dataloader
-
-    # trying to get it into consistent shape: [num virtual minibatches, batch, time series, features...] for all datasets
-    match config.dataset:
-        case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
-            data_size = dict(zip(config.data.keys(), subset_n(n, percentages)))
-            dataset_te = generate_add_task_dataset(nTest, t1, t2, tau_task, test_prng)
-            # Convert test dataset to same format as training datasets
-            X_te, _ = reshape_timeseries(dataset_te[0], dataset_te[0].shape[1])
-            Y_te, _ = reshape_timeseries(dataset_te[1], dataset_te[1].shape[1])
-
-            n_in_shape = dataset_te[0].shape[2:]
-
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
-            virtual_minibatches: dict[int, int] = {}
-            last_unpadded_lengths: dict[int, int] = {}
-            total_tr_vb: int = 0
-            for idx, (i, data_config) in enumerate(sorted(config.data.items())):
-                data_prng, dataset_gen_prng = jax.random.split(dataset_gen_prng, 2)
-                X_vl, Y_vl = generate_add_task_dataset(data_size[i], t1, t2, tau_task, data_prng)
-                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
-                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
-                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[idx] = X_vl.shape[1]
-                last_unpadded_lengths[idx] = last_unpadded_length
-
-                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, 1)
-
-                if idx == 0:
-                    total_tr_vb = virtual_minibatches[0] * math.ceil(X_vl.shape[0] / 1)
-                # 1. check when to reset after consume concrete example
-                # 2. check when is last padded minibatch
-
-            # Add test dataset info
-            virtual_minibatches[len(datasets)] = 1
-            last_unpadded_lengths[len(datasets)] = 0
-            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, 1)
-
-        case MnistConfig(n_in, add_spurious_pixel_to_train) | FashionMnistConfig(n_in, add_spurious_pixel_to_train):
-            n_in_shape = (n_in,)
-
-            match config.dataset:
-                case MnistConfig():
-                    dataset_factory = torchvision.datasets.MNIST
-                case FashionMnistConfig():
-                    dataset_factory = torchvision.datasets.FashionMNIST
-
-            transform = torchvision.transforms.Lambda(lambda x: torch.tensor(np.array(x), dtype=torch.float32))
-
-            dataset = dataset_factory(
-                root=f"{config.data_root_dir}/data",
-                train=True,
-                download=True,
-                transform=transform,
-            )
-            dataset_te = dataset_factory(
-                root=f"{config.data_root_dir}/data",
-                train=False,
-                download=True,
-                transform=transform,
-            )
-
-            generator1 = torch.Generator().manual_seed(
-                jax.random.randint(dataset_gen_prng, shape=(), minval=0, maxval=2**31 - 1).item()
-            )
-            torch_datasets = random_split(dataset, subset_n(len(dataset), percentages), generator=generator1)
-            if add_spurious_pixel_to_train:
-                torch_datasets[0] = SpuriousMNISTDataset(torch_datasets[0])
-
-            xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(dataset_te.data.numpy(), n_in, True)
-            ys_te = jax.vmap(target_transform, in_axes=(0, None))(dataset_te.targets.numpy(), xs_te.shape[1])
-
-            # Convert test dataset to same format as training datasets
-            X_te, _ = reshape_timeseries(xs_te, xs_te.shape[1])
-            Y_te, _ = reshape_timeseries(ys_te, ys_te.shape[1])
-
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
-            virtual_minibatches: dict[int, int] = {}
-            last_unpadded_lengths: dict[int, int] = {}
-            total_tr_vb: int = 0
-            for idx, ((i, data_config), torch_ds) in enumerate(zip(sorted(config.data.items()), torch_datasets)):
-                subset_data = torch.stack([torch_ds[i][0] for i in range(len(torch_ds))])
-                subset_targets = torch.tensor([torch_ds[i][1] for i in range(len(torch_ds))])
-
-                X_vl = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(subset_data.numpy(), n_in, True)
-                Y_vl = jax.vmap(target_transform, in_axes=(0, None))(subset_targets.numpy(), X_vl.shape[1])
-
-                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
-                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
-                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[idx] = X_vl.shape[1]
-                last_unpadded_lengths[idx] = last_unpadded_length
-
-                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, data_config.num_examples_in_minibatch)
-
-                if idx == 0:
-                    total_tr_vb = virtual_minibatches[0] * math.ceil(
-                        X_vl.shape[0] / data_config.num_examples_in_minibatch
-                    )
-
-            # Add test dataset info
-            virtual_minibatches[len(datasets)] = 1
-            last_unpadded_lengths[len(datasets)] = 0
-            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.data[0].num_examples_in_minibatch)
-
-        case CIFAR10Config(n_in):
-            n_in_shape = (n_in,)
-
-            transform_train = torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.RandomCrop(32, padding=4),
-                    torchvision.transforms.RandomHorizontalFlip(),
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-                ]
-            )
-
-            transform_test = torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-                ]
-            )
-
-            dataset = torchvision.datasets.CIFAR10(
-                root=f"{config.data_root_dir}/data", train=True, download=True, transform=transform_train
-            )
-            dataset_te = torchvision.datasets.CIFAR10(
-                root=f"{config.data_root_dir}/data", train=False, download=True, transform=transform_test
-            )
-
-            # Collect transformed training data into numpy array
-            xs_list = []
-            ys_list = []
-            for img_tensor, label in dataset:
-                # img_tensor is (3, 32, 32) after transforms
-                xs_list.append(img_tensor.numpy())
-                ys_list.append(label)
-
-            xs_te_list = []
-            ys_te_list = []
-            for img_tensor, label in dataset_te:
-                xs_te_list.append(img_tensor.numpy())
-                ys_te_list.append(label)
-
-            transformed_data = np.array(xs_list)  # (50000, 3, 32, 32)
-            transformed_targets = np.array(ys_list)  # (50000,)
-            transformed_data_te = np.array(xs_te_list)
-            transformed_targets_te = np.array(ys_te_list)
-
-            xs = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(transformed_data, n_in, False)
-            ys = jax.vmap(target_transform, in_axes=(0, None))(transformed_targets, xs.shape[1])
-            xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(transformed_data_te, n_in, False)
-            ys_te = jax.vmap(target_transform, in_axes=(0, None))(transformed_targets_te, xs_te.shape[1])
-
-            # Convert test dataset to same format as training datasets
-            X_te, _ = reshape_timeseries(xs_te, xs_te.shape[1])
-            Y_te, _ = reshape_timeseries(ys_te, ys_te.shape[1])
-
-            perm = jax.random.permutation(dataset_gen_prng, len(xs))
-            split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
-            val_indices = jnp.split(perm, split_indices)
-
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
-            virtual_minibatches: dict[int, int] = {}
-            last_unpadded_lengths: dict[int, int] = {}
-            total_tr_vb: int = 0
-            for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
-                X_vl = xs[val_idx]
-                Y_vl = ys[val_idx]
-                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
-                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
-                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[idx] = X_vl.shape[1]
-                last_unpadded_lengths[idx] = last_unpadded_length
-
-                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, data_config.num_examples_in_minibatch)
-
-                if idx == 0:
-                    total_tr_vb = virtual_minibatches[0] * math.ceil(
-                        X_vl.shape[0] / data_config.num_examples_in_minibatch
-                    )
-
-            # Add test dataset info
-            virtual_minibatches[len(datasets)] = 1
-            last_unpadded_lengths[len(datasets)] = 0
-            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.data[0].num_examples_in_minibatch)
-
-        case CIFAR100Config(n_in):
-            n_in_shape = (n_in,)
-
-            transform_train = torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.RandomCrop(32, padding=4),
-                    torchvision.transforms.RandomHorizontalFlip(),
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-                ]
-            )
-
-            transform_test = torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-                ]
-            )
-
-            dataset = torchvision.datasets.CIFAR100(
-                root=f"{config.data_root_dir}/data", train=True, download=True, transform=transform_train
-            )
-            dataset_te = torchvision.datasets.CIFAR100(
-                root=f"{config.data_root_dir}/data", train=False, download=True, transform=transform_test
-            )
-
-            # Collect transformed training data into numpy array
-            xs_list = []
-            ys_list = []
-            for img_tensor, label in dataset:
-                # img_tensor is (3, 32, 32) after transforms
-                xs_list.append(img_tensor.numpy())
-                ys_list.append(label)
-
-            xs_te_list = []
-            ys_te_list = []
-            for img_tensor, label in dataset_te:
-                xs_te_list.append(img_tensor.numpy())
-                ys_te_list.append(label)
-
-            transformed_data = np.array(xs_list)  # (50000, 3, 32, 32)
-            transformed_targets = np.array(ys_list)  # (50000,)
-            transformed_data_te = np.array(xs_te_list)
-            transformed_targets_te = np.array(ys_te_list)
-
-            xs = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(transformed_data, n_in, False)
-            ys = jax.vmap(target_transform, in_axes=(0, None))(transformed_targets, xs.shape[1])
-            xs_te = jax.vmap(flatten_and_cast, in_axes=(0, None, None))(transformed_data_te, n_in, False)
-            ys_te = jax.vmap(target_transform, in_axes=(0, None))(transformed_targets_te, xs_te.shape[1])
-
-            # Convert test dataset to same format as training datasets
-            X_te, _ = reshape_timeseries(xs_te, xs_te.shape[1])
-            Y_te, _ = reshape_timeseries(ys_te, ys_te.shape[1])
-
-            perm = jax.random.permutation(dataset_gen_prng, len(xs))
-            split_indices = jnp.cumsum(jnp.array(subset_n(len(xs), percentages)))[:-1]
-            val_indices = jnp.split(perm, split_indices)
-
-            datasets: dict[int, Callable[[PRNG], Iterator[tuple[jax.Array, jax.Array, jax.Array]]]] = {}
-            virtual_minibatches: dict[int, int] = {}
-            last_unpadded_lengths: dict[int, int] = {}
-            total_tr_vb: int = 0
-            for idx, ((i, data_config), val_idx) in enumerate(zip(sorted(config.data.items()), val_indices)):
-                X_vl = xs[val_idx]
-                Y_vl = ys[val_idx]
-                n_consume = data_config.num_steps_in_timeseries * data_config.num_times_to_avg_in_timeseries
-                X_vl, last_unpadded_length = reshape_timeseries(X_vl, n_consume)
-                Y_vl, _ = reshape_timeseries(Y_vl, n_consume)
-                virtual_minibatches[idx] = X_vl.shape[1]
-                last_unpadded_lengths[idx] = last_unpadded_length
-
-                datasets[idx] = make_dataloader_fn(X_vl, Y_vl, data_config.num_examples_in_minibatch)
-
-                if idx == 0:
-                    total_tr_vb = virtual_minibatches[0] * math.ceil(
-                        X_vl.shape[0] / data_config.num_examples_in_minibatch
-                    )
-
-            # Add test dataset info
-            virtual_minibatches[len(datasets)] = 1
-            last_unpadded_lengths[len(datasets)] = 0
-            datasets[len(datasets)] = make_dataloader_fn(X_te, Y_te, config.data[0].num_examples_in_minibatch)
-
-    subkeys = jax.random.split(dataloader_prng, len(datasets))
-    loaders = [mapcat(datasets[i], infinite_keys(subkeys[i])) for i in range(len(datasets))]
-
-    # create hierarchical dataloader for meta learning
-    virtual_minibatches_per_turn = [l.num_virtual_minibatches_per_turn for l in config.learners.values()]
-    train_loader = loaders[0]
-    for num_vb, vl_loader in zip(virtual_minibatches_per_turn, loaders[1:]):
-        train_loader = create_multi_epoch_dataloader(zip(train_loader, vl_loader), num_vb)
-
-    test_loader = datasets[len(datasets) - 1](subkeys[-1])
-    return train_loader, test_loader, virtual_minibatches, n_in_shape, last_unpadded_lengths, total_tr_vb
-
-
-class IteratorWrapper[T](IterableDataset[T]):
-    def __init__(self, iterator: Iterator[T]):
-        self.iterator = iterator
-
-    def __iter__(self):
-        for item in self.iterator:
-            yield item
-
-
-def create_multi_epoch_dataloader[T](iter: Iterator[T], num_minibatches_in_epoch: int) -> DataLoader[T]:
-    """Returns a PyTorch DataLoader that sequentially loads virtual minibatches for specific examples"""
-    dataset = IteratorWrapper[T](iter)
-    return DataLoader(dataset, batch_size=num_minibatches_in_epoch, collate_fn=jax_collate_fn)
-
-
-class VirtualMinibatchDataset(Dataset[tuple[jax.Array, jax.Array, jax.Array, jax.Array]]):
-    def __init__(self, X_data: jax.Array, Y_data: jax.Array, example_indices, batch_mask: jax.Array):
-        self.X_selected = X_data[example_indices]  # (batch_size, num_virtual_minibatches, ...)
-        self.Y_selected = Y_data[example_indices]  # (batch_size, num_virtual_minibatches, ...)
-        self.batch_mask = batch_mask  # (batch_size,)
-        self.num_virtual_batches = self.X_selected.shape[1]
-
-        # Create sequence numbers: replicated across batch, incremental across sequence
-        batch_size = self.X_selected.shape[0]
-        self.n_consume = jnp.broadcast_to(jnp.arange(self.X_selected.shape[2]), (batch_size, self.X_selected.shape[2]))
-
-    def __len__(self):
-        return self.num_virtual_batches
-
-    def __getitem__(self, idx):
-        X = self.X_selected[:, idx].swapaxes(0, 1)
-        Y = self.Y_selected[:, idx].swapaxes(0, 1)
-        sequence_nums = self.n_consume.swapaxes(0, 1)
-        mask = self.batch_mask
-        return X, Y, sequence_nums, mask
-
-
-def create_example_indices_generator(num_examples: int, batch_size: int, rng_key: PRNG):
-    """Generator that yields random batches of example indices with padding and masks"""
-    indices = jnp.arange(num_examples)
-    rng_key, subkey = jax.random.split(rng_key)
-    shuffled_indices = jax.random.permutation(subkey, indices)
-
-    for start_idx in range(0, num_examples, batch_size):
-        end_idx = min(start_idx + batch_size, num_examples)
-        batch_indices = shuffled_indices[start_idx:end_idx]
-        actual_batch_size = len(batch_indices)
-        padding_size = batch_size - actual_batch_size
-
-        padded_indices = jnp.concatenate([batch_indices, jnp.repeat(batch_indices[-1], padding_size)])
-
-        batch_mask = jnp.concatenate([jnp.ones(actual_batch_size, dtype=bool), jnp.zeros(padding_size, dtype=bool)])
-
-        yield padded_indices, batch_mask
+def get_seq_len(task: Task, is_test: bool) -> int:
+    match task:
+        case MNISTTaskFamily(ph, pw, _, _, _, _):
+            return (MNIST_HEIGHT // ph) * (MNIST_WIDTH // pw)
+        case CIFAR10TaskFamily(ph, pw, _):
+            return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
+        case CIFAR100TaskFamily(ph, pw, _):
+            return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
+        case DelayAddTaskFamily(_, _, _, _, _, _, t_train, _, t_test, _):
+            return t_test if is_test else t_train
+
+
+def numpy_collate_fn(batch):
+    return jax.tree.map(lambda x: np.asarray(x), batch)
 
 
 def jax_collate_fn(batch):
-    return jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
-
-
-def jax_squeeze_batch(batch):
-    return jax.tree.map(lambda x: jnp.squeeze(x, axis=0) if x.shape[0] == 1 else x, batch)
-
-
-def create_sequential_virtual_dataloader(
-    X_data: jax.Array, Y_data: jax.Array, example_indices, batch_mask: jax.Array
-) -> DataLoader[tuple[jax.Array, jax.Array, jax.Array]]:
-    """Returns a PyTorch DataLoader that sequentially loads virtual minibatches for specific examples"""
-    dataset = VirtualMinibatchDataset(X_data, Y_data, example_indices, batch_mask)
-    return DataLoader(
-        dataset,
-        batch_size=1,
-        shuffle=False,
-        collate_fn=lambda b: jax_squeeze_batch(jax_collate_fn(b)),
-    )
-
-
-def standard_dataloader(
-    X_data: jax.Array,
-    Y_data: jax.Array,
-    num_examples: int,
-    batch_size: int,
-    rng_key: PRNG,
-) -> Iterator[tuple[jax.Array, jax.Array, jax.Array]]:
-    for indices, batch_mask in create_example_indices_generator(num_examples, batch_size, rng_key):
-        for batch in create_sequential_virtual_dataloader(X_data, Y_data, indices, batch_mask):
-            yield batch
+    return jax.tree.map(lambda *xs: jnp.asarray(np.stack(xs)), *batch)
 
 
 def generate_add_task_dataset(N: int, t_1: int, t_2: int, tau_task: int, rng_key: PRNG):
@@ -420,50 +104,461 @@ def generate_add_task_dataset(N: int, t_1: int, t_2: int, tau_task: int, rng_key
     Y = jnp.asarray([y, 1 - y]).T
 
     # Temporally stretch according to the desire timescale of change.
-    X = jnp.tile(X, tau_task).reshape((1, tau_task * N, 2))  # outer=1 bc only 1 example
-    Y = jnp.tile(Y, tau_task).reshape((1, tau_task * N, 2))
+    X = jnp.tile(X, tau_task).reshape(tau_task * N, 2)
+    Y = jnp.tile(Y, tau_task).reshape(tau_task * N, 2)
 
     return X, Y
 
 
-# Transforms
-def flatten_and_cast(pic, x_pixels, normalize: bool):
-    """Convert image to flat (y, x_pixels) JAX array."""
-    arr = jnp.array(pic, dtype=jnp.float32)
-    arr = arr / 255.0 if normalize else arr
-    flat = arr.ravel()  # flatten in scanline order (row-major)
-    total_pixels = flat.shape[0]
+def make_timeseries_transforms(n_consume: int, ignore_value: float) -> Lambda:
+    def reshape_to_timeseries(arr: np.ndarray, pad_value: float) -> np.ndarray:
+        length: int = arr.shape[0]
+        num_vb = math.ceil(length / n_consume)
+        pad_length = (-length) % num_vb
+        new_time_dim = (length + pad_length) // num_vb
+        if pad_length > 0:
+            pad_width = [(0, pad_length)] + [(0, 0)] * (arr.ndim - 1)
+            arr = np.pad(arr, pad_width, constant_values=pad_value)
+        return arr.reshape(num_vb, new_time_dim, *arr.shape[1:])
 
-    if total_pixels % x_pixels != 0:
-        raise ValueError(f"Cannot reshape array of size {total_pixels} into shape (-1, {x_pixels}).")
-
-    return flat.reshape(-1, x_pixels)
-
-
-def target_transform(label, sequence_length):
-    """Convert scalar label to (784, 2) JAX array: [class_label, sequence_number]."""
-    labels = jnp.zeros((sequence_length, 2), dtype=jnp.int32)
-    labels = labels.at[:, 0].set(label)  # Repeat class label
-    labels = labels.at[:, 1].set(jnp.arange(sequence_length))  # Sequence numbers
-    return labels
+    transform = torchvision.transforms.Lambda(lambda x: reshape_to_timeseries(x, ignore_value))
+    return transform
 
 
-def add_spurious_features(image, label, k):
-    correlated_image = image.clone()
-    pixel_location = (label * 10) % 28
-    correlated_image[pixel_location : pixel_location + k, pixel_location : pixel_location + k] = 255.0
-    return correlated_image
+def take_datasets(
+    seed: PRNG,
+    remaining: list[Dataset],
+    n: int,
+    n_consume: int,
+    x_mask: float,
+    y_mask: float,
+) -> tuple[list[Dataset], list[Dataset]]:
+    x_transform = make_timeseries_transforms(n_consume, x_mask)
+    y_transform = make_timeseries_transforms(n_consume, y_mask)
+    keys = jax.random.split(seed, len(remaining))
+
+    def make_dataset(idx: int, key: PRNG) -> tuple[Dataset, Dataset]:
+        generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
+        take_n = min(n, len(remaining[idx]))
+        if take_n == 0:
+            raise ValueError(
+                f"Task {idx}: no examples remaining (requested {n}, available {len(remaining[idx])}). "
+                f"Earlier levels likely consumed all data from this source."
+            )
+        taken, leftover = random_split(remaining[idx], [take_n, len(remaining[idx]) - take_n], generator=generator)
+        taken = TransformedDataset(taken, x_transform, y_transform)
+        xs, ys = jax_collate_fn(numpy_collate_fn([taken[i] for i in range(len(taken))]))
+        return PyTreeDataset((xs, ys)), leftover
+
+    datasets_out, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
+    return list(datasets_out), list(new_remaining)
 
 
-class SpuriousMNISTDataset(Dataset):
-    def __init__(self, dataset, k=1):
-        self.dataset = dataset
-        self.k = k
+def image_transforms(
+    mean: tuple[float, ...],
+    std: tuple[float, ...],
+    height: int,
+    width: int,
+    channel: int,
+    patch_h: int,
+    patch_w: int,
+    augment: Lambda,
+    y_mask: float,
+    label_last_only: bool,
+) -> tuple[Lambda, Lambda]:
+    if height % patch_h != 0 or width % patch_w != 0:
+        raise ValueError(f"image ({height}, {width}) not divisible by patch ({patch_h}, {patch_w})")
+    seq_len = (height // patch_h) * (width // patch_w)
+    x_transform = torchvision.transforms.Compose(
+        [
+            augment,
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(mean, std),
+            torchvision.transforms.Lambda(
+                lambda x: (
+                    x.reshape(x.shape[0], height // patch_h, patch_h, width // patch_w, patch_w)
+                    .permute(1, 3, 0, 2, 4)
+                    .reshape(seq_len, channel, patch_h, patch_w)
+                )
+            ),
+        ]
+    )
 
-    def __len__(self):
-        return len(self.dataset)
+    def make_targets(y):
+        y_val = torch.tensor(y)
+        fill = y_val if not label_last_only else torch.tensor(y_mask, dtype=y_val.dtype)
+        arr = torch.full((seq_len,), fill)
+        arr[-1] = y_val
+        return arr
 
-    def __getitem__(self, idx):
-        image, label = self.dataset[idx]
-        correlated_image = add_spurious_features(image, label, self.k)
-        return correlated_image, label
+    y_transform = torchvision.transforms.Lambda(make_targets)
+    return x_transform, y_transform
+
+
+def dataset_sources(
+    task: Task,
+    root_dir: str,
+    is_test: bool,
+    y_mask: float,
+    num_tasks: int,
+    seed: PRNG,
+) -> list[Dataset]:
+
+    def split_dataset(ds: Dataset, count: int, key: PRNG) -> list[Dataset]:
+        if count == 0:
+            return []
+        generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
+        sizes = [len(ds) // count] * count
+        sizes[-1] += len(ds) - sum(sizes)
+        return list(random_split(ds, sizes, generator=generator))
+
+    match task:
+        case MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, domain, normalize):
+            domain_list = sorted(domain)
+            seed_assign, seed_split = jax.random.split(seed)
+            assignments = jax.random.randint(seed_assign, shape=(num_tasks,), minval=0, maxval=len(domain_list))
+            split_keys = jax.random.split(seed_split, len(domain_list))
+
+            def make_domain_datasets(d: MNISTTaskFamily.Domain) -> Dataset:
+                match d:
+                    case "mnist":
+                        factory = torchvision.datasets.MNIST
+                        mean, std = (MNIST_MEAN, MNIST_STD) if normalize else ((0.0,), (1.0,))
+                    case "fashion_mnist":
+                        factory = torchvision.datasets.FashionMNIST
+                        mean, std = (FASHION_MNIST_MEAN, FASHION_MNIST_STD) if normalize else ((0.0,), (1.0,))
+
+                ds = factory(
+                    root=f"{root_dir}/data",
+                    train=not is_test,
+                    download=True,
+                )
+
+                if add_spurious_pixel_to_train and not is_test:
+                    ds = SpuriousMNISTDataset(ds)
+
+                x_transform, y_transform = image_transforms(
+                    mean=mean,
+                    std=std,
+                    height=MNIST_HEIGHT,
+                    width=MNIST_WIDTH,
+                    channel=MNIST_CHANNEL,
+                    patch_h=patch_h,
+                    patch_w=patch_w,
+                    augment=torchvision.transforms.Lambda(lambda x: x),
+                    y_mask=y_mask,
+                    label_last_only=label_last_only,
+                )
+
+                return TransformedDataset(ds, x_transform, y_transform)
+
+            counts = [int((assignments == i).sum()) for i in range(len(domain_list))]
+            return [
+                ds
+                for d, c, k in zip(domain_list, counts, split_keys)
+                for ds in split_dataset(make_domain_datasets(d), c, k)
+            ]
+
+        case CIFAR10TaskFamily(patch_h, patch_w, label_last_only) | CIFAR100TaskFamily(
+            patch_h, patch_w, label_last_only
+        ):
+            match task:
+                case CIFAR10TaskFamily():
+                    factory = torchvision.datasets.CIFAR10
+                    mean, std = CIFAR10_MEAN, CIFAR10_STD
+                case CIFAR100TaskFamily():
+                    factory = torchvision.datasets.CIFAR100
+                    mean, std = CIFAR100_MEAN, CIFAR100_STD
+            augment = (
+                torchvision.transforms.Compose(
+                    [
+                        torchvision.transforms.RandomCrop(32, padding=4),
+                        torchvision.transforms.RandomHorizontalFlip(),
+                    ]
+                )
+                if not is_test
+                else torchvision.transforms.Lambda(lambda x: x)
+            )
+            x_transform, y_transform = image_transforms(
+                mean=mean,
+                std=std,
+                height=CIFAR_HEIGHT,
+                width=CIFAR_WIDTH,
+                channel=CIFAR_CHANNEL,
+                patch_h=patch_h,
+                patch_w=patch_w,
+                augment=augment,
+                y_mask=y_mask,
+                label_last_only=label_last_only,
+            )
+            ds = factory(
+                root=f"{root_dir}/data",
+                train=not is_test,
+                download=True,
+                transform=x_transform,
+                target_transform=y_transform,
+            )
+            return split_dataset(ds, num_tasks, seed)
+        case DelayAddTaskFamily(t1_lb, t1_ub, t2_lb, t2_ub, tau_task_lb, tau_task_ub, t_train, n_train, t_test, n_test):
+            keys = jax.random.split(seed, num_tasks)
+            t = t_test if is_test else t_train
+            n = n_test if is_test else n_train
+
+            def make_task(key: PRNG) -> Dataset:
+                k1, k2, k3, k4 = jax.random.split(key, 4)
+                t1 = jax.random.randint(k1, shape=(), minval=t1_lb, maxval=t1_ub + 1).item()
+                t2 = jax.random.randint(k2, shape=(), minval=t2_lb, maxval=t2_ub + 1).item()
+                tau_task = jax.random.randint(k3, shape=(), minval=tau_task_lb, maxval=tau_task_ub + 1).item()
+                example_keys = jax.random.split(k4, n)
+                X, Y = jax.vmap(lambda k: generate_add_task_dataset(t, t1, t2, tau_task, k))(example_keys)
+                return torch.utils.data.TensorDataset(torch.from_numpy(np.array(X)), torch.from_numpy(np.array(Y)))
+
+            return [make_task(k) for k in keys]
+
+
+def materialize_task_epoch(
+    dataset: Dataset,
+    batch: int,
+    x_mask: float,
+    y_mask: float,
+    key: PRNG,
+) -> tuple[jax.Array, jax.Array]:
+    """Pre-build one shuffled epoch of a task's data as a flat array of virtual batches.
+
+    Equivalent to what the old task_iterator did lazily:
+      for X_batch, Y_batch in DataLoader(dataset, batch_size=batch, shuffle=True):
+          # pad last batch if needed
+          for vb in range(num_vb):
+              yield X_batch[:, vb].swapaxes(0, 1)
+
+    Instead, we do the shuffle, pad, reshape, and axis swaps in bulk,
+    producing a single array where indexing along axis 0 gives the same
+    sequence of (time, batch, features...) items.
+
+    Returns (xs, ys) each with shape (num_minibatches * num_vb, time, batch, features...).
+    """
+    xs, ys = dataset.data  # (num_examples, num_vb, time, features...)
+
+    # Shuffle examples — same as DataLoader(shuffle=True)
+    perm = jax.random.permutation(key, xs.shape[0])
+    xs = xs[perm]
+    ys = ys[perm]
+
+    # Pad to multiple of batch — same as the if X_batch.shape[0] < batch block
+    remainder = xs.shape[0] % batch
+    if remainder != 0:
+        pad_size = batch - remainder
+        xs = jnp.concatenate([xs, jnp.full((pad_size, *xs.shape[1:]), x_mask)])
+        ys = jnp.concatenate([ys, jnp.full((pad_size, *ys.shape[1:]), y_mask)])
+
+    num_mb = xs.shape[0] // batch
+
+    # Group into minibatches: (num_mb, batch, num_vb, time, features...)
+    xs = xs.reshape(num_mb, batch, *xs.shape[1:])
+    ys = ys.reshape(num_mb, batch, *ys.shape[1:])
+
+    # Rearrange so the yield order (for mb: for vb: ...) is contiguous along axis 0,
+    # and each slice is (time, batch, features...) matching X_batch[:, vb].swapaxes(0, 1):
+    #   (num_mb, batch, num_vb, time, ...) → (num_mb, num_vb, time, batch, ...)
+    xs = xs.swapaxes(1, 2).swapaxes(2, 3)
+    ys = ys.swapaxes(1, 2).swapaxes(2, 3)
+
+    # Flatten the two iteration dims into one
+    xs = xs.reshape(num_mb * xs.shape[1], *xs.shape[2:])
+    ys = ys.reshape(num_mb * ys.shape[1], *ys.shape[2:])
+
+    return xs, ys
+
+
+def task_iterator(
+    dataset: Dataset,
+    batch: int,
+    x_mask: float,
+    y_mask: float,
+    key: PRNG,
+) -> Iterator[tuple[jax.Array, jax.Array]]:
+    """Yields (x, y) each with shape (time, batch, features...).
+
+    Same output as the old task_iterator but uses pre-materialized array slicing
+    instead of torch DataLoader + per-element jnp operations.
+    """
+    xs, ys = materialize_task_epoch(dataset, batch, x_mask, y_mask, key)
+    for x, y in zip(xs, ys):
+        yield x, y
+
+
+def batch_iterator(iters, batch_size):
+    for batch_iters in itertools.batched(iters, batch_size):
+        for batch in zip(*batch_iters):
+            yield jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
+
+
+def stack_batches(stream: Iterator, batch_size: int) -> Iterator:
+    for group in itertools.batched(stream, batch_size):
+        yield jax.tree.map(lambda *xs: jnp.stack(xs), *group)
+
+
+def validate_dataloader_config(config: GodConfig) -> list[str]:
+    errors = []
+
+    if len(config.levels) == 0:
+        errors.append("At least one level is required to create a dataloader")
+        return errors
+
+    running_divisor = 1
+    for i, level in enumerate(config.levels):
+        running_divisor *= level.nested.batch
+        if config.num_tasks % running_divisor != 0:
+            errors.append(
+                f"Level {i}: num_tasks ({config.num_tasks}) not divisible by cumulative batch product ({running_divisor})"
+            )
+            continue
+        chunk_size = config.num_tasks // running_divisor
+        tasks_per_stream = level.validation.batch
+        if chunk_size % tasks_per_stream != 0:
+            errors.append(
+                f"Level {i}: chunk size ({chunk_size}) must be divisible by validation.batch ({tasks_per_stream})"
+            )
+
+    return errors
+
+
+def create_data_sources(
+    config: GodConfig, prng: PRNG
+) -> tuple[list[list[Dataset]], list[tuple[tuple[int, ...], tuple[int, ...]]]]:
+    k1, k2, prng = jax.random.split(prng, 3)
+
+    def get_sources(c: list[MetaConfig], k: PRNG) -> list[tuple[MetaConfig, PRNG]]:
+        keys = jax.random.split(k, len(c))
+        return [
+            (level, jax.random.key(level.test_seed) if level.dataset.is_test else key) for level, key in zip(c, keys)
+        ]
+
+    # 1. Create dataset sources
+    unique_task_pairs = {
+        (level.dataset_source, level.dataset.is_test): key for level, key in get_sources(config.levels, k1)
+    }
+
+    remaining = {
+        (task, is_test): dataset_sources(
+            task=task,
+            root_dir=config.data_root_dir,
+            is_test=is_test,
+            y_mask=config.label_mask_value,
+            num_tasks=config.num_tasks,
+            seed=key,
+        )
+        for (task, is_test), key in unique_task_pairs.items()
+    }
+
+    # 2. Take from sources for each level
+    level_datasets: list[list[Dataset]] = []
+    for level, tk in get_sources(config.levels, k2):
+        key_pair = (level.dataset_source, level.dataset.is_test)
+        taken, remaining[key_pair] = take_datasets(
+            seed=tk,
+            remaining=remaining[key_pair],
+            n=level.dataset.num_examples_total,
+            n_consume=level.validation.num_steps,
+            x_mask=config.unlabeled_mask_value,
+            y_mask=config.label_mask_value,
+        )
+        level_datasets.append(taken)
+
+    # 3. Extract feature dimension shapes per level
+    shapes = [(datasets[0][0][0].shape[2:], datasets[0][0][1].shape[2:]) for datasets in level_datasets]
+    return level_datasets, shapes
+
+
+def create_dataloader(
+    config: GodConfig,
+    data_sources: list[list[Dataset]],
+    prng: PRNG,
+    task_distribution_prng: PRNG,
+) -> DataLoader:
+    k1, prng = jax.random.split(prng, 2)
+
+    global_perm = jax.random.permutation(task_distribution_prng, config.num_tasks)
+
+    def make_task_loader(
+        task_indices: jax.Array,
+        level: MetaConfig,
+        datasets: list[Dataset],
+        key: PRNG,
+    ) -> Iterator[tuple[jax.Array, jax.Array]]:
+        tasks_per_stream = level.validation.batch
+        task_keys = jax.random.split(key, len(task_indices))
+        task_iters = [
+            task_iterator(
+                datasets[idx],
+                level.dataset.num_examples_in_minibatch,
+                config.unlabeled_mask_value,
+                config.label_mask_value,
+                tkey,
+            )
+            for idx, tkey in zip(task_indices.tolist(), task_keys)
+        ]
+        streams = [
+            map(
+                lambda batch: jax.tree.map(lambda x: x.swapaxes(0, 1), batch),
+                batch_iterator(list(chunk), tasks_per_stream),
+            )
+            for chunk in itertools.batched(task_iters, tasks_per_stream)
+        ]
+        return concat(streams)
+
+    def make_nil_loader() -> Iterator:
+        while True:
+            yield None
+
+    def make_level_loader(
+        levels: list[tuple[MetaConfig, list[Dataset]]],
+        task_indices: jax.Array,
+        key: PRNG,
+    ) -> Iterator:
+        if len(levels) == 0:
+            return make_nil_loader()
+
+        (meta_config, datasets), *rest = levels
+
+        batch = meta_config.nested.batch
+        num_steps = meta_config.nested.num_steps
+        is_test = meta_config.dataset.is_test
+        child_key, val_key = jax.random.split(key)
+        val_key = jax.random.key(meta_config.test_seed) if is_test else val_key
+
+        chunks = jnp.split(task_indices, batch)
+        child_keys = jax.random.split(child_key, batch)
+        val_keys_per_child = [infinite_keys(vk) for vk in jax.random.split(val_key, batch)]
+
+        def f(c: jax.Array, ck: PRNG) -> Iterator:
+            return make_level_loader(rest, c, ck)
+
+        def f_val(c: jax.Array, k: PRNG) -> Iterator[tuple[jax.Array, jax.Array]]:
+            return make_task_loader(c, meta_config, datasets, k)
+
+        def nest_validation(
+            val_stream: Iterator[tuple[jax.Array, jax.Array]],
+            lower_levels: list[tuple[MetaConfig, list[Dataset]]],
+        ) -> Iterator:
+            for lower_meta, _ in reversed(lower_levels):
+                val_stream = stack_batches(val_stream, lower_meta.nested.batch)
+            return val_stream
+
+        children = [
+            zip(
+                f(chunk, ckey),
+                map(lambda v: (v, v), nest_validation(mapcat(lambda k, c=chunk: f_val(c, k), vks), rest)),
+            )
+            for chunk, ckey, vks in zip(chunks, child_keys, val_keys_per_child)
+        ]
+        train_loader = batch_iterator(children, len(children))
+
+        return DataLoader(
+            IteratorDataset(train_loader),
+            batch_size=num_steps,
+            collate_fn=jax_collate_fn,
+        )
+
+    levels_with_data = list(reversed(list(zip(config.levels, data_sources))))
+    return make_level_loader(levels_with_data, global_perm, k1)

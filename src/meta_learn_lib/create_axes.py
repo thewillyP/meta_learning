@@ -1,28 +1,37 @@
-from typing import Any
 import jax
-import equinox as eqx
 
-from meta_learn_lib.interface import InferenceInterface
-
-
-def get_batched[ENV](env: ENV, interfaces: dict[int, InferenceInterface[ENV]]) -> tuple[Any, ...]:
-    return (
-        tuple(interface.get_rnn_state(env) for interface in interfaces.values())
-        + tuple(interface.get_lstm_state(env) for interface in interfaces.values())
-        + (interfaces[0]._get_prng(env),)
-    )
+from meta_learn_lib.env import *
 
 
-def create_axes[ENV](env: ENV, interfaces: dict[int, dict[int, InferenceInterface[ENV]]]) -> dict[int, ENV]:
-    get_axes: dict[int, ENV] = {}
-    for i, interface in interfaces.items():
-        _batched_env: ENV = jax.tree.map(lambda _: None, env)
-        batched_env = eqx.tree_at(
-            lambda env, interface=interface: get_batched(env, interface),
-            _batched_env,
-            replace=tuple(0 for _ in get_batched(env, interface)),
-            is_leaf=lambda x: x is None,
-        )
-        get_axes[i] = batched_env
+def create_axes[ENV](env: ENV) -> ENV:
+    is_leaf = lambda x: isinstance(x, (Parameter, State))
 
-    return get_axes
+    def to_axis(x):
+        return 0 if isinstance(x, (Parameter, State)) else None
+
+    return jax.tree.map(to_axis, env, is_leaf=is_leaf)
+
+
+def diff_axes[ENV](old_env: ENV, new_env: ENV) -> ENV:
+    is_leaf = lambda x: isinstance(x, (Parameter, State))
+
+    # Collect ids of ALL leaves reachable from old_env
+    old_leaf_ids = set()
+    for leaf in jax.tree.leaves(old_env, is_leaf=is_leaf):
+        if isinstance(leaf, (Parameter, State)):
+            # Use ids of the *inner* arrays, not the dataclass wrapper,
+            # because pyrsistent may copy the wrapper but share arrays
+            for arr in jax.tree.leaves(leaf):
+                old_leaf_ids.add(id(arr))
+
+    def to_axis(x):
+        if isinstance(x, (Parameter, State)):
+            inner_arrays = jax.tree.leaves(x)
+            if not inner_arrays:
+                return None
+            # If ALL inner arrays existed before, this leaf is unchanged
+            all_old = all(id(a) in old_leaf_ids for a in inner_arrays)
+            return None if all_old else 0
+        return None
+
+    return jax.tree.map(to_axis, new_env, is_leaf=is_leaf)

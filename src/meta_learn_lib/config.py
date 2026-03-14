@@ -2,24 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional, Union
 
-
-@dataclass(frozen=True)
-class DockerContainerSource:
-    docker_url: str
-    type: str = "docker_url"
-
-
-@dataclass(frozen=True)
-class SifContainerSource:
-    sif_path: str
-    type: str = "sif_path"
-
-
-@dataclass(frozen=True)
-class ArtifactContainerSource:
-    project: str
-    dataset_name: str
-    type: str = "artifact_task"
+from meta_learn_lib.lib_types import ACTIVATION_FN
 
 
 @dataclass(frozen=True)
@@ -29,11 +12,6 @@ class SlurmParams:
     cpu: int
     gpu: int
     log_dir: str
-    singularity_overlay: str
-    singularity_binds: str
-    container_source: Union[DockerContainerSource, SifContainerSource, ArtifactContainerSource]
-    use_singularity: bool
-    setup_commands: str
     skip_python_env_install: bool
 
 
@@ -42,83 +20,49 @@ class SeedConfig:
     global_seed: int
     data_seed: int
     parameter_seed: int
-    test_seed: int
+    task_seed: int
 
 
 @dataclass(frozen=True)
-class MnistConfig:
-    n_in: int
+class MNISTTaskFamily:
+    type Domain = Literal["mnist", "fashion_mnist"]
+    patch_h: int
+    patch_w: int
+    label_last_only: bool
     add_spurious_pixel_to_train: bool
+    domain: frozenset[Domain]
+    normalize: bool
 
 
 @dataclass(frozen=True)
-class FashionMnistConfig:
-    n_in: int
-    add_spurious_pixel_to_train: bool
+class CIFAR10TaskFamily:
+    patch_h: int
+    patch_w: int
+    label_last_only: bool
 
 
 @dataclass(frozen=True)
-class CIFAR10Config:
-    n_in: int
+class CIFAR100TaskFamily:
+    patch_h: int
+    patch_w: int
+    label_last_only: bool
 
 
 @dataclass(frozen=True)
-class CIFAR100Config:
-    n_in: int
+class DelayAddTaskFamily:
+    t1_lb: int
+    t1_ub: int
+    t2_lb: int
+    t2_ub: int
+    tau_task_lb: int
+    tau_task_ub: int
+    t_train: int  # length of entire online sequence for training
+    n_train: int  # number of examples. n_train=1 for online.
+    t_test: int  # length of entire online sequence for testing
+    n_test: int  # number of examples. n_test=1 for online.
 
 
-@dataclass(frozen=True)
-class DelayAddOnlineConfig:
-    t1: int
-    t2: int
-    tau_task: bool
-    n: int  # length of entire online sequence
-    nTest: int
-
-
-@dataclass(frozen=True)
-class RTRLConfig:
-    start_at_step: int
-    momentum1: float
-    momentum2: float
-    use_reverse_mode: bool
-
-
-@dataclass(frozen=True)
-class RTRLHessianDecompConfig:
-    epsilon: float
-    start_at_step: int
-    momentum1: float
-    momentum2: float
-    use_reverse_mode: bool
-
-
-@dataclass(frozen=True)
-class RTRLFiniteHvpConfig:
-    epsilon: float
-    start_at_step: int
-    momentum1: float
-    momentum2: float
-    use_reverse_mode: bool
-
-
-@dataclass(frozen=True)
-class BPTTConfig: ...
-
-
-@dataclass(frozen=True)
-class IdentityConfig: ...
-
-
-@dataclass(frozen=True)
-class RFLOConfig:
-    time_constant: float
-    use_reverse_mode: bool
-
-
-@dataclass(frozen=True)
-class UOROConfig:
-    std: float
+type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily]
 
 
 @dataclass(frozen=True)
@@ -146,68 +90,64 @@ class HyperparameterConfig:
 
     @dataclass(frozen=True)
     class softclip:
-        a: float | None
-        b: float | None
+        a: Optional[float]
+        b: Optional[float]
         clip: float
 
+    type Parametrization = Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
+    type Kind = Literal["learning_rate", "weight_decay", "momentum", "time_constant", "kl_regularizer_beta"]
+
     value: float
-    learnable: bool
-    hyperparameter_parametrization: Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
-    min_value: float
-    max_value: float
+    kind: Kind
+    count: int  # how many unique parameters of this kind
+    hyperparameter_parametrization: Parametrization
+    min_value: float  # used for mandatory gradient projection
+    max_value: float  # used for mandatory gradient projection
+    level: int  # which meta level this hyperparameter belongs to. used for tracking how to optimize
+    parametrizes_transition: bool  # whether this hp influences transitional dynamics vs readout
+
+
+type HP = str
 
 
 @dataclass(frozen=True)
-class Clip:
+class SoftClip:
     threshold: float
     sharpness: float
 
 
 @dataclass(frozen=True)
+class HardClip:
+    threshold: float
+
+
+@dataclass(frozen=True)
 class SGDConfig:
-    learning_rate: HyperparameterConfig
-    weight_decay: HyperparameterConfig
-    momentum: float
-    add_clip: Clip | None
+    learning_rate: HP
+    weight_decay: HP
+    momentum: HP
 
 
 @dataclass(frozen=True)
 class SGDNormalizedConfig:
-    learning_rate: HyperparameterConfig
-    weight_decay: HyperparameterConfig
-    momentum: float
+    learning_rate: HP
+    weight_decay: HP
+    momentum: HP
 
 
 @dataclass(frozen=True)
 class AdamConfig:
-    learning_rate: HyperparameterConfig
-    weight_decay: HyperparameterConfig
-    add_clip: Clip | None
-
-
-@dataclass(frozen=True)
-class ExponentiatedGradientAdamConfig:
-    learning_rate: HyperparameterConfig
-    weight_decay: HyperparameterConfig
-    momentum: float
-    add_clip: Clip | None
+    learning_rate: HP
+    weight_decay: HP
+    momentum: HP
 
 
 @dataclass(frozen=True)
 class ExponentiatedGradientConfig:
-    learning_rate: HyperparameterConfig
-    weight_decay: HyperparameterConfig
-    add_clip: Clip | None
-
-
-@dataclass(frozen=True)
-class RecurrenceConfig:
-    recurrent_optimizer: Union[
-        SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig, ExponentiatedGradientAdamConfig
-    ]
-    readout_optimizer: Union[
-        SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig, ExponentiatedGradientAdamConfig
-    ]
+    learning_rate: HP
+    weight_decay: HP
+    momentum: HP
+    use_adam: bool
 
 
 type Optimizer = Union[
@@ -215,29 +155,72 @@ type Optimizer = Union[
     SGDNormalizedConfig,
     AdamConfig,
     ExponentiatedGradientConfig,
-    ExponentiatedGradientAdamConfig,
-    RecurrenceConfig,
 ]
 
 
 @dataclass(frozen=True)
-class DataConfig:
-    train_percent: float  # % data devote to learn, meta 1 validation, meta 2 validation, etc
-    num_examples_in_minibatch: int  # for online its num parallel in a batch, for offline its num ex, per validationn
-    num_steps_in_timeseries: int  # for online its 1, for offline its n (could be whole if not TBPTT)
-    num_times_to_avg_in_timeseries: int  # for BPTT offline if you want to consume the whole sequence, this better be num_steps_to_avg_in_timeseries = data_length / num_steps_in_timeseries. Otherwise it will partially update. For online this can be whatever, however much you want to update
+class OptimizerAssignment:
+    target: frozenset[str]
+    optimizer: Optimizer
+
+
+@dataclass(frozen=True)
+class RTRLConfig:
+    start_at_step: int
+    damping: float
+
+
+@dataclass(frozen=True)
+class RTRLFiniteHvpConfig:
+    epsilon: float
+    rtrl_config: RTRLConfig
+
+
+@dataclass(frozen=True)
+class BPTTConfig:
+    truncate_at: Optional[int]  # if None, then perform full bptt
+
+
+@dataclass(frozen=True)
+class IdentityLearnerConfig: ...
+
+
+@dataclass(frozen=True)
+class RFLOConfig:
+    time_constant: HP
+    damping: float
+
+
+@dataclass(frozen=True)
+class UOROConfig:
+    type Distribution = Literal["uniform", "normal"]
+    std: float
+    distribution: Distribution
+    damping: float
+
+
+type GradientMethod = Union[
+    RTRLConfig,
+    RTRLFiniteHvpConfig,
+    BPTTConfig,
+    IdentityLearnerConfig,
+    RFLOConfig,
+    UOROConfig,
+]
+
+
+@dataclass(frozen=True)
+class GradientConfig:
+    method: GradientMethod
+    add_clip: Optional[Union[HardClip, SoftClip]]  # these are placed here because vl_gr could also want to be clipped
+    scale: float
 
 
 @dataclass(frozen=True)
 class LearnConfig:
-    learner: Union[
-        RTRLConfig, BPTTConfig, IdentityConfig, RFLOConfig, UOROConfig, RTRLHessianDecompConfig, RTRLFiniteHvpConfig
-    ]
-    optimizer: Optimizer
-    lanczos_iterations: int
-    track_logs: bool
-    track_special_logs: bool
-    num_virtual_minibatches_per_turn: int  # for data loading purposes. iterate over minibatches. orthogonal scale to # example in minibatch for memory. need for hierarchy
+    model_learner: GradientConfig
+    optimizer_learner: GradientConfig
+    optimizer: dict[str, OptimizerAssignment]
 
 
 @dataclass(frozen=True)
@@ -250,18 +233,22 @@ class LayerNorm:
 @dataclass(frozen=True)
 class NNLayer:
     n: int
-    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
+    activation_fn: ACTIVATION_FN
     use_bias: bool
-    use_in_readout: bool
     layer_norm: Optional[LayerNorm]
+
+
+@dataclass(frozen=True)
+class VanillaRNNLayer:
+    nn_layer: NNLayer
     use_random_init: bool
+    time_constant: HP
 
 
 @dataclass(frozen=True)
 class GRULayer:
     n: int
     use_bias: bool
-    use_in_readout: bool
     use_random_init: bool
 
 
@@ -269,19 +256,50 @@ class GRULayer:
 class LSTMLayer:
     n: int
     use_bias: bool
-    use_in_readout: bool
     use_random_init: bool
 
 
 @dataclass(frozen=True)
-class IdentityLayer:
-    # no learnable parameters, just applies the activation function
-    activation_fn: Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
+class Scan:  # Wraps around a layer and repeats it in an unfold manner
+    graph: dict[str, set[str]]
+    autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
+    pred_source: str  # which node in the graph to source teacher predictions.
+    start_token: Literal["zeros"]
 
 
 @dataclass(frozen=True)
-class FeedForwardConfig:
-    ffw_layers: dict[int, NNLayer]
+class Repeat:
+    n: int
+
+
+@dataclass(frozen=True)
+class Concat: ...
+
+
+@dataclass(frozen=True)
+class ToEmpty: ...
+
+
+@dataclass(frozen=True)
+class UnlabeledSource: ...
+
+
+@dataclass(frozen=True)
+class LabeledSource: ...
+
+
+type Node = Union[
+    NNLayer,
+    VanillaRNNLayer,
+    GRULayer,
+    LSTMLayer,
+    Scan,
+    UnlabeledSource,
+    LabeledSource,
+    Repeat,
+    Concat,
+    ToEmpty,
+]
 
 
 @dataclass(frozen=True)
@@ -301,40 +319,100 @@ class MatplotlibLoggerConfig:
     save_dir: str
 
 
+type LoggerConfig = Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig]
+
+
+@dataclass(frozen=True)
+class RegressionObjective: ...
+
+
+@dataclass(frozen=True)
+class CrossEntropyObjective:
+    mode: Literal["cross_entropy_with_integer_labels", "cross_entropy"]
+
+
+@dataclass(frozen=True)
+class BernoulliObjective: ...
+
+
+@dataclass(frozen=True)
+class ELBOObjective:
+    @dataclass(frozen=True)
+    class GaussianPosterior: ...
+
+    @dataclass(frozen=True)
+    class GaussianPrior:
+        mu: float
+        log_sigma: float
+
+    type Posterior = GaussianPosterior
+    type Prior = GaussianPrior
+
+    beta: HP
+    likelihood: RegressionObjective | BernoulliObjective
+    posterior: Posterior
+    prior: Prior
+
+
+type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective]
+
+
+@dataclass(frozen=True)
+class TrackLogs:
+    gradient: bool
+    hessian_contains_nans: bool
+    largest_eigenvalue: bool
+    influence_tensor_norm: bool
+    immediate_influence_tensor: bool
+    largest_jac_eigenvalue: bool
+    jacobian: bool
+
+
+@dataclass(frozen=True)
+class StepConfig:
+    num_steps: int
+    batch: int
+    reset_t: Optional[int]
+    track_influence_in: frozenset[int]
+
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    num_examples_in_minibatch: int
+    num_examples_total: int
+    is_test: bool
+
+
+@dataclass(frozen=True)
+class MetaConfig:
+    objective_fn: ObjectiveFn
+    dataset_source: Task
+    dataset: DatasetConfig
+    validation: StepConfig
+    nested: StepConfig
+    learner: LearnConfig
+    track_logs: TrackLogs
+    test_seed: int
+
+
 @dataclass(frozen=True)
 class GodConfig:
+    seed: SeedConfig
     clearml_run: bool
     data_root_dir: str
     log_dir: str
-    dataset: Union[MnistConfig, FashionMnistConfig, DelayAddOnlineConfig, CIFAR10Config, CIFAR100Config]
-    num_base_epochs: int
+    log_title: str
+    logger_config: list[LoggerConfig]
+    epochs: int
     checkpoint_every_n_minibatches: int
-    seed: SeedConfig
-    loss_fn: Literal["cross_entropy", "cross_entropy_with_integer_labels", "mse"]
-    transition_function: dict[int, Union[NNLayer, GRULayer, LSTMLayer, IdentityLayer]]
-    readout_function: Union[FeedForwardConfig]
-    learners: dict[int, LearnConfig]
-    data: dict[int, DataConfig]
-    ignore_validation_inference_recurrence: bool  # will make sparser influence tensors that ignore validation inference
-    readout_uses_input_data: bool
-    logger_config: tuple[Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig], ...]
-    treat_inference_state_as_online: bool  # if true, influence tensors will be computed for inference state
 
+    transition_graph: dict[str, set[str]]
+    readout_graph: dict[str, set[str]]
+    nodes: dict[str, Node]
+    hyperparameters: dict[HP, HyperparameterConfig]
 
-"""
-RL
-1. add FeedForwardConfig to transition function
-    - basically n_in is now whatever previous n_h was along with output size of final layer
-2. add option for transition functions to not output a hidden state. so zeros gets passed around
-3. add an identity readout where nontrainable just returns the n_h
-3.5. add an option to determine whether readout will use a transition's n_h or if it will just be ()
-4. add two new transition functions
-    - RL Get State --- will ignore previous n_h and output the state as n_h+. Then the next transition function is the policy that acts on the state.
-    - RL Step Env --- will take env state, previous policy's output, and output the next state and update it. 
-    so an example looks like
-    transition: (RL Get State, NNLayer, NNLayer, FeedForwardConfig (nonrecurrent), RL Step Env)
-    readout: should concatenate (t, (), (), (), (), reward) to be (t, reward) which then it can be identity operation on or gamma^t*reward or something
-    where t comes from actual data stream of integers that are timesteps. 
+    levels: list[MetaConfig]
 
-
-"""
+    label_mask_value: float
+    unlabeled_mask_value: float
+    num_tasks: int

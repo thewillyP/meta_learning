@@ -1,170 +1,198 @@
-from typing import Callable
 import jax
 import jax.numpy as jnp
-import equinox as eqx
+import optax
+from typing import Callable
 
-from meta_learn_lib.config import (
-    CIFAR10Config,
-    DelayAddOnlineConfig,
-    FashionMnistConfig,
-    GodConfig,
-    MnistConfig,
-    CIFAR100Config,
-)
-from meta_learn_lib.interface import ClassificationInterface, GeneralInterface
+from meta_learn_lib.config import *
+from meta_learn_lib.env import Logs, Outputs
+from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import LOSS, STAT
-from meta_learn_lib.util import accuracy_hard, filter_cond, get_loss_fn
+from meta_learn_lib.util import accuracy, hyperparameter_reparametrization
 
 
-def make_statistics_fns[ENV, DATA, OUT](
+def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
+    match prior:
+        case ELBOObjective.GaussianPrior(mu, log_sigma):
+            return -0.5 * jnp.sum(jnp.log(2 * jnp.pi) + 2 * log_sigma + (z - mu) ** 2 / jnp.exp(2 * log_sigma))
+
+
+def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: Outputs) -> jax.Array:
+    match (posterior, prior):
+        case (ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(prior_mu, prior_log_sigma)):
+            mu = outputs.mu
+            log_sigma = outputs.log_sigma
+            return 0.5 * jnp.sum(
+                2 * (prior_log_sigma - log_sigma)
+                + (jnp.exp(2 * log_sigma) + (mu - prior_mu) ** 2) / jnp.exp(2 * prior_log_sigma)
+                - 1
+            )
+        case _:
+            return outputs.log_q_z - log_p_z(prior, outputs.z)
+
+
+def nan_if_masked(value: jax.Array, has_label: jax.Array) -> jax.Array:
+    return jnp.where(has_label, value, jnp.nan)
+
+
+def get_env_stats[ENV](
     config: GodConfig,
-    readouts: dict[int, Callable[[ENV, DATA], OUT]],
-    data_interface: ClassificationInterface[DATA],
-    get_out: Callable[[OUT], jax.Array],
-    general_interfaces: dict[int, GeneralInterface[ENV]],
-    virtual_minibatches: dict[int, int],
-    last_unpadded_lengths: dict[int, int],
-    get_logs: Callable[[ENV], tuple[jax.Array, ...]],
-) -> dict[int, Callable[[ENV, tuple[DATA, jax.Array]], tuple[tuple[STAT, ...], LOSS]]]:
-    model_loss_fns = {}
-    for i, (general_interface, virtual_minibatch, last_unpadded_length) in enumerate(
-        zip(
-            general_interfaces.values(),
-            virtual_minibatches.values(),
-            last_unpadded_lengths.values(),
-        )
-    ):
-        loss_fn = make_loss_fn(
-            config,
-            general_interface,
-            virtual_minibatch,
-            last_unpadded_length,
-        )
+    env: ENV,
+    meta_interfaces: dict[str, GodInterface[ENV]],
+    task_interface: GodInterface[ENV],
+    level: int,
+) -> STAT:
+    stat: STAT = {}
 
-        statistics_fn = make_statistics_fn(
-            config,
-            general_interface,
-            virtual_minibatch,
-            last_unpadded_length,
-            get_logs,
-        )
+    def get_hp_value(interface: GodInterface[ENV], kind: HyperparameterConfig.Kind) -> jax.Array:
+        match kind:
+            case "learning_rate":
+                p = interface.get_learning_rate(env)
+            case "weight_decay":
+                p = interface.get_weight_decay(env)
+            case "momentum":
+                p = interface.get_momentum(env)
+            case "time_constant":
+                p = interface.get_time_constant(env)
+            case "kl_regularizer_beta":
+                p = interface.get_kl_regularizer_beta(env)
+        return p.value
 
-        def model_loss_fn(
-            env: ENV, ds: tuple[DATA, jax.Array], j=i, loss_fn=loss_fn, statistics_fn=statistics_fn
-        ) -> tuple[tuple[STAT, ...], LOSS]:
-            data, mask = ds
-            preds = get_out(readouts[j](env, data))
-            targets = data_interface.get_target(data)
-            seq_num = data_interface.get_sequence(data)
-            loss = loss_fn(env, preds, targets, seq_num, mask)
-            stat = statistics_fn(env, preds, targets, seq_num, mask, loss)
-            return (stat,), loss
+    for hp_name, hp_config in config.hyperparameters.items():
+        if hp_config.level != level:
+            continue
+        iface = meta_interfaces.get(hp_name)
+        if iface is None:
+            continue
+        raw = get_hp_value(iface, hp_config.kind)
+        forward, _ = hyperparameter_reparametrization(hp_config.hyperparameter_parametrization)
+        values = forward(raw)
+        for i in range(hp_config.count):
+            stat[f"level{level}/{hp_config.kind}/{hp_name}/{i}"] = jax.lax.stop_gradient(values[i])
 
-        model_loss_fns[i] = model_loss_fn
+    logs: Logs = task_interface.get_logs(env)
+    if logs.gradient is not None:
+        stat[f"level{level}/gradient_norm"] = jax.lax.stop_gradient(jnp.linalg.norm(logs.gradient))
+    if logs.largest_eigenvalue is not None:
+        stat[f"level{level}/largest_eigenvalue"] = jax.lax.stop_gradient(logs.largest_eigenvalue)
+    if logs.hessian_contains_nans is not None:
+        stat[f"level{level}/hessian_contains_nans"] = jax.lax.stop_gradient(logs.hessian_contains_nans)
+    if logs.largest_jac_eigenvalue is not None:
+        stat[f"level{level}/largest_jac_eigenvalue"] = jax.lax.stop_gradient(logs.largest_jac_eigenvalue)
+    if logs.influence_tensor_norm is not None:
+        stat[f"level{level}/influence_tensor_norm"] = jax.lax.stop_gradient(logs.influence_tensor_norm)
 
-    return model_loss_fns
+    return stat
 
 
-def make_loss_fn[ENV](
-    config: GodConfig,
-    general_interface: GeneralInterface[ENV],
-    virtual_minibatch: int,
-    last_unpadded_length: int,
-) -> Callable[[ENV, jax.Array, jax.Array, jax.Array, jax.Array], LOSS]:
-    match config.dataset:
-        case DelayAddOnlineConfig(t1, t2, tau_task, n, nTest):
-            _loss_fn = get_loss_fn(config.loss_fn)
+def create_loss_fn[ENV](
+    objective_fn: ObjectiveFn,
+    label_mask_value: float,
+    unlabeled_mask_value: float,
+    task_interface: GodInterface[ENV],
+) -> Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]:
 
-        case MnistConfig(n_in, add_spurious_pixel_to_train) | FashionMnistConfig(n_in, add_spurious_pixel_to_train):
-            seq_len = 784 // n_in - 1
-            __loss_fn = get_loss_fn(config.loss_fn)
+    match objective_fn:
+        case CrossEntropyObjective(mode):
+            match mode:
+                case "cross_entropy_with_integer_labels":
+                    _loss_fn = lambda logits, y: optax.losses.softmax_cross_entropy_with_integer_labels(logits, y)
+                    _to_onehot = lambda target, num_classes: jax.nn.one_hot(target, num_classes)
+                case "cross_entropy":
+                    _loss_fn = lambda logits, y: optax.safe_softmax_cross_entropy(logits, y)
+                    _to_onehot = lambda target, num_classes: target
 
-            def loss_sequence_length(pred: jax.Array, target: jax.Array) -> jax.Array:
-                label, idx = target
-                return jax.lax.cond(
-                    idx == seq_len,
-                    lambda p: __loss_fn(p[None, :], jnp.array([label])).sum(),
-                    lambda _: 0.0,
-                    pred,
-                )
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
+                _, target = data
+                pred = outputs.prediction
+                mask = target != label_mask_value
+                has_label = jnp.any(mask)
+                raw_loss = _loss_fn(pred, target)
+                loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
+                target_onehot = _to_onehot(target, pred.shape[-1])
+                acc = jnp.sum(jnp.where(mask, accuracy(pred, target_onehot), 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
+                return loss, {
+                    "loss": nan_if_masked(loss, has_label),
+                    "accuracy": jax.lax.stop_gradient(nan_if_masked(acc, has_label)),
+                }
 
-            _loss_fn = eqx.filter_vmap(loss_sequence_length)
+        case RegressionObjective():
 
-        case CIFAR10Config(n_in) | CIFAR100Config(n_in):
-            seq_len = 3072 // n_in - 1
-            __loss_fn = get_loss_fn(config.loss_fn)
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
+                _, target = data
+                pred = outputs.prediction
+                mask = target != label_mask_value
+                has_label = jnp.any(mask)
+                raw_loss = optax.losses.squared_error(pred, target)
+                loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
+                return loss, {"loss": nan_if_masked(loss, has_label)}
 
-            def loss_sequence_length(pred: jax.Array, target: jax.Array) -> jax.Array:
-                label, idx = target
-                return jax.lax.cond(
-                    idx == seq_len,
-                    lambda p: __loss_fn(p[None, :], jnp.array([label])).sum(),
-                    lambda _: 0.0,
-                    pred,
-                )
+        case BernoulliObjective():
 
-            _loss_fn = eqx.filter_vmap(loss_sequence_length)
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
+                _, target = data
+                pred = outputs.prediction
+                mask = target != label_mask_value
+                has_label = jnp.any(mask)
+                raw_loss = optax.losses.sigmoid_binary_cross_entropy(pred, target)
+                loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
+                return loss, {"loss": nan_if_masked(loss, has_label)}
 
-    def loss_fn(env: ENV, pred: jax.Array, target: jax.Array, seq_num: jax.Array, batch_mask: jax.Array) -> LOSS:
-        current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
-        loss = _loss_fn(pred, target)
-        sequence_masked_loss = filter_cond(
-            current_virtual_minibatch % virtual_minibatch == 0,
-            lambda l: l * (seq_num < last_unpadded_length),
-            lambda l: l,
-            loss,
-        )
+        case ELBOObjective(beta_hp, likelihood, posterior, prior):
+            inner_loss_fn = create_loss_fn(likelihood, unlabeled_mask_value, unlabeled_mask_value, task_interface)
 
-        mask_shape = (batch_mask.shape[0],) + (1,) * (sequence_masked_loss.ndim - 1)
-        mask_expanded = jnp.reshape(batch_mask, mask_shape)
-        valid_loss = jnp.where(mask_expanded, sequence_masked_loss, 0.0)
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
+                x, _ = data
+                recon_loss, stats = inner_loss_fn(env, outputs, (x, x))
 
-        return LOSS(jnp.sum(valid_loss) / jnp.sum(mask_expanded))
+                beta = task_interface.get_kl_regularizer_beta(env).value
+                kl_value = kl(posterior, prior, outputs)
+
+                loss = LOSS(recon_loss + beta * kl_value)
+                stats["recon_loss"] = jax.lax.stop_gradient(recon_loss)
+                stats["kl"] = jax.lax.stop_gradient(kl_value)
+                stats["elbo_loss"] = jax.lax.stop_gradient(loss)
+                return loss, stats
 
     return loss_fn
 
 
-def make_statistics_fn[ENV](
+def create_readout_loss_fns[ENV](
     config: GodConfig,
-    general_interface: GeneralInterface[ENV],
-    virtual_minibatch: int,
-    last_unpadded_length: int,
-    get_logs: Callable[[ENV], tuple[jax.Array, ...]],
-) -> Callable[[ENV, jax.Array, jax.Array, jax.Array], STAT]:
-    match config.dataset:
-        case DelayAddOnlineConfig():
-            _statistics_fn = lambda _, __: jnp.array([0.0])
+    task_interfaces: list[GodInterface[ENV]],
+    readouts: list[Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]],
+    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]]:
 
-        case MnistConfig(n_in, add_spurious_pixel_to_train) | FashionMnistConfig(n_in, add_spurious_pixel_to_train):
-            seq_len = 784 // n_in - 1
-            _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
-            # premptively multiply by series length so averaging cancels out the factor
+    def compose(
+        loss_fn: Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]],
+        readout: Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs],
+        level: int,
+        interfaces: dict[str, GodInterface[ENV]],
+        task_interface: GodInterface[ENV],
+    ) -> Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]:
+        def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, LOSS, STAT]:
+            outputs = readout(env, data)
+            loss, stat = loss_fn(env, outputs, data)
+            stat = {f"level{level}/{k}": v for k, v in stat.items()}
+            stat |= get_env_stats(config, env, interfaces, task_interface, level)
+            return env, loss, stat
 
-        case CIFAR10Config(n_in) | CIFAR100Config(n_in):
-            seq_len = 3072 // n_in - 1
-            _statistics_fn = lambda pred, target: accuracy_hard(pred, target[..., 0]) * (target[..., 1] == seq_len)
+        return fn
 
-    def statistics_fn(
-        env: ENV, pred: jax.Array, target: jax.Array, seq_num: jax.Array, batch_mask: jax.Array, loss: jax.Array
-    ) -> STAT:
-        current_virtual_minibatch = general_interface.get_current_virtual_minibatch(env)
-        statistics = _statistics_fn(pred, target)
-        sequence_masked_statistics = filter_cond(
-            current_virtual_minibatch % virtual_minibatch == 0,
-            lambda s: s * (seq_num < last_unpadded_length),
-            lambda s: s,
-            statistics,
+    return [
+        compose(
+            create_loss_fn(
+                meta_config.objective_fn,
+                config.label_mask_value,
+                config.unlabeled_mask_value,
+                task_interface,
+            ),
+            readout,
+            level,
+            interfaces,
+            task_interface,
         )
-
-        mask_shape = (batch_mask.shape[0],) + (1,) * (sequence_masked_statistics.ndim - 1)
-        mask_expanded = jnp.reshape(batch_mask, mask_shape)
-        valid_statistics = jnp.where(mask_expanded, sequence_masked_statistics, 0.0)
-
-        statistic = jnp.sum(valid_statistics) / jnp.sum(mask_expanded)
-        logs = get_logs(env)
-        return (
-            loss,
-            statistic,
-        ) + logs
-
-    return statistics_fn
+        for level, (meta_config, task_interface, readout, interfaces) in enumerate(
+            zip(config.levels, task_interfaces, readouts, meta_interfaces)
+        )
+    ]

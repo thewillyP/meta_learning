@@ -95,7 +95,9 @@ def create_loss_fn[ENV](
         case CrossEntropyObjective(mode):
             match mode:
                 case "cross_entropy_with_integer_labels":
-                    _loss_fn = lambda logits, y: optax.losses.softmax_cross_entropy_with_integer_labels(logits, y)
+                    _loss_fn = lambda logits, y: optax.losses.softmax_cross_entropy_with_integer_labels(
+                        logits, jnp.asarray(y, dtype=int)
+                    )
                     _to_onehot = lambda target, num_classes: jax.nn.one_hot(target, num_classes)
                 case "cross_entropy":
                     _loss_fn = lambda logits, y: optax.safe_softmax_cross_entropy(logits, y)

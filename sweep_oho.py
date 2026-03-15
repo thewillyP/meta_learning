@@ -42,8 +42,8 @@ optimizer = HyperParameterOptimizer(
         ParameterSet(
             parameter_combinations=[
                 {
-                    "config/logger_config/0/_type": "HDF5LoggerConfig",
-                    "config/logger_config/1/_type": "ClearMLLoggerConfig",
+                    "config/logger_config/0/_type": "ClearMLLoggerConfig",
+                    "config/logger_config/1/_type": "HDF5LoggerConfig",
                 },
             ]
         ),

@@ -1,4 +1,3 @@
-import copy
 import dataclasses
 from logging import Logger
 import random
@@ -151,9 +150,7 @@ def run(
         env,
     )
 
-    env_copy = copy.deepcopy(env)
-    arr_copy, static = eqx.partition(env_copy, eqx.is_array)
-    arr, _ = eqx.partition(env, eqx.is_array)
+    arr, static = eqx.partition(env, eqx.is_array)
 
     def update_fn(data: tuple, arr: GodState) -> tuple[GodState, STAT]:
         e = eqx.combine(arr, static)
@@ -161,7 +158,7 @@ def run(
         a, _ = eqx.partition(e, eqx.is_array)
         return a, stat
 
-    compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr_copy).compile()
+    compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
     collected: tuple[STAT, ...] = ()
     try:

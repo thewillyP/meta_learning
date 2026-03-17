@@ -1492,7 +1492,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
 
 OHO_GRU128_CIFAR10 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="oho",

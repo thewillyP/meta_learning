@@ -49,17 +49,17 @@ class HDF5Logger:
 
     def log_scalar(self, f: h5py.File, title: str, series: str, value: float, iteration: int, max_count: int):
         """Log a scalar metric to an open HDF5 file"""
-        if series not in f:
-            dataset = f.create_dataset(series, shape=(max_count,), dtype=np.float64, fillvalue=np.nan)
-            dataset.attrs["title"] = title
-            f.create_dataset(f"{series}_iterations", shape=(max_count,), dtype=np.int32, fillvalue=-1)
-            self.metric_indices[series] = 0
+        if title not in f:
+            dataset = f.create_dataset(title, shape=(max_count,), dtype=np.float64, fillvalue=np.nan)
+            dataset.attrs["series"] = series
+            f.create_dataset(f"{title}_iterations", shape=(max_count,), dtype=np.int32, fillvalue=-1)
+            self.metric_indices[title] = 0
 
-        idx = self.metric_indices[series]
-        if idx < len(f[series]):
-            f[series][idx] = value
-            f[f"{series}_iterations"][idx] = iteration
-            self.metric_indices[series] += 1
+        idx = self.metric_indices[title]
+        if idx < len(f[title]):
+            f[title][idx] = value
+            f[f"{title}_iterations"][idx] = iteration
+            self.metric_indices[title] += 1
 
 
 class ClearMLLogger:

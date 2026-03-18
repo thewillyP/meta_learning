@@ -42,8 +42,10 @@ optimizer = HyperParameterOptimizer(
         ParameterSet(
             parameter_combinations=[
                 {
-                    "config/logger_config/0/_type": "ClearMLLoggerConfig",
-                    "config/logger_config/1/_type": "HDF5LoggerConfig",
+                    "config/logger_config/clearml/enabled": True,
+                    "config/logger_config/hdf5/enabled": True,
+                    "config/logger_config/console/enabled": False,
+                    "config/logger_config/matplotlib/enabled": False,
                 },
             ]
         ),

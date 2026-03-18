@@ -2,10 +2,10 @@ import itertools
 import jax
 import jax.numpy as jnp
 from typing import Iterator
-from torch.utils.data import Dataset, DataLoader, IterableDataset, random_split
+from torch.utils.data import Dataset, DataLoader, random_split
 import torch
 import torchvision
-from toolz import mapcat, concat
+from toolz import mapcat
 import math
 import numpy as np
 from torchvision.transforms.transforms import Lambda
@@ -49,14 +49,6 @@ class TransformedDataset(torch.utils.data.Dataset):
         return self.transform(x), self.target_transform(y)
 
 
-class IteratorDataset(IterableDataset):
-    def __init__(self, iterator: Iterator):
-        self.iterator = iterator
-
-    def __iter__(self):
-        return self.iterator
-
-
 class PyTreeDataset(Dataset):
     def __init__(self, pytree_data):
         self.data = pytree_data
@@ -89,7 +81,7 @@ def numpy_collate_fn(batch):
 
 
 def jax_collate_fn(batch):
-    return jax.tree.map(lambda *xs: jnp.asarray(np.stack(xs)), *batch)
+    return jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
 
 
 def generate_add_task_dataset(N: int, t_1: int, t_2: int, tau_task: int, rng_key: PRNG):
@@ -132,6 +124,7 @@ def take_datasets(
     n_consume: int,
     x_mask: float,
     y_mask: float,
+    batch: int,
 ) -> tuple[list[Dataset], list[Dataset]]:
     x_transform = make_timeseries_transforms(n_consume, x_mask)
     y_transform = make_timeseries_transforms(n_consume, y_mask)
@@ -148,6 +141,30 @@ def take_datasets(
         taken, leftover = random_split(remaining[idx], [take_n, len(remaining[idx]) - take_n], generator=generator)
         taken = TransformedDataset(taken, x_transform, y_transform)
         xs, ys = jax_collate_fn(numpy_collate_fn([taken[i] for i in range(len(taken))]))
+        # xs: (num_examples, num_vb, time, features...)
+        # ys: (num_examples, num_vb, time, ...)
+
+        # Pre-pad to multiple of batch
+        remainder = xs.shape[0] % batch
+        if remainder != 0:
+            pad_size = batch - remainder
+            xs = jnp.concatenate([xs, jnp.full((pad_size, *xs.shape[1:]), x_mask)])
+            ys = jnp.concatenate([ys, jnp.full((pad_size, *ys.shape[1:]), y_mask)])
+
+        num_mb = xs.shape[0] // batch
+
+        # Reshape into minibatches: (num_mb, batch, num_vb, time, features...)
+        xs = xs.reshape(num_mb, batch, *xs.shape[1:])
+        ys = ys.reshape(num_mb, batch, *ys.shape[1:])
+
+        # Rearrange: (num_mb, batch, num_vb, time, ...) -> (num_mb, num_vb, time, batch, ...)
+        xs = xs.swapaxes(1, 2).swapaxes(2, 3)
+        ys = ys.swapaxes(1, 2).swapaxes(2, 3)
+
+        # Flatten iteration dims: (num_mb * num_vb, time, batch, features...)
+        xs = xs.reshape(num_mb * xs.shape[1], *xs.shape[2:])
+        ys = ys.reshape(num_mb * ys.shape[1], *ys.shape[2:])
+
         return PyTreeDataset((xs, ys)), leftover
 
     datasets_out, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
@@ -316,81 +333,10 @@ def dataset_sources(
             return [make_task(k) for k in keys]
 
 
-def materialize_task_epoch(
-    dataset: Dataset,
-    batch: int,
-    x_mask: float,
-    y_mask: float,
-    key: PRNG,
-) -> tuple[jax.Array, jax.Array]:
-    """Pre-build one shuffled epoch of a task's data as a flat array of virtual batches.
-
-    Equivalent to what the old task_iterator did lazily:
-      for X_batch, Y_batch in DataLoader(dataset, batch_size=batch, shuffle=True):
-          # pad last batch if needed
-          for vb in range(num_vb):
-              yield X_batch[:, vb].swapaxes(0, 1)
-
-    Instead, we do the shuffle, pad, reshape, and axis swaps in bulk,
-    producing a single array where indexing along axis 0 gives the same
-    sequence of (time, batch, features...) items.
-
-    Returns (xs, ys) each with shape (num_minibatches * num_vb, time, batch, features...).
-    """
-    xs, ys = dataset.data  # (num_examples, num_vb, time, features...)
-
-    # Shuffle examples — same as DataLoader(shuffle=True)
-    perm = jax.random.permutation(key, xs.shape[0])
-    xs = xs[perm]
-    ys = ys[perm]
-
-    # Pad to multiple of batch — same as the if X_batch.shape[0] < batch block
-    remainder = xs.shape[0] % batch
-    if remainder != 0:
-        pad_size = batch - remainder
-        xs = jnp.concatenate([xs, jnp.full((pad_size, *xs.shape[1:]), x_mask)])
-        ys = jnp.concatenate([ys, jnp.full((pad_size, *ys.shape[1:]), y_mask)])
-
-    num_mb = xs.shape[0] // batch
-
-    # Group into minibatches: (num_mb, batch, num_vb, time, features...)
-    xs = xs.reshape(num_mb, batch, *xs.shape[1:])
-    ys = ys.reshape(num_mb, batch, *ys.shape[1:])
-
-    # Rearrange so the yield order (for mb: for vb: ...) is contiguous along axis 0,
-    # and each slice is (time, batch, features...) matching X_batch[:, vb].swapaxes(0, 1):
-    #   (num_mb, batch, num_vb, time, ...) → (num_mb, num_vb, time, batch, ...)
-    xs = xs.swapaxes(1, 2).swapaxes(2, 3)
-    ys = ys.swapaxes(1, 2).swapaxes(2, 3)
-
-    # Flatten the two iteration dims into one
-    xs = xs.reshape(num_mb * xs.shape[1], *xs.shape[2:])
-    ys = ys.reshape(num_mb * ys.shape[1], *ys.shape[2:])
-
-    return xs, ys
-
-
-def task_iterator(
-    dataset: Dataset,
-    batch: int,
-    x_mask: float,
-    y_mask: float,
-    key: PRNG,
-) -> Iterator[tuple[jax.Array, jax.Array]]:
-    """Yields (x, y) each with shape (time, batch, features...).
-
-    Same output as the old task_iterator but uses pre-materialized array slicing
-    instead of torch DataLoader + per-element jnp operations.
-    """
-    xs, ys = materialize_task_epoch(dataset, batch, x_mask, y_mask, key)
-    for x, y in zip(xs, ys):
-        yield x, y
-
-
-def batch_iterator(iters, batch_size):
+def batch_iterator(iters, batch_size, axis):
     for batch_iters in itertools.batched(iters, batch_size):
         for batch in zip(*batch_iters):
-            yield jax.tree.map(lambda *xs: jnp.stack(xs), *batch)
+            yield jax.tree.map(lambda *xs: jnp.stack(xs, axis=axis), *batch)
 
 
 def stack_batches(stream: Iterator, batch_size: int) -> Iterator:
@@ -462,6 +408,7 @@ def create_data_sources(
             n_consume=level.validation.num_steps,
             x_mask=config.unlabeled_mask_value,
             y_mask=config.label_mask_value,
+            batch=level.dataset.num_examples_in_minibatch,
         )
         level_datasets.append(taken)
 
@@ -489,23 +436,18 @@ def create_dataloader(
         tasks_per_stream = level.validation.batch
         task_keys = jax.random.split(key, len(task_indices))
         task_iters = [
-            task_iterator(
+            DataLoader(
                 datasets[idx],
-                level.dataset.num_examples_in_minibatch,
-                config.unlabeled_mask_value,
-                config.label_mask_value,
-                tkey,
+                batch_size=None,
+                shuffle=True,
+                generator=torch.Generator().manual_seed(
+                    jax.random.randint(tkey, shape=(), minval=0, maxval=2**31 - 1).item()
+                ),
+                collate_fn=lambda x: x,
             )
             for idx, tkey in zip(task_indices.tolist(), task_keys)
         ]
-        streams = [
-            map(
-                lambda batch: jax.tree.map(lambda x: x.swapaxes(0, 1), batch),
-                batch_iterator(list(chunk), tasks_per_stream),
-            )
-            for chunk in itertools.batched(task_iters, tasks_per_stream)
-        ]
-        return concat(streams)
+        return batch_iterator(task_iters, tasks_per_stream, axis=1)
 
     def make_nil_loader() -> Iterator:
         while True:
@@ -531,9 +473,6 @@ def create_dataloader(
         child_keys = jax.random.split(child_key, batch)
         val_keys_per_child = [infinite_keys(vk) for vk in jax.random.split(val_key, batch)]
 
-        def f(c: jax.Array, ck: PRNG) -> Iterator:
-            return make_level_loader(rest, c, ck)
-
         def f_val(c: jax.Array, k: PRNG) -> Iterator[tuple[jax.Array, jax.Array]]:
             return make_task_loader(c, meta_config, datasets, k)
 
@@ -547,18 +486,14 @@ def create_dataloader(
 
         children = [
             zip(
-                f(chunk, ckey),
+                make_level_loader(rest, chunk, ckey),
                 map(lambda v: (v, v), nest_validation(mapcat(lambda k, c=chunk: f_val(c, k), vks), rest)),
             )
             for chunk, ckey, vks in zip(chunks, child_keys, val_keys_per_child)
         ]
-        train_loader = batch_iterator(children, len(children))
+        train_loader = batch_iterator(children, len(children), axis=0)
 
-        return DataLoader(
-            IteratorDataset(train_loader),
-            batch_size=num_steps,
-            collate_fn=jax_collate_fn,
-        )
+        return stack_batches(train_loader, num_steps)
 
     levels_with_data = list(reversed(list(zip(config.levels, data_sources))))
     return make_level_loader(levels_with_data, global_perm, k1)

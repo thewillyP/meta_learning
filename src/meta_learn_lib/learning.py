@@ -377,6 +377,40 @@ def identity[ENV, TR_DATA, VL_DATA](
     return gradient_fn
 
 
+def immediate[ENV, TR_DATA, VL_DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
+    learn_interface: GodInterface[ENV],
+    grad_config: GradientConfig,
+    length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
+    track_logs: TrackLogs,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+        arr_init, static = eqx.partition(env_init, eqx.is_array)
+
+        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
+            env = eqx.combine(arr, static)
+            tr_data, vl_data = data
+            env, trans_stat = transition(env, tr_data)
+            env, credit_gr, readout_stat = readout_gr(env, vl_data)
+            n_s = learn_interface.get_state(env).shape[0]
+            grad = GRADIENT(credit_gr[n_s:])
+            arr, _ = eqx.partition(env, eqx.is_array)
+            return arr, (grad, trans_stat | readout_stat)
+
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
+        env = eqx.combine(arr, static)
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
+        return env, total_grad, stats
+
+    return gradient_fn
+
+
 def create_validation_learners[ENV, TR_DATA, VL_DATA](
     transition_fns: list[Callable[[ENV, TR_DATA], tuple[ENV, STAT]]],
     readout_fns: list[Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]]],
@@ -461,6 +495,8 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
                 fn = rflo(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
+            case ImmediateLearnerConfig():
+                fn = immediate(transition, readout_gr, interface, model_grad_config, length, lambda f: f, track_logs)
 
         gradient_fns.append(fn)
         loss_fns.append(readout_loss)
@@ -587,6 +623,16 @@ def create_meta_learner[ENV](
                     readout_gr,
                     nest_interface,
                     method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
+            case ImmediateLearnerConfig():
+                grad_fn = immediate(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
                     grad_config,
                     length,
                     vmap_this,

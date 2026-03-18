@@ -56,6 +56,11 @@ def get_output_shapes(
                 node_features[node_name] = x_shape
             case LabeledSource():
                 node_features[node_name] = y_shape
+            case ReparameterizeLayer():
+                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                node_features[node_name] = (n_in // 2,)
+            case MergeOutputs():
+                node_features[node_name] = (0,)  # is an end node
             case _:
                 node_features[node_name] = ()
 

@@ -32,6 +32,7 @@ class MNISTTaskFamily:
     add_spurious_pixel_to_train: bool
     domain: frozenset[Domain]
     normalize: bool
+    binarize: bool
 
 
 @dataclass(frozen=True)
@@ -295,6 +296,14 @@ class UnlabeledSource: ...
 class LabeledSource: ...
 
 
+@dataclass(frozen=True)
+class ReparameterizeLayer: ...
+
+
+@dataclass(frozen=True)
+class MergeOutputs: ...
+
+
 type Node = Union[
     NNLayer,
     VanillaRNNLayer,
@@ -306,6 +315,8 @@ type Node = Union[
     Repeat,
     Concat,
     ToEmpty,
+    ReparameterizeLayer,
+    MergeOutputs,
 ]
 
 

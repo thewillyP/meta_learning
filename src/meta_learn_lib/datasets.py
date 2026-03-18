@@ -66,7 +66,7 @@ class PyTreeDataset(Dataset):
 
 def get_seq_len(task: Task, is_test: bool) -> int:
     match task:
-        case MNISTTaskFamily(ph, pw, _, _, _, _):
+        case MNISTTaskFamily(ph, pw, _, _, _, _, _):
             return (MNIST_HEIGHT // ph) * (MNIST_WIDTH // pw)
         case CIFAR10TaskFamily(ph, pw, _):
             return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
@@ -182,15 +182,22 @@ def image_transforms(
     augment: Lambda,
     y_mask: float,
     label_last_only: bool,
+    binarize: bool = False,
 ) -> tuple[Lambda, Lambda]:
     if height % patch_h != 0 or width % patch_w != 0:
         raise ValueError(f"image ({height}, {width}) not divisible by patch ({patch_h}, {patch_w})")
     seq_len = (height // patch_h) * (width // patch_w)
+    binarize_fn = (
+        torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
+        if binarize
+        else torchvision.transforms.Lambda(lambda x: x)
+    )
     x_transform = torchvision.transforms.Compose(
         [
             augment,
             torchvision.transforms.ToTensor(),
             torchvision.transforms.Normalize(mean, std),
+            binarize_fn,
             torchvision.transforms.Lambda(
                 lambda x: (
                     x.reshape(x.shape[0], height // patch_h, patch_h, width // patch_w, patch_w)
@@ -230,7 +237,15 @@ def dataset_sources(
         return list(random_split(ds, sizes, generator=generator))
 
     match task:
-        case MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, domain, normalize):
+        case MNISTTaskFamily(
+            patch_h,
+            patch_w,
+            label_last_only,
+            add_spurious_pixel_to_train,
+            domain,
+            normalize,
+            binarize,
+        ):
             domain_list = sorted(domain)
             seed_assign, seed_split = jax.random.split(seed)
             assignments = jax.random.randint(seed_assign, shape=(num_tasks,), minval=0, maxval=len(domain_list))
@@ -265,6 +280,7 @@ def dataset_sources(
                     augment=torchvision.transforms.Lambda(lambda x: x),
                     y_mask=y_mask,
                     label_last_only=label_last_only,
+                    binarize=binarize,
                 )
 
                 return TransformedDataset(ds, x_transform, y_transform)

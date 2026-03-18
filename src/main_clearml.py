@@ -85,7 +85,18 @@ def make_converter() -> Converter:
     setup_flattened_union(
         converter,
         Union[
-            NNLayer, VanillaRNNLayer, GRULayer, LSTMLayer, Scan, UnlabeledSource, LabeledSource, Repeat, Concat, ToEmpty
+            NNLayer,
+            VanillaRNNLayer,
+            GRULayer,
+            LSTMLayer,
+            Scan,
+            UnlabeledSource,
+            LabeledSource,
+            Repeat,
+            Concat,
+            ToEmpty,
+            ReparameterizeLayer,
+            MergeOutputs,
         ],
     )
 
@@ -158,7 +169,7 @@ def main(skip_jitter: bool):
     converter = make_converter()
     task.connect(converter.unstructure(slurm_params), name="slurm")
 
-    config = OHO_RNN256_CIFAR10
+    config = VAE_BETA_OHO
     config = copy.replace(
         config, logger_config=copy.replace(config.logger_config, clearml=ClearMLLoggerConfig(enabled=True))
     )

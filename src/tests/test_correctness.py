@@ -140,6 +140,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     add_spurious_pixel_to_train=False,
                     domain=frozenset({"mnist"}),
                     normalize=True,
+                    binarize=False,
                 ),
                 dataset=DatasetConfig(
                     num_examples_in_minibatch=10,

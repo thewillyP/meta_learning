@@ -1303,7 +1303,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.00001,
+            value=0.0001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -1426,7 +1426,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                         epsilon=1e-3,
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
-                            damping=1e-4,
+                            damping=1e-5,
                         ),
                     ),
                     add_clip=None,

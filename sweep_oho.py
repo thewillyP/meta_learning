@@ -3,12 +3,12 @@ from clearml import Task
 
 opt_task = Task.init(
     project_name="oho",
-    task_name="OHO Seed+Damping Sweep: Batch-4000,Epochs-1000,sCIFAR10,RNN-256,SGD-SGD,BPTT-RTRLFiniteHvp",
+    task_name="OHO Seed Sweep: Batch-4000,Epochs-1000,sCIFAR10,RNN-256,SGD-SGD,BPTT-RTRLFiniteHvp",
     task_type=Task.TaskTypes.optimizer,
 )
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
-task = Task.get_task(project_name="oho", task_name="OHO_RNN256_sCIFAR10")
+task = Task.get_task(project_name="oho", task_name="OHO_RNN256_sCIFAR10_v2")
 
 optimizer = HyperParameterOptimizer(
     base_task_id=task.id,
@@ -22,15 +22,13 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/hyperparameters/meta1_sgd1_lr/value", values=[1.0e-3]),
         DiscreteParameterRange("config/hyperparameters/meta1_sgd1_wd/value", values=[1.0e-5]),
         # Outer optimizer hyperparameters
-        DiscreteParameterRange("config/hyperparameters/meta2_sgd1_lr/value", values=[1.0e-5]),
+        DiscreteParameterRange("config/hyperparameters/meta2_sgd1_lr/value", values=[1.0e-4]),
         # Outer optimizer learner (level 1)
         DiscreteParameterRange(
             "config/levels/1/learner/optimizer_learner/method/_type", values=["RTRLFiniteHvpConfig"]
         ),
         DiscreteParameterRange("config/levels/1/learner/optimizer_learner/method/epsilon", values=[1e-3]),
-        DiscreteParameterRange(
-            "config/levels/1/learner/optimizer_learner/method/rtrl_config/damping", values=[1e-2, 1e-3, 1e-4, 1e-5, 0.0]
-        ),
+        DiscreteParameterRange("config/levels/1/learner/optimizer_learner/method/rtrl_config/damping", values=[1e-5]),
         # Batch sizes
         DiscreteParameterRange("config/levels/0/dataset/num_examples_in_minibatch", values=[4000]),
         DiscreteParameterRange("config/levels/1/dataset/num_examples_in_minibatch", values=[4000]),

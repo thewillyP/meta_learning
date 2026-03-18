@@ -173,11 +173,6 @@ def main(skip_jitter: bool):
             return [_deep_convert(v) for v in obj]
         return obj
 
-    # Two connects: one as configuration (for full structure editing in UI),
-    # one as hyperparameters (for HPO sweeps, since HPO can't add new fields)
-    # _config = task.connect_configuration(_deep_convert(converter.unstructure(config)), name="config")
-    # config = converter.structure(_config, GodConfig)
-
     _config = task.connect(_deep_convert(converter.unstructure(config)), name="config")
     config = converter.structure(_config, GodConfig)
 

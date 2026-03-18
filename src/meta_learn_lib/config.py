@@ -310,23 +310,32 @@ type Node = Union[
 
 
 @dataclass(frozen=True)
-class HDF5LoggerConfig: ...
+class HDF5LoggerConfig:
+    enabled: bool
 
 
 @dataclass(frozen=True)
-class ClearMLLoggerConfig: ...
+class ClearMLLoggerConfig:
+    enabled: bool
 
 
 @dataclass(frozen=True)
-class PrintLoggerConfig: ...
+class ConsoleLoggerConfig:
+    enabled: bool
 
 
 @dataclass(frozen=True)
 class MatplotlibLoggerConfig:
     save_dir: str
+    enabled: bool
 
 
-type LoggerConfig = Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig]
+@dataclass(frozen=True)
+class LoggersConfig:
+    clearml: ClearMLLoggerConfig
+    hdf5: HDF5LoggerConfig
+    console: ConsoleLoggerConfig
+    matplotlib: MatplotlibLoggerConfig
 
 
 @dataclass(frozen=True)
@@ -409,7 +418,7 @@ class GodConfig:
     data_root_dir: str
     log_dir: str
     log_title: str
-    logger_config: list[LoggerConfig]
+    logger_config: LoggersConfig
     epochs: int
     checkpoint_every_n_minibatches: int
 

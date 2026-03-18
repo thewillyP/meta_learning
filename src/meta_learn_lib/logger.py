@@ -79,16 +79,16 @@ class ClearMLLogger:
         self.task.get_logger().report_scalar(title=title, series=series, value=value, iteration=iteration)
 
 
-class PrintLogger:
+class ConsoleLogger:
     def __init__(self):
         pass
 
     def get_context(self):
-        """No context needed for PrintLogger"""
+        """No context needed for ConsoleLogger"""
         return None
 
     def close_context(self, context):
-        """No context to close for PrintLogger"""
+        """No context to close for ConsoleLogger"""
         pass
 
     def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):

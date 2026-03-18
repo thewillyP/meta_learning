@@ -8,7 +8,12 @@ OHO_RNN256 = GodConfig(
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="train",
-    logger_config=[ClearMLLoggerConfig()],
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
     transition_graph={
@@ -302,7 +307,12 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="train",
-    logger_config=[MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs")],
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=False),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=True),
+    ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
     transition_graph={
@@ -617,7 +627,12 @@ OHO_RNN256_V2 = GodConfig(
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="train",
-    logger_config=[ClearMLLoggerConfig()],
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
     transition_graph={
@@ -911,7 +926,12 @@ OHO_RNN256_V3 = GodConfig(
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="oho",
-    logger_config=[ClearMLLoggerConfig()],
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
     transition_graph={
@@ -1205,7 +1225,12 @@ OHO_RNN256_CIFAR10 = GodConfig(
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="oho",
-    logger_config=[ClearMLLoggerConfig()],
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
     transition_graph={
@@ -1490,7 +1515,12 @@ OHO_GRU128_CIFAR10 = GodConfig(
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="oho",
-    logger_config=[ClearMLLoggerConfig()],
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
     transition_graph={

@@ -9,7 +9,7 @@ import time
 from configs import *
 from meta_learn_lib import app
 from meta_learn_lib.config import *
-from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, PrintLogger
+from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, ConsoleLogger
 from meta_learn_lib.util import setup_flattened_union
 import jax.numpy as jnp
 import equinox as eqx
@@ -131,12 +131,6 @@ def make_converter() -> Converter:
         Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective],
     )
 
-    # -- LoggerConfig --
-    setup_flattened_union(
-        converter,
-        Union[HDF5LoggerConfig, ClearMLLoggerConfig, PrintLoggerConfig, MatplotlibLoggerConfig],
-    )
-
     return converter
 
 
@@ -165,7 +159,9 @@ def main(skip_jitter: bool):
     task.connect(converter.unstructure(slurm_params), name="slurm")
 
     config = OHO_GRU128_CIFAR10
-    config = copy.replace(config, logger_config=[ClearMLLoggerConfig()])
+    config = copy.replace(
+        config, logger_config=copy.replace(config.logger_config, clearml=ClearMLLoggerConfig(enabled=True))
+    )
 
     def _deep_convert(obj):
         """Recursively convert sets/frozensets to sorted lists for JSON/ClearML compatibility."""
@@ -185,22 +181,16 @@ def main(skip_jitter: bool):
     _config = task.connect(_deep_convert(converter.unstructure(config)), name="config")
     config = converter.structure(_config, GodConfig)
 
-    eqx.tree_pprint(config)
-
     loggers = []
-    for log_config in config.logger_config:
-        match log_config:
-            case HDF5LoggerConfig():
-                logger = HDF5Logger(config.log_dir, task.task_id)
-            case ClearMLLoggerConfig():
-                logger = ClearMLLogger(task)
-            case PrintLoggerConfig():
-                logger = PrintLogger()
-            case MatplotlibLoggerConfig(save_dir):
-                logger = MatplotlibLogger(save_dir)
-            case _:
-                raise ValueError("Invalid logger configuration.")
-        loggers.append(logger)
+    lc = config.logger_config
+    if lc.clearml.enabled:
+        loggers.append(ClearMLLogger(task))
+    if lc.hdf5.enabled:
+        loggers.append(HDF5Logger(config.log_dir, task.task_id))
+    if lc.console.enabled:
+        loggers.append(ConsoleLogger())
+    if lc.matplotlib.enabled:
+        loggers.append(MatplotlibLogger(lc.matplotlib.save_dir))
 
     app.runApp(config, loggers)
 

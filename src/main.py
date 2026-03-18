@@ -14,18 +14,20 @@ from meta_learn_lib.logger import *
 
 def main():
     config = OHO_RNN256
-    config = copy.replace(config, logger_config=[MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs")])
+    config = copy.replace(
+        config,
+        logger_config=copy.replace(
+            config.logger_config,
+            matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=True),
+        ),
+    )
 
     loggers = []
-    for log_config in config.logger_config:
-        match log_config:
-            case PrintLoggerConfig():
-                logger = PrintLogger()
-            case MatplotlibLoggerConfig(save_dir):
-                logger = MatplotlibLogger(save_dir)
-            case _:
-                raise ValueError("Invalid logger configuration.")
-        loggers.append(logger)
+    lc = config.logger_config
+    if lc.console.enabled:
+        loggers.append(ConsoleLogger())
+    if lc.matplotlib.enabled:
+        loggers.append(MatplotlibLogger(lc.matplotlib.save_dir))
 
     app.runApp(config, loggers)
 

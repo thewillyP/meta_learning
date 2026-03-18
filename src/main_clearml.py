@@ -92,7 +92,15 @@ def make_converter() -> Converter:
     # -- GradientMethod --
     setup_flattened_union(
         converter,
-        Union[RTRLConfig, RTRLFiniteHvpConfig, BPTTConfig, IdentityLearnerConfig, RFLOConfig, UOROConfig],
+        Union[
+            RTRLConfig,
+            RTRLFiniteHvpConfig,
+            BPTTConfig,
+            IdentityLearnerConfig,
+            RFLOConfig,
+            UOROConfig,
+            ImmediateLearnerConfig,
+        ],
     )
 
     # -- Optimizer --

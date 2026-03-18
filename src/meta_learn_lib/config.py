@@ -199,6 +199,10 @@ class UOROConfig:
     damping: float
 
 
+@dataclass(frozen=True)
+class ImmediateLearnerConfig: ...
+
+
 type GradientMethod = Union[
     RTRLConfig,
     RTRLFiniteHvpConfig,
@@ -206,6 +210,7 @@ type GradientMethod = Union[
     IdentityLearnerConfig,
     RFLOConfig,
     UOROConfig,
+    ImmediateLearnerConfig,
 ]
 
 

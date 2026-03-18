@@ -1049,10 +1049,7 @@ OHO_RNN256_V3 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLConfig(
-                        start_at_step=0,
-                        damping=0.0,
-                    ),
+                    method=ImmediateLearnerConfig(),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -1343,10 +1340,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLConfig(
-                        start_at_step=0,
-                        damping=0.0,
-                    ),
+                    method=ImmediateLearnerConfig(),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -1627,10 +1621,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLConfig(
-                        start_at_step=0,
-                        damping=0.0,
-                    ),
+                    method=ImmediateLearnerConfig(),
                     add_clip=None,
                     scale=1.0,
                 ),

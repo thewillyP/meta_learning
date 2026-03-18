@@ -9,7 +9,6 @@ import torch
 import numpy as np
 import toolz
 import math
-import time
 import equinox as eqx
 import threading
 import queue
@@ -161,17 +160,11 @@ def run(
     compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
     collected: tuple[STAT, ...] = ()
-    t_prev = time.time()
     for k, data in enumerate(dataloader):
-        t_data = time.time()
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
-        t_compute = time.time()
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
-        t_log = time.time()
-        print(f"data: {t_data - t_prev:.3f}  compute+sync: {t_compute - t_data:.3f}  log: {t_log - t_compute:.3f}")
-        t_prev = t_log
 
     scalar_logger.flush()
     scalar_logger.shutdown()

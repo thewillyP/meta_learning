@@ -171,7 +171,7 @@ def main(skip_jitter: bool):
     converter = make_converter()
     task.connect(converter.unstructure(slurm_params), name="slurm")
 
-    config = VAE_BETA_OHO
+    config = VAE_BASELINE
     config = copy.replace(
         config, logger_config=copy.replace(config.logger_config, clearml=ClearMLLoggerConfig(enabled=True))
     )

@@ -22,7 +22,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/hyperparameters/meta1_sgd1_lr/value", values=[1.0e-3]),
         DiscreteParameterRange("config/hyperparameters/meta1_sgd1_wd/value", values=[1.0e-5]),
         # Outer optimizer hyperparameters
-        DiscreteParameterRange("config/hyperparameters/meta2_sgd1_lr/value", values=[1.0e-4]),
+        DiscreteParameterRange("config/hyperparameters/meta2_sgd1_lr/value", values=[5.0e-5]),
         # Outer optimizer learner (level 1)
         DiscreteParameterRange(
             "config/levels/1/learner/optimizer_learner/method/_type", values=["RTRLFiniteHvpConfig"]

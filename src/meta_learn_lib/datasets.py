@@ -117,60 +117,6 @@ def make_timeseries_transforms(n_consume: int, ignore_value: float) -> Lambda:
     return transform
 
 
-def take_datasets(
-    seed: PRNG,
-    remaining: list[Dataset],
-    n: int,
-    n_consume: int,
-    x_mask: float,
-    y_mask: float,
-    batch: int,
-) -> tuple[list[Dataset], list[Dataset]]:
-    x_transform = make_timeseries_transforms(n_consume, x_mask)
-    y_transform = make_timeseries_transforms(n_consume, y_mask)
-    keys = jax.random.split(seed, len(remaining))
-
-    def make_dataset(idx: int, key: PRNG) -> tuple[Dataset, Dataset]:
-        generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
-        take_n = min(n, len(remaining[idx]))
-        if take_n == 0:
-            raise ValueError(
-                f"Task {idx}: no examples remaining (requested {n}, available {len(remaining[idx])}). "
-                f"Earlier levels likely consumed all data from this source."
-            )
-        taken, leftover = random_split(remaining[idx], [take_n, len(remaining[idx]) - take_n], generator=generator)
-        taken = TransformedDataset(taken, x_transform, y_transform)
-        xs, ys = jax_collate_fn(numpy_collate_fn([taken[i] for i in range(len(taken))]))
-        # xs: (num_examples, num_vb, time, features...)
-        # ys: (num_examples, num_vb, time, ...)
-
-        # Pre-pad to multiple of batch
-        remainder = xs.shape[0] % batch
-        if remainder != 0:
-            pad_size = batch - remainder
-            xs = jnp.concatenate([xs, jnp.full((pad_size, *xs.shape[1:]), x_mask)])
-            ys = jnp.concatenate([ys, jnp.full((pad_size, *ys.shape[1:]), y_mask)])
-
-        num_mb = xs.shape[0] // batch
-
-        # Reshape into minibatches: (num_mb, batch, num_vb, time, features...)
-        xs = xs.reshape(num_mb, batch, *xs.shape[1:])
-        ys = ys.reshape(num_mb, batch, *ys.shape[1:])
-
-        # Rearrange: (num_mb, batch, num_vb, time, ...) -> (num_mb, num_vb, time, batch, ...)
-        xs = xs.swapaxes(1, 2).swapaxes(2, 3)
-        ys = ys.swapaxes(1, 2).swapaxes(2, 3)
-
-        # Flatten iteration dims: (num_mb * num_vb, time, batch, features...)
-        xs = xs.reshape(num_mb * xs.shape[1], *xs.shape[2:])
-        ys = ys.reshape(num_mb * ys.shape[1], *ys.shape[2:])
-
-        return PyTreeDataset((xs, ys)), leftover
-
-    datasets_out, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
-    return list(datasets_out), list(new_remaining)
-
-
 def image_transforms(
     mean: tuple[float, ...],
     std: tuple[float, ...],
@@ -179,7 +125,6 @@ def image_transforms(
     channel: int,
     patch_h: int,
     patch_w: int,
-    augment: Lambda,
     y_mask: float,
     label_last_only: bool,
 ) -> tuple[Lambda, Lambda]:
@@ -188,7 +133,6 @@ def image_transforms(
     seq_len = (height // patch_h) * (width // patch_w)
     x_transform = torchvision.transforms.Compose(
         [
-            augment,
             torchvision.transforms.ToTensor(),
             torchvision.transforms.Normalize(mean, std),
             torchvision.transforms.Lambda(
@@ -212,6 +156,22 @@ def image_transforms(
     return x_transform, y_transform
 
 
+def make_augment_transform(task: Task, augment: bool) -> Lambda:
+    match (task, augment):
+        case (CIFAR10TaskFamily() | CIFAR100TaskFamily(), True):
+            return torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.RandomCrop(32, padding=4),
+                    torchvision.transforms.RandomHorizontalFlip(),
+                ]
+            )
+        case _:
+            return torchvision.transforms.Lambda(lambda x: x)
+
+
+type DatasetWithTransforms = tuple[Dataset, Lambda, Lambda]
+
+
 def dataset_sources(
     task: Task,
     root_dir: str,
@@ -219,7 +179,7 @@ def dataset_sources(
     y_mask: float,
     num_tasks: int,
     seed: PRNG,
-) -> list[Dataset]:
+) -> list[DatasetWithTransforms]:
 
     def split_dataset(ds: Dataset, count: int, key: PRNG) -> list[Dataset]:
         if count == 0:
@@ -236,7 +196,7 @@ def dataset_sources(
             assignments = jax.random.randint(seed_assign, shape=(num_tasks,), minval=0, maxval=len(domain_list))
             split_keys = jax.random.split(seed_split, len(domain_list))
 
-            def make_domain_datasets(d: MNISTTaskFamily.Domain) -> Dataset:
+            def make_domain_dataset(d: MNISTTaskFamily.Domain) -> tuple[Dataset, Lambda, Lambda]:
                 match d:
                     case "mnist":
                         factory = torchvision.datasets.MNIST
@@ -262,18 +222,18 @@ def dataset_sources(
                     channel=MNIST_CHANNEL,
                     patch_h=patch_h,
                     patch_w=patch_w,
-                    augment=torchvision.transforms.Lambda(lambda x: x),
                     y_mask=y_mask,
                     label_last_only=label_last_only,
                 )
 
-                return TransformedDataset(ds, x_transform, y_transform)
+                return ds, x_transform, y_transform
 
             counts = [int((assignments == i).sum()) for i in range(len(domain_list))]
             return [
-                ds
+                (split, xt, yt)
                 for d, c, k in zip(domain_list, counts, split_keys)
-                for ds in split_dataset(make_domain_datasets(d), c, k)
+                for ds, xt, yt in [make_domain_dataset(d)]
+                for split in split_dataset(ds, c, k)
             ]
 
         case CIFAR10TaskFamily(patch_h, patch_w, label_last_only) | CIFAR100TaskFamily(
@@ -286,16 +246,7 @@ def dataset_sources(
                 case CIFAR100TaskFamily():
                     factory = torchvision.datasets.CIFAR100
                     mean, std = CIFAR100_MEAN, CIFAR100_STD
-            augment = (
-                torchvision.transforms.Compose(
-                    [
-                        torchvision.transforms.RandomCrop(32, padding=4),
-                        torchvision.transforms.RandomHorizontalFlip(),
-                    ]
-                )
-                if not is_test
-                else torchvision.transforms.Lambda(lambda x: x)
-            )
+
             x_transform, y_transform = image_transforms(
                 mean=mean,
                 std=std,
@@ -304,7 +255,6 @@ def dataset_sources(
                 channel=CIFAR_CHANNEL,
                 patch_h=patch_h,
                 patch_w=patch_w,
-                augment=augment,
                 y_mask=y_mask,
                 label_last_only=label_last_only,
             )
@@ -312,25 +262,88 @@ def dataset_sources(
                 root=f"{root_dir}/data",
                 train=not is_test,
                 download=True,
-                transform=x_transform,
-                target_transform=y_transform,
             )
-            return split_dataset(ds, num_tasks, seed)
+            return [(split, x_transform, y_transform) for split in split_dataset(ds, num_tasks, seed)]
+
         case DelayAddTaskFamily(t1_lb, t1_ub, t2_lb, t2_ub, tau_task_lb, tau_task_ub, t_train, n_train, t_test, n_test):
             keys = jax.random.split(seed, num_tasks)
             t = t_test if is_test else t_train
             n = n_test if is_test else n_train
 
-            def make_task(key: PRNG) -> Dataset:
+            def make_task(key: PRNG) -> DatasetWithTransforms:
                 k1, k2, k3, k4 = jax.random.split(key, 4)
                 t1 = jax.random.randint(k1, shape=(), minval=t1_lb, maxval=t1_ub + 1).item()
                 t2 = jax.random.randint(k2, shape=(), minval=t2_lb, maxval=t2_ub + 1).item()
                 tau_task = jax.random.randint(k3, shape=(), minval=tau_task_lb, maxval=tau_task_ub + 1).item()
                 example_keys = jax.random.split(k4, n)
                 X, Y = jax.vmap(lambda k: generate_add_task_dataset(t, t1, t2, tau_task, k))(example_keys)
-                return torch.utils.data.TensorDataset(torch.from_numpy(np.array(X)), torch.from_numpy(np.array(Y)))
+                return (
+                    torch.utils.data.TensorDataset(torch.from_numpy(np.array(X)), torch.from_numpy(np.array(Y))),
+                    torchvision.transforms.Lambda(lambda x: x),
+                    torchvision.transforms.Lambda(lambda y: y),
+                )
 
             return [make_task(k) for k in keys]
+
+
+def take_datasets(
+    seed: PRNG,
+    remaining: list[DatasetWithTransforms],
+    n: int,
+    n_consume: int,
+    x_mask: float,
+    y_mask: float,
+    batch: int,
+    augment_transform: Lambda,
+) -> tuple[list[Dataset], list[DatasetWithTransforms]]:
+    ts_x_transform = make_timeseries_transforms(n_consume, x_mask)
+    ts_y_transform = make_timeseries_transforms(n_consume, y_mask)
+    keys = jax.random.split(seed, len(remaining))
+
+    def make_dataset(idx: int, key: PRNG) -> tuple[Dataset, DatasetWithTransforms]:
+        ds, base_x_transform, base_y_transform = remaining[idx]
+
+        full_x_transform = torchvision.transforms.Compose([augment_transform, base_x_transform, ts_x_transform])
+        full_y_transform = torchvision.transforms.Compose([base_y_transform, ts_y_transform])
+
+        generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
+        take_n = min(n, len(ds))
+        if take_n == 0:
+            raise ValueError(
+                f"Task {idx}: no examples remaining (requested {n}, available {len(ds)}). "
+                f"Earlier levels likely consumed all data from this source."
+            )
+        taken, leftover = random_split(ds, [take_n, len(ds) - take_n], generator=generator)
+        taken = TransformedDataset(taken, full_x_transform, full_y_transform)
+        xs, ys = jax_collate_fn(numpy_collate_fn([taken[i] for i in range(len(taken))]))
+        # xs: (num_examples, num_vb, time, features...)
+        # ys: (num_examples, num_vb, time, ...)
+
+        # Pre-pad to multiple of batch
+        remainder = xs.shape[0] % batch
+        if remainder != 0:
+            pad_size = batch - remainder
+            xs = jnp.concatenate([xs, jnp.full((pad_size, *xs.shape[1:]), x_mask)])
+            ys = jnp.concatenate([ys, jnp.full((pad_size, *ys.shape[1:]), y_mask)])
+
+        num_mb = xs.shape[0] // batch
+
+        # Reshape into minibatches: (num_mb, batch, num_vb, time, features...)
+        xs = xs.reshape(num_mb, batch, *xs.shape[1:])
+        ys = ys.reshape(num_mb, batch, *ys.shape[1:])
+
+        # Rearrange: (num_mb, batch, num_vb, time, ...) -> (num_mb, num_vb, time, batch, ...)
+        xs = xs.swapaxes(1, 2).swapaxes(2, 3)
+        ys = ys.swapaxes(1, 2).swapaxes(2, 3)
+
+        # Flatten iteration dims: (num_mb * num_vb, time, batch, features...)
+        xs = xs.reshape(num_mb * xs.shape[1], *xs.shape[2:])
+        ys = ys.reshape(num_mb * ys.shape[1], *ys.shape[2:])
+
+        return PyTreeDataset((xs, ys)), (leftover, base_x_transform, base_y_transform)
+
+    datasets_out, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
+    return list(datasets_out), list(new_remaining)
 
 
 def batch_iterator(iters, batch_size, axis):
@@ -385,7 +398,7 @@ def create_data_sources(
         (level.dataset_source, level.dataset.is_test): key for level, key in get_sources(config.levels, k1)
     }
 
-    remaining = {
+    remaining: dict[tuple, list[DatasetWithTransforms]] = {
         (task, is_test): dataset_sources(
             task=task,
             root_dir=config.data_root_dir,
@@ -409,6 +422,7 @@ def create_data_sources(
             x_mask=config.unlabeled_mask_value,
             y_mask=config.label_mask_value,
             batch=level.dataset.num_examples_in_minibatch,
+            augment_transform=make_augment_transform(level.dataset_source, level.dataset.augment),
         )
         level_datasets.append(taken)
 

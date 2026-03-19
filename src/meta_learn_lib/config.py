@@ -397,6 +397,7 @@ class DatasetConfig:
     num_examples_in_minibatch: int
     num_examples_total: int
     is_test: bool
+    augment: bool
 
 
 @dataclass(frozen=True)

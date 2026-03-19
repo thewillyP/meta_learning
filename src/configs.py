@@ -131,6 +131,7 @@ OHO_RNN256 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -191,6 +192,7 @@ OHO_RNN256 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -257,6 +259,7 @@ OHO_RNN256 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -451,6 +454,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -511,6 +515,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -577,6 +582,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -750,6 +756,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -810,6 +817,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -876,6 +884,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1049,6 +1058,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_in_minibatch=5_000,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1109,6 +1119,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_in_minibatch=5_000,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1175,6 +1186,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_in_minibatch=500,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1345,6 +1357,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=40_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1402,6 +1415,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1465,6 +1479,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1631,6 +1646,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=40_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1688,6 +1704,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1751,6 +1768,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,

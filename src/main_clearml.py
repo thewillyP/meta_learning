@@ -97,6 +97,7 @@ def make_converter() -> Converter:
             ToEmpty,
             ReparameterizeLayer,
             MergeOutputs,
+            ExtractZ,
         ],
     )
 

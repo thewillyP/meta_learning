@@ -71,6 +71,7 @@ def get_reader[ENV](
                 | LabeledSource()
                 | ReparameterizeLayer()
                 | MergeOutputs()
+                | ExtractZ()
             ):
                 from_env = from_env.set(node_name, lambda env: Outputs())
             case _:
@@ -228,6 +229,9 @@ def get_inference[ENV](
                     upstream = [outputs[n] for n in node_graph[node_name] if n in outputs]
                     merged = eqx.combine(*upstream, is_leaf=lambda x: x is None)
                     outputs = outputs.set(node_name, merged)
+                case ExtractZ(i):
+                    dep = [outputs[dep_name] for dep_name in node_graph[node_name] if dep_name in outputs][0]
+                    outputs = outputs.set(node_name, Outputs(prediction=dep.z))
                 case _:
                     outputs = outputs.set(node_name, Outputs())
         return env, outputs

@@ -61,6 +61,8 @@ def get_output_shapes(
                 node_features[node_name] = (n_in // 2,)
             case MergeOutputs():
                 node_features[node_name] = (0,)  # is an end node
+            case ExtractZ(n):
+                node_features[node_name] = (n,)
             case _:
                 node_features[node_name] = ()
 

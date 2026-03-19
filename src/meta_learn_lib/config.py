@@ -304,6 +304,11 @@ class ReparameterizeLayer: ...
 class MergeOutputs: ...
 
 
+@dataclass(frozen=True)
+class ExtractZ:
+    n: int
+
+
 type Node = Union[
     NNLayer,
     VanillaRNNLayer,
@@ -317,6 +322,7 @@ type Node = Union[
     ToEmpty,
     ReparameterizeLayer,
     MergeOutputs,
+    ExtractZ,
 ]
 
 

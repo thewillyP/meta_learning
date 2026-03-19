@@ -63,6 +63,8 @@ def get_output_shapes(
                 node_features[node_name] = (0,)  # is an end node
             case ExtractZ(n):
                 node_features[node_name] = (n,)
+            case Reshape(target_shape):
+                node_features[node_name] = target_shape
             case _:
                 node_features[node_name] = ()
 

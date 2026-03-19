@@ -1831,7 +1831,8 @@ VAE_BETA_OHO = GodConfig(
         "latent_z": {"latent"},
         "decoder_hidden": {"latent_z"},
         "decoder_out": {"decoder_hidden"},
-        "merge": {"decoder_out", "latent"},
+        "decoder_reshape": {"decoder_out"},
+        "merge": {"decoder_reshape", "latent"},
     },
     nodes={
         "x": UnlabeledSource(),
@@ -1842,6 +1843,7 @@ VAE_BETA_OHO = GodConfig(
         "latent_z": ExtractZ(n=128),
         "decoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
         "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True, layer_norm=None),
+        "decoder_reshape": Reshape(shape=(1, 28, 28)),
         "merge": MergeOutputs(),
     },
     hyperparameters={

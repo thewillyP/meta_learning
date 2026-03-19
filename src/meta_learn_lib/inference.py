@@ -72,6 +72,7 @@ def get_reader[ENV](
                 | ReparameterizeLayer()
                 | MergeOutputs()
                 | ExtractZ()
+                | Reshape()
             ):
                 from_env = from_env.set(node_name, lambda env: Outputs())
             case _:
@@ -232,6 +233,13 @@ def get_inference[ENV](
                 case ExtractZ(i):
                     dep = [outputs[dep_name] for dep_name in node_graph[node_name] if dep_name in outputs][0]
                     outputs = outputs.set(node_name, Outputs(prediction=dep.z))
+                case Reshape(target_shape):
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = to_vector(deps).vector
+                    outputs = outputs.set(node_name, Outputs(prediction=x.reshape(target_shape)))
                 case _:
                     outputs = outputs.set(node_name, Outputs())
         return env, outputs

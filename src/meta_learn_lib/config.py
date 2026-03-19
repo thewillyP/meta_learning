@@ -309,6 +309,11 @@ class ExtractZ:
     n: int
 
 
+@dataclass(frozen=True)
+class Reshape:
+    shape: tuple[int, ...]
+
+
 type Node = Union[
     NNLayer,
     VanillaRNNLayer,
@@ -323,6 +328,7 @@ type Node = Union[
     ReparameterizeLayer,
     MergeOutputs,
     ExtractZ,
+    Reshape,
 ]
 
 

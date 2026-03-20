@@ -158,7 +158,7 @@ def main(skip_jitter: bool):
     converter = make_converter()
     task.connect(converter.unstructure(slurm_params), name="slurm")
 
-    config = OHO_RNN256_CIFAR10
+    config = OHO_RNN256_CIFAR10_ADAM
     config = copy.replace(
         config, logger_config=copy.replace(config.logger_config, clearml=ClearMLLoggerConfig(enabled=True))
     )

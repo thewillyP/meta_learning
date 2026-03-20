@@ -159,6 +159,8 @@ def run(
 
     compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
+    print("Starting main loop...")
+
     collected: tuple[STAT, ...] = ()
     for k, data in enumerate(dataloader):
         arr, stats = compiled(data, arr)

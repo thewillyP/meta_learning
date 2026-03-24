@@ -1419,7 +1419,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=False,
-                augment=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,

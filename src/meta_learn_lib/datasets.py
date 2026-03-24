@@ -2,7 +2,7 @@ from functools import partial
 import itertools
 import jax
 import jax.numpy as jnp
-from typing import Callable, Iterator
+from typing import Callable, Iterator, NamedTuple
 from torch.utils.data import Dataset, DataLoader, random_split
 import torch
 import torchvision
@@ -121,24 +121,11 @@ def make_jax_timeseries_reshape(n_consume: int, pad_value: float) -> Callable[[j
     return reshape
 
 
-class EpochTransformDataset(Dataset):
-    """Stores prematerialized (xs, ys) JAX arrays. Applies x_epoch/y_epoch per access."""
-
-    def __init__(self, xs: jax.Array, ys: jax.Array, x_epoch: EpochTransform, y_epoch: EpochTransform, key: PRNG):
-        self.xs = xs
-        self.ys = ys
-        self.x_epoch = x_epoch
-        self.y_epoch = y_epoch
-        self.key = key
-
-    def __len__(self) -> int:
-        return self.xs.shape[0]
-
-    def __getitem__(self, idx: int) -> tuple:
-        self.key, k1, k2 = jax.random.split(self.key, 3)
-        x = self.x_epoch(self.xs[idx], k1)
-        y = self.y_epoch(self.ys[idx], k2)
-        return x, y
+class PrematerializedTask(NamedTuple):
+    xs: jax.Array
+    ys: jax.Array
+    x_epoch: EpochTransform
+    y_epoch: EpochTransform
 
 
 @partial(jax.jit, static_argnums=(2,))
@@ -357,15 +344,14 @@ def take_datasets(
     x_mask: float,
     y_mask: float,
     augment_fn: EpochTransform,
-) -> tuple[list[Dataset], list[DatasetWithReshape]]:
+) -> tuple[list[PrematerializedTask], list[DatasetWithReshape]]:
     ts_x_reshape = make_jax_timeseries_reshape(n_consume, x_mask)
     ts_y_reshape = make_jax_timeseries_reshape(n_consume, y_mask)
     keys = jax.random.split(seed, len(remaining))
 
-    def make_dataset(idx: int, key: PRNG) -> tuple[Dataset, DatasetWithReshape]:
+    def make_dataset(idx: int, key: PRNG) -> tuple[PrematerializedTask, DatasetWithReshape]:
         ds, xr = remaining[idx]
-        k1, k2 = jax.random.split(key)
-        generator = torch.Generator().manual_seed(jax.random.randint(k1, shape=(), minval=0, maxval=2**31 - 1).item())
+        generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
         take_n = min(n, len(ds))
         if take_n == 0:
             raise ValueError(
@@ -383,46 +369,38 @@ def take_datasets(
         def y_epoch(y: jax.Array, key: PRNG) -> jax.Array:
             return ts_y_reshape(y)
 
-        return EpochTransformDataset(xs, ys, x_epoch, y_epoch, k2), (leftover, xr)
+        return PrematerializedTask(xs, ys, x_epoch, y_epoch), (leftover, xr)
 
     datasets_out, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
     return list(datasets_out), list(new_remaining)
 
 
 def task_iterator(
-    dataset: EpochTransformDataset,
+    task: PrematerializedTask,
     batch: int,
     x_mask: float,
     y_mask: float,
     key: PRNG,
 ) -> Iterator[tuple[jax.Array, jax.Array]]:
-    xs, ys = dataset.xs, dataset.ys
-    x_epoch, y_epoch = dataset.x_epoch, dataset.y_epoch
+    shuffle_key, k1, k2 = jax.random.split(key, 3)
+    xs = jax.vmap(task.x_epoch)(task.xs, jax.random.split(k1, task.xs.shape[0]))
+    ys = jax.vmap(task.y_epoch)(task.ys, jax.random.split(k2, task.ys.shape[0]))
 
-    shuffle_key, transform_key = jax.random.split(key)
     perm = jax.random.permutation(shuffle_key, xs.shape[0])
-    xs_shuffled, ys_shuffled = xs[perm], ys[perm]
+    xs, ys = xs[perm], ys[perm]
 
-    num_batches = math.ceil(xs.shape[0] / batch)
-    for i in range(num_batches):
-        batch_xs = xs_shuffled[i * batch:(i + 1) * batch]
-        batch_ys = ys_shuffled[i * batch:(i + 1) * batch]
+    for i in range(math.ceil(xs.shape[0] / batch)):
+        X_batch = xs[i * batch:(i + 1) * batch]
+        Y_batch = ys[i * batch:(i + 1) * batch]
 
-        transform_key, k1, k2 = jax.random.split(transform_key, 3)
-        x_keys = jax.random.split(k1, batch_xs.shape[0])
-        y_keys = jax.random.split(k2, batch_ys.shape[0])
-        batch_xs = jax.vmap(x_epoch)(batch_xs, x_keys)
-        batch_ys = jax.vmap(y_epoch)(batch_ys, y_keys)
+        if X_batch.shape[0] < batch:
+            pad_size = batch - X_batch.shape[0]
+            X_batch = jnp.concatenate([X_batch, jnp.full((pad_size, *X_batch.shape[1:]), x_mask)])
+            Y_batch = jnp.concatenate([Y_batch, jnp.full((pad_size, *Y_batch.shape[1:]), y_mask)])
 
-        if batch_xs.shape[0] < batch:
-            pad_size = batch - batch_xs.shape[0]
-            batch_xs = jnp.concatenate([batch_xs, jnp.full((pad_size, *batch_xs.shape[1:]), x_mask)])
-            batch_ys = jnp.concatenate([batch_ys, jnp.full((pad_size, *batch_ys.shape[1:]), y_mask)])
-
-        # batch_xs: (batch, num_vb, time, features...)
-        for vb in range(batch_xs.shape[1]):
-            x = batch_xs[:, vb].swapaxes(0, 1)  # (time, batch, features...)
-            y = batch_ys[:, vb].swapaxes(0, 1)  # (time, batch, ...)
+        for vb in range(X_batch.shape[1]):
+            x = X_batch[:, vb].swapaxes(0, 1)
+            y = Y_batch[:, vb].swapaxes(0, 1)
             yield x, y
 
 
@@ -464,7 +442,7 @@ def validate_dataloader_config(config: GodConfig) -> list[str]:
 
 def create_data_sources(
     config: GodConfig, prng: PRNG
-) -> tuple[list[list[Dataset]], list[tuple[tuple[int, ...], tuple[int, ...]]]]:
+) -> tuple[list[list[PrematerializedTask]], list[tuple[tuple[int, ...], tuple[int, ...]]]]:
     k1, k2, prng = jax.random.split(prng, 3)
 
     def get_sources(c: list[MetaConfig], k: PRNG) -> list[tuple[MetaConfig, PRNG]]:
@@ -491,7 +469,7 @@ def create_data_sources(
     }
 
     # 2. Take from sources for each level
-    level_datasets: list[list[Dataset]] = []
+    level_datasets: list[list[PrematerializedTask]] = []
     for level, tk in get_sources(config.levels, k2):
         key_pair = (level.dataset_source, level.dataset.is_test)
         taken, remaining[key_pair] = take_datasets(
@@ -506,16 +484,23 @@ def create_data_sources(
         level_datasets.append(taken)
 
     # 3. Extract feature dimension shapes per level
-    shapes = [(datasets[0][0][0].shape[2:], datasets[0][0][1].shape[2:]) for datasets in level_datasets]
+    dummy_key = jax.random.key(0)
+    shapes = [
+        (
+            datasets[0].x_epoch(datasets[0].xs[0], dummy_key).shape[2:],
+            datasets[0].y_epoch(datasets[0].ys[0], dummy_key).shape[2:],
+        )
+        for datasets in level_datasets
+    ]
     return level_datasets, shapes
 
 
 def create_dataloader(
     config: GodConfig,
-    data_sources: list[list[Dataset]],
+    data_sources: list[list[PrematerializedTask]],
     prng: PRNG,
     task_distribution_prng: PRNG,
-) -> DataLoader:
+) -> Iterator:
     k1, prng = jax.random.split(prng, 2)
 
     global_perm = jax.random.permutation(task_distribution_prng, config.num_tasks)
@@ -523,7 +508,7 @@ def create_dataloader(
     def make_task_loader(
         task_indices: jax.Array,
         level: MetaConfig,
-        datasets: list[Dataset],
+        datasets: list[PrematerializedTask],
         key: PRNG,
     ) -> Iterator[tuple[jax.Array, jax.Array]]:
         tasks_per_stream = level.validation.batch
@@ -545,7 +530,7 @@ def create_dataloader(
             yield None
 
     def make_level_loader(
-        levels: list[tuple[MetaConfig, list[Dataset]]],
+        levels: list[tuple[MetaConfig, list[PrematerializedTask]]],
         task_indices: jax.Array,
         key: PRNG,
     ) -> Iterator:
@@ -569,7 +554,7 @@ def create_dataloader(
 
         def nest_validation(
             val_stream: Iterator[tuple[jax.Array, jax.Array]],
-            lower_levels: list[tuple[MetaConfig, list[Dataset]]],
+            lower_levels: list[tuple[MetaConfig, list[PrematerializedTask]]],
         ) -> Iterator:
             for lower_meta, _ in reversed(lower_levels):
                 val_stream = stack_batches(val_stream, lower_meta.nested.batch)

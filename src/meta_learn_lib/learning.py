@@ -58,6 +58,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             p = learn_interface.get_param(env)
             t = learn_interface.get_tick(env)
             mu = config.damping
+            beta = config.beta
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
             def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
@@ -88,12 +89,13 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             hmp: JACOBIAN
             match _config:
                 case RTRLConfig():
-                    _primals, hmp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
-                    hmp = hmp - mu * influence_tensor_s.value
+                    _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
+                    hmp = beta * hmp_jvp + (1 - mu - beta) * influence_tensor_s.value
                 case RTRLFiniteHvpConfig(eps, ___):
 
                     def finite_hvp(v: jax.Array) -> jax.Array:
-                        return (state_fn(env)(s + eps * v)[0] - state_fn(env)(s - eps * v)[0]) / (2 * eps) - mu * v
+                        jvp_v = (state_fn(env)(s + eps * v)[0] - state_fn(env)(s - eps * v)[0]) / (2 * eps)
+                        return beta * jvp_v + (1 - mu - beta) * v
 
                     hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor_s.value)
 

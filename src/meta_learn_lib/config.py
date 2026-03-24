@@ -168,6 +168,7 @@ class OptimizerAssignment:
 class RTRLConfig:
     start_at_step: int
     damping: float
+    beta: float
 
 
 @dataclass(frozen=True)

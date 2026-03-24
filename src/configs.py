@@ -218,6 +218,7 @@ OHO_RNN256 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -541,6 +542,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -843,6 +845,7 @@ OHO_RNN256_V2 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -1145,6 +1148,7 @@ OHO_RNN256_V3 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -1233,7 +1237,7 @@ OHO_RNN256_V3 = GodConfig(
 
 OHO_RNN256_CIFAR10 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="oho",
@@ -1415,7 +1419,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=False,
-                augment=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1440,7 +1444,8 @@ OHO_RNN256_CIFAR10 = GodConfig(
                         epsilon=1e-3,
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
-                            damping=1e-5,
+                            damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -1730,6 +1735,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -1825,7 +1831,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
     ),
-    epochs=1_000,
+    epochs=100,
     checkpoint_every_n_minibatches=1,
     transition_graph={
         "x": {},
@@ -1897,7 +1903,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_adam1_lr": HyperparameterConfig(
-            value=0.0001,
+            value=0.00001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -1936,7 +1942,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 label_last_only=True,
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=4_000,
+                num_examples_in_minibatch=100,
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
@@ -1994,7 +2000,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 label_last_only=True,
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=4_000,
+                num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -2023,6 +2029,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-5,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -2058,7 +2065,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 label_last_only=True,
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=4_000,
+                num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -2070,7 +2077,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=10,
+                num_steps=400,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),

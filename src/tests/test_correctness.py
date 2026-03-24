@@ -145,6 +145,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     num_examples_in_minibatch=10,
                     num_examples_total=100,
                     is_test=False,
+                    augment=False,
                 ),
                 validation=StepConfig(
                     num_steps=28,

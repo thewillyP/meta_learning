@@ -115,7 +115,7 @@ def make_jax_timeseries_reshape(n_consume: int, pad_value: float) -> Callable[[j
         pad_length = (-length) % num_vb
         if pad_length > 0:
             pad_width = [(0, pad_length)] + [(0, 0)] * (arr.ndim - 1)
-            arr = jnp.pad(arr, pad_width, constant_values=pad_value)
+            arr = jnp.pad(arr, pad_width, constant_values=arr.dtype.type(pad_value))
         return arr.reshape(num_vb, -1, *arr.shape[1:])
 
     return reshape
@@ -395,8 +395,8 @@ def task_iterator(
 
         if X_batch.shape[0] < batch:
             pad_size = batch - X_batch.shape[0]
-            X_batch = jnp.concatenate([X_batch, jnp.full((pad_size, *X_batch.shape[1:]), x_mask)])
-            Y_batch = jnp.concatenate([Y_batch, jnp.full((pad_size, *Y_batch.shape[1:]), y_mask)])
+            X_batch = jnp.concatenate([X_batch, jnp.full((pad_size, *X_batch.shape[1:]), x_mask, dtype=X_batch.dtype)])
+            Y_batch = jnp.concatenate([Y_batch, jnp.full((pad_size, *Y_batch.shape[1:]), y_mask, dtype=Y_batch.dtype)])
 
         for vb in range(X_batch.shape[1]):
             x = X_batch[:, vb].swapaxes(0, 1)

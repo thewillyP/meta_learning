@@ -29,6 +29,7 @@ optimizer = HyperParameterOptimizer(
         ),
         DiscreteParameterRange("config/levels/1/learner/optimizer_learner/method/epsilon", values=[1e-3]),
         DiscreteParameterRange("config/levels/1/learner/optimizer_learner/method/rtrl_config/damping", values=[1e-4]),
+        DiscreteParameterRange("config/levels/1/learner/optimizer_learner/method/rtrl_config/beta", values=[0.1]),
         # Batch sizes
         DiscreteParameterRange("config/levels/0/dataset/num_examples_in_minibatch", values=[4000]),
         DiscreteParameterRange("config/levels/1/dataset/num_examples_in_minibatch", values=[4000]),

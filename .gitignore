@@ -1,8 +1,9 @@
-temp.py 
-test.py 
+temp.py
+test.py
 test1.py
 *.png
 *.pdf
+src/configs.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,18 +1,17 @@
-import copy
+import json
 from typing import Union
 import clearml
+from clearml import InputModel, Model
 import random
 import string
 from cattrs import Converter
 import argparse
 import time
-from configs import *
 from meta_learn_lib import app
 from meta_learn_lib.config import *
 from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, ConsoleLogger
 from meta_learn_lib.util import setup_flattened_union
 import jax.numpy as jnp
-import equinox as eqx
 
 # jax.config.update("jax_platform_name", "cpu")
 # jax.config.update("jax_enable_x64", True)
@@ -134,7 +133,30 @@ def make_converter() -> Converter:
     return converter
 
 
-def main(skip_jitter: bool):
+def fetch_config(config_name: str | None = None, config_id: str | None = None) -> tuple[InputModel, dict]:
+    """Fetch a config dict from ClearML Model Registry by name (latest) or exact model ID."""
+    CONFIG_PROJECT = "oho"
+    if config_id:
+        model = InputModel(model_id=config_id)
+    elif config_name:
+        models = Model.query_models(
+            project_name=CONFIG_PROJECT,
+            model_name=config_name,
+            tags=["config"],
+        )
+        if not models:
+            raise ValueError(f"No config '{config_name}' found in project '{CONFIG_PROJECT}'")
+        # query_models returns newest first — take the latest
+        model = InputModel(model_id=models[0].id)
+    else:
+        raise ValueError("Must specify either config_name or config_id")
+
+    local_path = model.get_local_copy()
+    with open(local_path) as f:
+        return model, json.load(f)
+
+
+def main(config_name: str | None, config_id: str | None, skip_jitter: bool):
     if not skip_jitter:
         _jitter_rng = random.Random()
         time.sleep(_jitter_rng.uniform(1, 60))
@@ -158,22 +180,10 @@ def main(skip_jitter: bool):
     converter = make_converter()
     task.connect(converter.unstructure(slurm_params), name="slurm")
 
-    config = OHO_RNN256_CIFAR10
-    config = copy.replace(
-        config, logger_config=copy.replace(config.logger_config, clearml=ClearMLLoggerConfig(enabled=True))
-    )
-
-    def _deep_convert(obj):
-        """Recursively convert sets/frozensets to sorted lists for JSON/ClearML compatibility."""
-        if isinstance(obj, (set, frozenset)):
-            return sorted((_deep_convert(v) for v in obj), key=str)
-        if isinstance(obj, dict):
-            return {k: _deep_convert(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
-            return [_deep_convert(v) for v in obj]
-        return obj
-
-    _config = task.connect(_deep_convert(converter.unstructure(config)), name="config")
+    # Fetch base config from registry, then connect so ClearML sweeps/UI overrides work
+    config_model, config_dict = fetch_config(config_name=config_name, config_id=config_id)
+    task.connect(config_model)
+    _config = task.connect(config_dict, name="config")
     config = converter.structure(_config, GodConfig)
 
     loggers = []
@@ -192,6 +202,13 @@ def main(skip_jitter: bool):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--config-name", default=None, help="Config name in the registry (gets latest)")
+    group.add_argument("--config-id", default=None, help="Exact model ID for a pinned config")
     parser.add_argument("--skip-jitter", action="store_true", default=False)
     args = parser.parse_args()
-    main(skip_jitter=args.skip_jitter)
+    main(
+        config_name=args.config_name,
+        config_id=args.config_id,
+        skip_jitter=args.skip_jitter,
+    )

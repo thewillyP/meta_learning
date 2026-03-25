@@ -3,12 +3,12 @@ from clearml import Task
 
 opt_task = Task.init(
     project_name="oho",
-    task_name="OHO Seed Sweep: Batch-4000,Epochs-1000,sCIFAR10,RNN-256,SGD-SGD,BPTT-RTRLFiniteHvp",
+    task_name="OHO Seed Sweep: Batch-4000,Epochs-2000,sCIFAR10,RNN-256,SGD-SGD,BPTT-RTRLFiniteHvp",
     task_type=Task.TaskTypes.optimizer,
 )
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
-task = Task.get_task(project_name="oho", task_name="OHO_RNN256_sCIFAR10_v2")
+task = Task.get_task(project_name="oho", task_name="OHO_RNN256_sCIFAR10_v3")
 
 optimizer = HyperParameterOptimizer(
     base_task_id=task.id,
@@ -22,7 +22,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/hyperparameters/meta1_sgd1_lr/value", values=[1.0e-3]),
         DiscreteParameterRange("config/hyperparameters/meta1_sgd1_wd/value", values=[1.0e-5]),
         # Outer optimizer hyperparameters
-        DiscreteParameterRange("config/hyperparameters/meta2_sgd1_lr/value", values=[5.0e-5]),
+        DiscreteParameterRange("config/hyperparameters/meta2_sgd1_lr/value", values=[1e-3]),
         # Outer optimizer learner (level 1)
         DiscreteParameterRange(
             "config/levels/1/learner/optimizer_learner/method/_type", values=["RTRLFiniteHvpConfig"]
@@ -34,7 +34,7 @@ optimizer = HyperParameterOptimizer(
         DiscreteParameterRange("config/levels/1/dataset/num_examples_in_minibatch", values=[4000]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/epochs", values=[1000]),
+        DiscreteParameterRange("config/epochs", values=[2000]),
         DiscreteParameterRange("config/data_root_dir", values=["/scratch/wlp9800/datasets"]),
         DiscreteParameterRange("config/log_dir", values=["/scratch/wlp9800/offline_logs"]),
         DiscreteParameterRange("config/log_title", values=["oho"]),

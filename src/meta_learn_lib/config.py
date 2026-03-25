@@ -190,6 +190,7 @@ class IdentityLearnerConfig: ...
 class RFLOConfig:
     time_constant: HP
     damping: float
+    beta: float
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,7 @@ class UOROConfig:
     std: float
     distribution: Distribution
     damping: float
+    beta: float
 
 
 @dataclass(frozen=True)

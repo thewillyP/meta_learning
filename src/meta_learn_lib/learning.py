@@ -90,19 +90,19 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             match _config:
                 case RTRLConfig():
                     _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
-                    hmp = beta * hmp_jvp + (1 - mu - beta) * influence_tensor_s.value
+                    hmp = hmp_jvp - mu * influence_tensor_s.value
                 case RTRLFiniteHvpConfig(eps, ___):
 
                     def finite_hvp(v: jax.Array) -> jax.Array:
                         jvp_v = (state_fn(env)(s + eps * v)[0] - state_fn(env)(s - eps * v)[0]) / (2 * eps)
-                        return beta * jvp_v + (1 - mu - beta) * v
+                        return jvp_v - mu * v
 
                     hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor_s.value)
 
             influence_tensor: JACOBIAN
             influence_tensor = filter_cond(
                 t >= config.start_at_step,
-                lambda _: hmp + dhdp,
+                lambda _: beta * (hmp + dhdp) + (1 - beta) * influence_tensor_s.value,
                 lambda _: influence_tensor_s.value,
                 None,
             )
@@ -156,6 +156,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             key, env = learn_interface.take_prng(env)
             random_vector = distribution(key)
             mu = config.damping
+            beta = config.beta
             uoro_state = learn_interface.get_uoro_state(env)
             A_s = uoro_state.A
             B_s = uoro_state.B
@@ -181,16 +182,18 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
                 return fn
 
-            immediateJacobian__A_projection = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
+            damped_jvp = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
+            A_propagated = beta * damped_jvp + (1 - beta) * A_s.value
             _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn(env), p, has_aux=True)
             (immediateInfluence__random_projection,) = vjp_func(random_vector)
+            scaled_immediate = beta * immediateInfluence__random_projection
             new_env = eqx.combine(arr, static)
 
-            rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(immediateJacobian__A_projection))
-            rho1 = jnp.sqrt(jnp.linalg.norm(immediateInfluence__random_projection) / jnp.linalg.norm(random_vector))
+            rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(A_propagated))
+            rho1 = jnp.sqrt(jnp.linalg.norm(scaled_immediate) / jnp.linalg.norm(random_vector))
 
-            A_new: jax.Array = rho0 * immediateJacobian__A_projection + rho1 * random_vector
-            B_new: jax.Array = B_s.value / rho0 + immediateInfluence__random_projection / rho1
+            A_new: jax.Array = rho0 * A_propagated + rho1 * random_vector
+            B_new: jax.Array = B_s.value / rho0 + scaled_immediate / rho1
 
             new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
             grad = (credit_gr[: A_new.shape[0]] @ A_new) * B_new + credit_gr[A_new.shape[0] :]
@@ -234,6 +237,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
             mu = config.damping
+            beta = config.beta
             alpha = learn_interface.get_time_constant(env).value
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
@@ -254,7 +258,8 @@ def rflo[ENV, TR_DATA, VL_DATA](
             new_env = eqx.combine(arr, static)
 
             influence_tensor: JACOBIAN
-            influence_tensor = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
+            naive = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
+            influence_tensor = beta * naive + (1 - beta) * influence_tensor_s.value
 
             new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])

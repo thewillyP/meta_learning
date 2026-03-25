@@ -434,3 +434,4 @@ class GodConfig:
     label_mask_value: float
     unlabeled_mask_value: float
     num_tasks: int
+    prefetch_buffer_size: int

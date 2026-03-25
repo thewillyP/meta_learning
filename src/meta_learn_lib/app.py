@@ -116,7 +116,7 @@ def run(
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, loader_prng, task_prng)
     x, dataloader = toolz.peek(dataloader)
-    dataloader = prefetch(toolz.take(total_iterations, dataloader), buffer_size=2)
+    dataloader = prefetch(toolz.take(total_iterations, dataloader), buffer_size=config.prefetch_buffer_size)
 
     meta_interfaces, count = create_meta_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)

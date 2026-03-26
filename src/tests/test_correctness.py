@@ -60,6 +60,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
         logger_config=[],
         epochs=1,
         checkpoint_every_n_minibatches=1,
+        checkpoint_every_n_epochs=0,
         transition_graph={
             "x": {},
             "concat": {"x"},

@@ -17,6 +17,7 @@ OHO_RNN256 = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -321,6 +322,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -646,6 +648,7 @@ OHO_RNN256_V2 = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -950,6 +953,7 @@ OHO_RNN256_V3 = GodConfig(
     ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -1254,6 +1258,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
     ),
     epochs=2_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -1549,6 +1554,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
     ),
     epochs=2_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -1851,6 +1857,7 @@ RNN256_CIFAR10 = GodConfig(
     ),
     epochs=2_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -2100,6 +2107,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
     ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -2391,6 +2399,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
     ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -2682,6 +2691,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -2976,6 +2986,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
     ),
     epochs=2_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -3271,6 +3282,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -3340,8 +3352,8 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             level=1,
             parametrizes_transition=False,
         ),
-        "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.0001,
+        "meta2_adam1_lr": HyperparameterConfig(
+            value=0.001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3350,7 +3362,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             level=2,
             parametrizes_transition=True,
         ),
-        "meta2_sgd1_wd": HyperparameterConfig(
+        "meta2_adam1_wd": HyperparameterConfig(
             value=0.0,
             kind="weight_decay",
             count=1,
@@ -3360,8 +3372,8 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             level=2,
             parametrizes_transition=True,
         ),
-        "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+        "meta2_adam1_momentum": HyperparameterConfig(
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3473,7 +3485,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                         uoro_config=UOROConfig(
                             std=1.0,
                             distribution="uniform",
-                            damping=1e-4,
+                            damping=1e-2,
                             beta=0.1,
                         ),
                     ),
@@ -3481,12 +3493,12 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                     scale=1 / 50.0,
                 ),
                 optimizer={
-                    "meta2_sgd1": OptimizerAssignment(
+                    "meta2_adam1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
-                            learning_rate="meta2_sgd1_lr",
-                            weight_decay="meta2_sgd1_wd",
-                            momentum="meta2_sgd1_momentum",
+                        optimizer=AdamConfig(
+                            learning_rate="meta2_adam1_lr",
+                            weight_decay="meta2_adam1_wd",
+                            momentum="meta2_adam1_momentum",
                         ),
                     ),
                 },
@@ -3575,6 +3587,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
     ),
     epochs=2_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},

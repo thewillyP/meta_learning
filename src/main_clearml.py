@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Union
 import clearml
 from clearml import InputModel, Model
@@ -8,6 +9,7 @@ from cattrs import Converter
 import argparse
 import time
 from meta_learn_lib import app
+from meta_learn_lib.checkpoint import ClearMLCheckpointManager, NullCheckpointManager
 from meta_learn_lib.config import *
 from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, ConsoleLogger
 from meta_learn_lib.util import setup_flattened_union
@@ -157,7 +159,7 @@ def fetch_config(config_name: str | None = None, config_id: str | None = None) -
         return model, json.load(f)
 
 
-def main(config_name: str | None, config_id: str | None, skip_jitter: bool):
+def main(config_name: str | None, config_id: str | None, skip_jitter: bool, resume_model_id: str | None):
     if not skip_jitter:
         _jitter_rng = random.Random()
         time.sleep(_jitter_rng.uniform(1, 60))
@@ -167,6 +169,7 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool):
         task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
         task_type=clearml.TaskTypes.training,
         auto_resource_monitoring=False,
+        output_uri=True,
     )
 
     slurm_params = SlurmParams(
@@ -198,7 +201,13 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool):
     if lc.matplotlib.enabled:
         loggers.append(MatplotlibLogger(lc.matplotlib.save_dir))
 
-    app.runApp(config, loggers)
+    if config.checkpoint_every_n_epochs > 0:
+        ckpt_dir = os.path.join(config.data_root_dir, "checkpoints", task.task_id)
+        checkpoint_manager = ClearMLCheckpointManager(task, ckpt_dir, initial_model_id=resume_model_id)
+    else:
+        checkpoint_manager = NullCheckpointManager()
+
+    app.runApp(config, loggers, checkpoint_manager)
 
 
 if __name__ == "__main__":
@@ -207,9 +216,11 @@ if __name__ == "__main__":
     group.add_argument("--config-name", default=None, help="Config name in the registry (gets latest)")
     group.add_argument("--config-id", default=None, help="Exact model ID for a pinned config")
     parser.add_argument("--skip-jitter", action="store_true", default=False)
+    parser.add_argument("--resume-model-id", default=None, help="ClearML model ID to resume training from")
     args = parser.parse_args()
     main(
         config_name=args.config_name,
         config_id=args.config_id,
         skip_jitter=args.skip_jitter,
+        resume_model_id=args.resume_model_id,
     )

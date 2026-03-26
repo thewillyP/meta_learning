@@ -432,6 +432,7 @@ class GodConfig:
     logger_config: LoggersConfig
     epochs: int
     checkpoint_every_n_minibatches: int
+    checkpoint_every_n_epochs: int
 
     transition_graph: dict[str, set[str]]
     readout_graph: dict[str, set[str]]

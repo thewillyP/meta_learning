@@ -143,18 +143,16 @@ def uoro[ENV, TR_DATA, VL_DATA](
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
         std = config.std
-        state_shape = learn_interface.get_state(env_init).shape
         match config.distribution:
             case "uniform":
-                distribution = lambda key: jax.random.uniform(key, state_shape, minval=-std, maxval=std)
+                distribution = lambda key, shape: jax.random.uniform(key, shape, minval=-std, maxval=std)
             case "normal":
-                distribution = lambda key: jax.random.normal(key, state_shape) * std
+                distribution = lambda key, shape: jax.random.normal(key, shape) * std
 
         def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
             key, env = learn_interface.take_prng(env)
-            random_vector = distribution(key)
             mu = config.damping
             beta = config.beta
             uoro_state = learn_interface.get_uoro_state(env)
@@ -162,6 +160,8 @@ def uoro[ENV, TR_DATA, VL_DATA](
             B_s = uoro_state.B
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
+            state_shape = s.shape
+            random_vector = distribution(key, state_shape)
 
             def state_fn(e: ENV) -> Callable[[jax.Array], jax.Array]:
                 def fn(state: jax.Array) -> jax.Array:
@@ -196,7 +196,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
             B_new: jax.Array = B_s.value / rho0 + scaled_immediate / rho1
 
             new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            grad = (credit_gr[: A_new.shape[0]] @ A_new) * B_new + credit_gr[A_new.shape[0] :]
+            grad = (credit_gr[..., : A_new.shape[0]] @ A_new) * B_new + credit_gr[..., A_new.shape[0] :]
 
             new_env = learn_interface.put_uoro_state(
                 new_env,
@@ -411,7 +411,7 @@ def immediate[ENV, TR_DATA, VL_DATA](
             env, trans_stat = transition(env, tr_data)
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
             n_s = learn_interface.get_state(env).shape[0]
-            grad = GRADIENT(credit_gr[n_s:])
+            grad = GRADIENT(credit_gr[..., n_s:])
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 

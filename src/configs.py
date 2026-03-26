@@ -3,7 +3,7 @@ from meta_learn_lib.config import *
 from upload_configs import upload_config
 
 
-OHO_RNN256 = GodConfig(
+OHO_RNN32 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
@@ -31,7 +31,7 @@ OHO_RNN256 = GodConfig(
         "concat": Concat(),
         "rnn1": VanillaRNNLayer(
             nn_layer=NNLayer(
-                n=256,
+                n=32,
                 activation_fn="tanh",
                 use_bias=True,
                 layer_norm=None,
@@ -3868,7 +3868,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        ("OHO_RNN256", OHO_RNN256),
+        ("OHO_RNN32", OHO_RNN32),
     ]:
         upload_config(name, config)
 

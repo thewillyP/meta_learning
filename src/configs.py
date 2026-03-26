@@ -11,13 +11,13 @@ OHO_RNN256 = GodConfig(
     log_title="train",
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
-        hdf5=HDF5LoggerConfig(enabled=False),
+        hdf5=HDF5LoggerConfig(enabled=True),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
-    checkpoint_every_n_epochs=0,
+    checkpoint_every_n_epochs=25,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -3868,7 +3868,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        ("OHO_UORO_FD_RNN32_SMNIST", OHO_UORO_FD_RNN32_SMNIST),
+        ("OHO_RNN256", OHO_RNN256),
     ]:
         upload_config(name, config)
 

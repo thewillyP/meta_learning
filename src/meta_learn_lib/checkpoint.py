@@ -1,10 +1,31 @@
 import clearml
+import jax
+import jax.dtypes
+import jax.numpy as jnp
 import json
 import os
 from dataclasses import dataclass, asdict
 from typing import Protocol
 
 import equinox as eqx
+
+
+def _prng_to_data(pytree):
+    """Convert PRNG keys to their underlying integer arrays for serialization."""
+    def convert(x):
+        if isinstance(x, jax.Array) and jnp.issubdtype(x.dtype, jax.dtypes.prng_key):
+            return jax.random.key_data(x)
+        return x
+    return jax.tree.map(convert, pytree)
+
+
+def _data_to_prng(pytree, like):
+    """Restore PRNG keys from integer arrays using the reference pytree for dtype info."""
+    def convert(x, ref):
+        if isinstance(ref, jax.Array) and jnp.issubdtype(ref.dtype, jax.dtypes.prng_key):
+            return jax.random.wrap_key_data(x)
+        return x
+    return jax.tree.map(convert, pytree, like)
 
 
 @dataclass(frozen=True)
@@ -33,7 +54,7 @@ class FileCheckpointManager:
         os.makedirs(self.directory, exist_ok=True)
         ckpt_path = os.path.join(self.directory, "checkpoint.eqx")
         meta_path = os.path.join(self.directory, "metadata.json")
-        eqx.tree_serialise_leaves(ckpt_path + ".tmp", arr)
+        eqx.tree_serialise_leaves(ckpt_path + ".tmp", _prng_to_data(arr))
         with open(meta_path + ".tmp", "w") as f:
             json.dump(asdict(metadata), f)
         os.replace(ckpt_path + ".tmp", ckpt_path)
@@ -44,7 +65,8 @@ class FileCheckpointManager:
         meta_path = os.path.join(self.directory, "metadata.json")
         if not os.path.exists(ckpt_path) or not os.path.exists(meta_path):
             return None
-        arr = eqx.tree_deserialise_leaves(ckpt_path, like=like)
+        arr = eqx.tree_deserialise_leaves(ckpt_path, like=_prng_to_data(like))
+        arr = _data_to_prng(arr, like)
         with open(meta_path) as f:
             return arr, CheckpointMetadata(**json.load(f))
 
@@ -101,7 +123,8 @@ class ClearMLCheckpointManager:
         local = model.get_local_copy()
         if not local:
             return None
-        return eqx.tree_deserialise_leaves(local, like=like)
+        arr = eqx.tree_deserialise_leaves(local, like=_prng_to_data(like))
+        return _data_to_prng(arr, like)
 
     def _download_metadata(self) -> CheckpointMetadata | None:
         meta_artifact = self.task.artifacts.get("checkpoint_metadata")

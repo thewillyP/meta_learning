@@ -3341,7 +3341,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             parametrizes_transition=False,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.001,
+            value=0.0001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),

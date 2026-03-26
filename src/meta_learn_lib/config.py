@@ -203,6 +203,12 @@ class UOROConfig:
 
 
 @dataclass(frozen=True)
+class UOROFiniteDiffConfig:
+    epsilon: float
+    uoro_config: UOROConfig
+
+
+@dataclass(frozen=True)
 class ImmediateLearnerConfig: ...
 
 
@@ -213,6 +219,7 @@ type GradientMethod = Union[
     IdentityLearnerConfig,
     RFLOConfig,
     UOROConfig,
+    UOROFiniteDiffConfig,
     ImmediateLearnerConfig,
 ]
 

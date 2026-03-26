@@ -90,9 +90,18 @@ def jvp(f, primal, tangent):
     return jax.jvp(f, (primal,), (tangent,), has_aux=True)
 
 
+def finite_difference_jvp(f, primal, tangent, eps):
+    return (f(primal + eps * tangent) - f(primal - eps * tangent)) / (2 * eps)
+
+
 def jacobian_matrix_product(f, primal, matrix):
     wrapper = lambda p, t: jvp(f, p, t)
     return eqx.filter_vmap(wrapper, in_axes=(None, 1), out_axes=(None, 1, None))(primal, matrix)
+
+
+def finite_difference_jmp(f, primal, matrix, eps):
+    wrapper = lambda p, t: finite_difference_jvp(f, p, t, eps)
+    return eqx.filter_vmap(wrapper, in_axes=(None, 1), out_axes=1)(primal, matrix)
 
 
 def identity_fn(x: jax.Array) -> jax.Array:

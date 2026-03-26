@@ -11,7 +11,13 @@ from meta_learn_lib.create_env import env_resetters, env_validation_resetters, m
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.optimizer import get_opt_step
-from meta_learn_lib.util import filter_cond, jacobian_matrix_product, softclip
+from meta_learn_lib.util import (
+    filter_cond,
+    finite_difference_jmp,
+    finite_difference_jvp,
+    jacobian_matrix_product,
+    softclip,
+)
 
 
 def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
@@ -92,12 +98,8 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                     _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
                     hmp = hmp_jvp - mu * influence_tensor_s.value
                 case RTRLFiniteHvpConfig(eps, ___):
-
-                    def finite_hvp(v: jax.Array) -> jax.Array:
-                        jvp_v = (state_fn(env)(s + eps * v)[0] - state_fn(env)(s - eps * v)[0]) / (2 * eps)
-                        return jvp_v - mu * v
-
-                    hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor_s.value)
+                    f = lambda x: state_fn(env)(x)[0]
+                    hmp = finite_difference_jmp(f, s, influence_tensor_s.value, eps) - mu * influence_tensor_s.value
 
             influence_tensor: JACOBIAN
             influence_tensor = filter_cond(
@@ -130,7 +132,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
     readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
-    config: UOROConfig,
+    _config: UOROConfig | UOROFiniteDiffConfig,
     grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
@@ -139,6 +141,13 @@ def uoro[ENV, TR_DATA, VL_DATA](
     ],
     track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+
+    match _config:
+        case UOROConfig():
+            config = _config
+        case UOROFiniteDiffConfig():
+            config = _config.uoro_config
+
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
@@ -182,7 +191,11 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
                 return fn
 
-            damped_jvp = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
+            match _config:
+                case UOROConfig():
+                    damped_jvp = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
+                case UOROFiniteDiffConfig(eps, _):
+                    damped_jvp = finite_difference_jvp(state_fn(env), s, A_s.value, eps) - mu * A_s.value
             A_propagated = beta * damped_jvp + (1 - beta) * A_s.value
             _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn(env), p, has_aux=True)
             (immediateInfluence__random_projection,) = vjp_func(random_vector)
@@ -504,7 +517,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = identity(transition, readout_fn, interface, model_grad_config, length, lambda f: f, track_logs)
             case RTRLConfig() | RTRLFiniteHvpConfig():
                 fn = rtrl(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
-            case UOROConfig():
+            case UOROConfig() | UOROFiniteDiffConfig():
                 fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
                 fn = rflo(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
@@ -619,7 +632,7 @@ def create_meta_learner[ENV](
                     vmap_this,
                     track_logs,
                 )
-            case UOROConfig():
+            case UOROConfig() | UOROFiniteDiffConfig():
                 grad_fn = uoro(
                     composed_inner,
                     readout_gr,

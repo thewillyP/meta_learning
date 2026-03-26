@@ -98,6 +98,7 @@ def make_converter() -> Converter:
             IdentityLearnerConfig,
             RFLOConfig,
             UOROConfig,
+            UOROFiniteDiffConfig,
             ImmediateLearnerConfig,
         ],
     )

@@ -202,6 +202,9 @@ def uoro[ENV, TR_DATA, VL_DATA](
                 new_env,
                 UOROState(A=A_s.set(value=A_new), B=B_s.set(value=B_new)),
             )
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(A_new) * jnp.linalg.norm(B_new)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
 
             arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
@@ -265,6 +268,9 @@ def rflo[ENV, TR_DATA, VL_DATA](
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
 
             arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)

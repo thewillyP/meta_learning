@@ -174,6 +174,9 @@ class ScalarLogger:
         self.global_step = 0
 
     def log(self, stats: dict[str, jax.Array]):
+        # Bulk transfer all JAX arrays to numpy once (single device-to-host copy)
+        stats = {k: np.asarray(v) for k, v in stats.items()}
+
         # ref_shape from deepest level's scan dims (exclude time)
         max_ndim = max(v.ndim for v in stats.values())
         for k, v in stats.items():
@@ -234,7 +237,7 @@ class ScalarLogger:
                             batch_pos += 1
 
                     if has_time:
-                        time_slice = np.asarray(value[tuple(full_idx)], dtype=np.float64)
+                        time_slice = value[tuple(full_idx)]
                         mean_v = float(np.nanmean(time_slice))
                         if not np.isnan(mean_v):
                             self.logger.log_scalar(

@@ -53,13 +53,17 @@ def prefetch[T](iterator: Iterator[T], buffer_size: int) -> Iterator[T]:
         yield item
 
 
-def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> int:
+def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> tuple[int, int]:
+    """Returns (dataloader_iterations, logger_capacity)."""
     level = config.levels[level_idx]
     seq_len = get_seq_len(level.dataset_source, level.dataset.is_test)
     num_vb = math.ceil(seq_len / level.validation.num_steps)
     num_mb = math.ceil(level.dataset.num_examples_total / level.dataset.num_examples_in_minibatch)
     consumption = math.prod(config.levels[i].nested.num_steps for i in range(level_idx, len(config.levels)))
-    return (num_mb * num_vb * epochs) // consumption
+    total_steps = num_mb * num_vb * epochs
+    dataloader_iterations = total_steps // consumption
+    logger_capacity = total_steps // config.checkpoint_every_n_minibatches
+    return dataloader_iterations, logger_capacity
 
 
 def make_eval_config(config: GodConfig) -> GodConfig:
@@ -213,11 +217,11 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
         raise ValueError("\n".join(errors))
 
     # Train
-    train_iterations = get_iterations(0, config, config.epochs)
+    train_dl_iters, train_log_cap = get_iterations(0, config, config.epochs)
     train_logger = create_logger(
         loggers,
         len(config.levels),
-        train_iterations,
+        train_log_cap,
         config.checkpoint_every_n_minibatches,
         config.log_title,
     )
@@ -227,7 +231,7 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
         lambda cfg, shapes, mi, li: create_env(cfg, shapes, mi, li, env_prng),
         dataset_gen_prng,
         task_prng,
-        train_iterations,
+        train_dl_iters,
         train_logger,
         lambda s, acc: acc,
         "train",
@@ -236,11 +240,11 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
     # Evaluate on last level's dataset
     eval_config = make_eval_config(config)
     last_idx = len(eval_config.levels) - 1
-    eval_iterations = get_iterations(last_idx, eval_config, 1)
+    eval_dl_iters, eval_log_cap = get_iterations(last_idx, eval_config, 1)
     eval_logger = create_logger(
         loggers,
         len(eval_config.levels),
-        eval_iterations,
+        eval_log_cap,
         config.checkpoint_every_n_minibatches,
         config.log_title,
     )
@@ -250,7 +254,7 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
         lambda *_: trained_env,
         dataset_gen_prng,
         task_prng,
-        eval_iterations,
+        eval_dl_iters,
         eval_logger,
         lambda s, acc: acc + (s,),
         "eval",

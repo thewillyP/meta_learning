@@ -217,6 +217,7 @@ def run(
     for k, data in enumerate(dataloader):
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
+        time.sleep(1)
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 

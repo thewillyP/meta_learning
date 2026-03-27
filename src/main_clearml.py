@@ -170,8 +170,8 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool, resu
         task_type=clearml.TaskTypes.training,
         auto_resource_monitoring=False,
         output_uri=True,
+        continue_last_task=0,  # integer 0 disables auto iteration offset; we manage iteration numbering ourselves
     )
-    task.set_initial_iteration(0)  # disable ClearML's auto-offset; we manage iteration numbering ourselves
 
     slurm_params = SlurmParams(
         memory="8GB",

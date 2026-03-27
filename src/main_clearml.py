@@ -187,11 +187,11 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool, resu
     )
 
     slurm_params = SlurmParams(
-        memory="8GB",
+        memory="16GB",
         time="01:00:00",
         cpu=2,
         gpu=1,
-        log_dir="/vast/wlp9800/logs",
+        log_dir="/scratch/wlp9800/logs",
         skip_python_env_install=True,
     )
 

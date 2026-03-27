@@ -13,21 +13,24 @@ from meta_learn_lib.util import accuracy, hyperparameter_reparametrization
 def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
     match prior:
         case ELBOObjective.GaussianPrior(mu, log_sigma):
-            return -0.5 * jnp.sum(jnp.log(2 * jnp.pi) + 2 * log_sigma + (z - mu) ** 2 / jnp.exp(2 * log_sigma))
+            return -0.5 * jnp.sum(jnp.log(2 * jnp.pi) + 2 * log_sigma + (z - mu) ** 2 / jnp.exp(2 * log_sigma), axis=-1)
 
 
-def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: Outputs) -> jax.Array:
+def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: Outputs, mask: jax.Array) -> jax.Array:
     match (posterior, prior):
         case (ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(prior_mu, prior_log_sigma)):
             mu = outputs.mu
             log_sigma = outputs.log_sigma
-            return 0.5 * jnp.sum(
+            kl_per_example = 0.5 * jnp.sum(
                 2 * (prior_log_sigma - log_sigma)
                 + (jnp.exp(2 * log_sigma) + (mu - prior_mu) ** 2) / jnp.exp(2 * prior_log_sigma)
-                - 1
+                - 1,
+                axis=-1,
             )
+            return jnp.sum(jnp.where(mask, kl_per_example, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
         case _:
-            return outputs.log_q_z - log_p_z(prior, outputs.z)
+            kl_per_example = outputs.log_q_z - log_p_z(prior, outputs.z)
+            return jnp.sum(jnp.where(mask, kl_per_example, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
 
 
 def nan_if_masked(value: jax.Array, has_label: jax.Array) -> jax.Array:
@@ -143,11 +146,12 @@ def create_loss_fn[ENV](
             inner_loss_fn = create_loss_fn(likelihood, unlabeled_mask_value, unlabeled_mask_value, task_interface)
 
             def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
-                x, _ = data
+                x, target = data
                 recon_loss, stats = inner_loss_fn(env, outputs, (x, x))
 
                 beta = task_interface.get_kl_regularizer_beta(env).value
-                kl_value = kl(posterior, prior, outputs)
+                mask = target != label_mask_value
+                kl_value = kl(posterior, prior, outputs, mask)
 
                 loss = LOSS(recon_loss + beta * kl_value)
                 stats["recon_loss"] = jax.lax.stop_gradient(recon_loss)

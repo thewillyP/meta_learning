@@ -4846,8 +4846,7 @@ OHO_RNN32_TEST = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        ("OHO_RNN32", OHO_RNN32),
-        ("OHO_RNN32_TEST", OHO_RNN32_TEST),
+        ("VAE_BASELINE", VAE_BASELINE),
     ]:
         upload_config(name, config)
 

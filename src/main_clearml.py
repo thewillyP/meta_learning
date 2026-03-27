@@ -190,7 +190,7 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool, resu
         memory="8GB",
         time="01:00:00",
         cpu=2,
-        gpu=0,
+        gpu=1,
         log_dir="/vast/wlp9800/logs",
         skip_python_env_install=True,
     )

@@ -164,14 +164,14 @@ class ScalarLogger:
     Batch dims become separate named series.
     """
 
-    def __init__(self, logger: Logger, num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str):
+    def __init__(self, logger: Logger, num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str, global_step: int):
         self.logger = logger
         self.num_levels = num_levels
         self.total_iterations = total_iterations
         self.checkpoint_every = checkpoint_every
         self.log_title = log_title
         self.counters: dict[str, int] = {}
-        self.global_step = 0
+        self.global_step = global_step
 
     def log(self, stats: dict[str, jax.Array]):
         # Bulk transfer all JAX arrays to numpy once (single device-to-host copy)
@@ -263,8 +263,9 @@ class ThreadedScalarLogger:
         total_iterations: int,
         checkpoint_every: int,
         log_title: str,
+        global_step: int,
     ):
-        self.scalar_logger = ScalarLogger(logger, num_levels, total_iterations, checkpoint_every, log_title)
+        self.scalar_logger = ScalarLogger(logger, num_levels, total_iterations, checkpoint_every, log_title, global_step)
         self.loggers = loggers
         self.job_queue = queue.Queue()
         self.stop_event = threading.Event()
@@ -309,8 +310,8 @@ class ThreadedScalarLogger:
 
 
 def create_logger(
-    loggers: list[Logger], num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str
+    loggers: list[Logger], num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str, global_step: int,
 ) -> ThreadedScalarLogger:
     """Construct a ThreadedScalarLogger from a list of loggers."""
     logger = MultiLogger(loggers)
-    return ThreadedScalarLogger(logger, loggers, num_levels, total_iterations, checkpoint_every, log_title)
+    return ThreadedScalarLogger(logger, loggers, num_levels, total_iterations, checkpoint_every, log_title, global_step)

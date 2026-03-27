@@ -55,6 +55,10 @@ def prefetch[T](iterator: Iterator[T], buffer_size: int) -> Iterator[T]:
         yield item
 
 
+def get_consumption(level_idx: int, config: GodConfig) -> int:
+    return math.prod(config.levels[i].nested.num_steps for i in range(level_idx, len(config.levels)))
+
+
 def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> tuple[int, int, int]:
     """Returns (total_iterations, iterations_per_epoch, logger_capacity).
 
@@ -66,7 +70,7 @@ def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> tuple[int,
     seq_len = get_seq_len(level.dataset_source, level.dataset.is_test)
     num_vb = math.ceil(seq_len / level.validation.num_steps)
     num_mb = math.ceil(level.dataset.num_examples_total / level.dataset.num_examples_in_minibatch)
-    consumption = math.prod(config.levels[i].nested.num_steps for i in range(level_idx, len(config.levels)))
+    consumption = get_consumption(level_idx, config)
     steps_per_epoch = num_mb * num_vb
     if steps_per_epoch % consumption != 0:
         raise ValueError(
@@ -128,7 +132,8 @@ def run(
     task_prng: PRNG,
     total_iterations: int,
     iterations_per_epoch: int,
-    scalar_logger: ThreadedScalarLogger,
+    logger_capacity: int,
+    loggers: list[Logger],
     stat_collector: Callable[[STAT, tuple[STAT, ...]], tuple[STAT, ...]],
     stat_prefix: str,
     checkpoint_manager: CheckpointManager,
@@ -179,7 +184,17 @@ def run(
         start_step = meta.global_step
         print(f"Resumed from checkpoint at step {start_step} (epoch {start_step // iterations_per_epoch})")
 
-    # Advance dataloader to resume point, then take remaining iterations
+    consumption = get_consumption(0, config)
+    scalar_logger = create_logger(
+        loggers,
+        len(config.levels),
+        logger_capacity,
+        config.checkpoint_every_n_minibatches,
+        config.log_title,
+        start_step * consumption,
+    )
+
+    # Advance dataloader to resume point
     if start_step > 0:
         print(f"Skipping {start_step} dataloader iterations...")
         dataloader = toolz.drop(start_step, dataloader)
@@ -202,7 +217,6 @@ def run(
     for k, data in enumerate(dataloader):
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
-        time.sleep(1)
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 
@@ -257,13 +271,6 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
 
     # Train
     train_dl_iters, train_iters_per_epoch, train_log_cap = get_iterations(0, config, config.epochs)
-    train_logger = create_logger(
-        loggers,
-        len(config.levels),
-        train_log_cap,
-        config.checkpoint_every_n_minibatches,
-        config.log_title,
-    )
 
     trained_env, _ = run(
         config,
@@ -272,7 +279,8 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
         task_prng,
         train_dl_iters,
         train_iters_per_epoch,
-        train_logger,
+        train_log_cap,
+        loggers,
         lambda s, acc: acc,
         "train",
         checkpoint_manager,
@@ -282,13 +290,6 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
     eval_config = make_eval_config(config)
     last_idx = len(eval_config.levels) - 1
     eval_dl_iters, eval_iters_per_epoch, eval_log_cap = get_iterations(last_idx, eval_config, 1)
-    eval_logger = create_logger(
-        loggers,
-        len(eval_config.levels),
-        eval_log_cap,
-        config.checkpoint_every_n_minibatches,
-        config.log_title,
-    )
 
     _, eval_stats = run(
         eval_config,
@@ -297,7 +298,8 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
         task_prng,
         eval_dl_iters,
         eval_iters_per_epoch,
-        eval_logger,
+        eval_log_cap,
+        loggers,
         lambda s, acc: acc + (s,),
         "eval",
         NullCheckpointManager(),
@@ -305,7 +307,7 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
 
     accumulated = jax.tree.map(lambda *xs: jnp.nanmean(jnp.stack(xs), axis=0), *eval_stats)
     accumulated = prefix_stats(accumulated, "eval_accumulated")
-    acc_logger = create_logger(loggers, len(eval_config.levels), 1, 1, config.log_title)
+    acc_logger = create_logger(loggers, len(eval_config.levels), 1, 1, config.log_title, 0)
     acc_logger.log(accumulated)
     acc_logger.flush()
     acc_logger.shutdown()

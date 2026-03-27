@@ -25,41 +25,32 @@ class Logger(Protocol):
 
 
 class HDF5Logger:
-    def __init__(self, log_dir: str, task_id: str):
+    def __init__(self, log_dir: str, task_id: str, checkpoint_every: int):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_every = checkpoint_every
+        self.log_file = self.log_dir / f"metrics_{task_id}.h5"
 
-        self.task_id = task_id
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = self.log_dir / f"metrics_{task_id}_{timestamp}.h5"
-        self.metric_indices = {}
-
-        # Initialize HDF5 file with task metadata
-        with h5py.File(self.log_file, "w") as f:
+        with h5py.File(self.log_file, "a") as f:
             f.attrs["task_id"] = task_id
-            f.attrs["created"] = datetime.now().isoformat()
+            f.attrs.setdefault("created", datetime.now().isoformat())
 
     def get_context(self) -> h5py.File:
-        """Get an open HDF5 file context for logging"""
         return h5py.File(self.log_file, "a")
 
     def close_context(self, f: h5py.File):
-        """Close the HDF5 file context"""
         f.close()
 
     def log_scalar(self, f: h5py.File, title: str, series: str, value: float, iteration: int, max_count: int):
-        """Log a scalar metric to an open HDF5 file"""
         if title not in f:
             dataset = f.create_dataset(title, shape=(max_count,), dtype=np.float64, fillvalue=np.nan)
             dataset.attrs["series"] = series
             f.create_dataset(f"{title}_iterations", shape=(max_count,), dtype=np.int32, fillvalue=-1)
-            self.metric_indices[title] = 0
 
-        idx = self.metric_indices[title]
-        if idx < len(f[title]):
+        idx = iteration // self.checkpoint_every - 1
+        if 0 <= idx < len(f[title]):
             f[title][idx] = value
             f[f"{title}_iterations"][idx] = iteration
-            self.metric_indices[title] += 1
 
 
 class ClearMLLogger:
@@ -164,7 +155,15 @@ class ScalarLogger:
     Batch dims become separate named series.
     """
 
-    def __init__(self, logger: Logger, num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str, global_step: int):
+    def __init__(
+        self,
+        logger: Logger,
+        num_levels: int,
+        total_iterations: int,
+        checkpoint_every: int,
+        log_title: str,
+        global_step: int,
+    ):
         self.logger = logger
         self.num_levels = num_levels
         self.total_iterations = total_iterations
@@ -265,7 +264,9 @@ class ThreadedScalarLogger:
         log_title: str,
         global_step: int,
     ):
-        self.scalar_logger = ScalarLogger(logger, num_levels, total_iterations, checkpoint_every, log_title, global_step)
+        self.scalar_logger = ScalarLogger(
+            logger, num_levels, total_iterations, checkpoint_every, log_title, global_step
+        )
         self.loggers = loggers
         self.job_queue = queue.Queue()
         self.stop_event = threading.Event()
@@ -310,7 +311,12 @@ class ThreadedScalarLogger:
 
 
 def create_logger(
-    loggers: list[Logger], num_levels: int, total_iterations: int, checkpoint_every: int, log_title: str, global_step: int,
+    loggers: list[Logger],
+    num_levels: int,
+    total_iterations: int,
+    checkpoint_every: int,
+    log_title: str,
+    global_step: int,
 ) -> ThreadedScalarLogger:
     """Construct a ThreadedScalarLogger from a list of loggers."""
     logger = MultiLogger(loggers)

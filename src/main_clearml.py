@@ -171,6 +171,7 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool, resu
         auto_resource_monitoring=False,
         output_uri=True,
     )
+    task.set_initial_iteration(0)  # disable ClearML's auto-offset; we manage iteration numbering ourselves
 
     slurm_params = SlurmParams(
         memory="8GB",
@@ -195,7 +196,7 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool, resu
     if lc.clearml.enabled:
         loggers.append(ClearMLLogger(task))
     if lc.hdf5.enabled:
-        loggers.append(HDF5Logger(config.log_dir, task.task_id))
+        loggers.append(HDF5Logger(config.log_dir, task.task_id, config.checkpoint_every_n_minibatches))
     if lc.console.enabled:
         loggers.append(ConsoleLogger())
     if lc.matplotlib.enabled:

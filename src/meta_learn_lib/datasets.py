@@ -70,7 +70,7 @@ class PyTreeDataset(Dataset):
 
 def get_seq_len(task: Task, is_test: bool) -> int:
     match task:
-        case MNISTTaskFamily(ph, pw, _, _, _, _):
+        case MNISTTaskFamily(ph, pw, _, _, _, _, _):
             return (MNIST_HEIGHT // ph) * (MNIST_WIDTH // pw)
         case CIFAR10TaskFamily(ph, pw, _):
             return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
@@ -192,6 +192,7 @@ def image_transforms(
     patch_w: int,
     y_mask: float,
     label_last_only: bool,
+    binarize: bool = False,
 ) -> tuple[Lambda, Lambda, Callable[[jax.Array], jax.Array]]:
     """Returns (x_pre, y_pre, patch_reshape).
 
@@ -201,10 +202,16 @@ def image_transforms(
     """
     seq_len = (height // patch_h) * (width // patch_w)
 
+    pixel_transform = (
+        torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
+        if binarize
+        else torchvision.transforms.Normalize(mean, std)
+    )
+
     x_pre = torchvision.transforms.Compose(
         [
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize(mean, std),
+            pixel_transform,
         ]
     )
 
@@ -242,7 +249,15 @@ def dataset_sources(
         return list(random_split(ds, sizes, generator=generator))
 
     match task:
-        case MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, domain, normalize):
+        case MNISTTaskFamily(
+            patch_h,
+            patch_w,
+            label_last_only,
+            add_spurious_pixel_to_train,
+            domain,
+            normalize,
+            binarize,
+        ):
             domain_list = sorted(domain)
             seed_assign, seed_split = jax.random.split(seed)
             assignments = jax.random.randint(seed_assign, shape=(num_tasks,), minval=0, maxval=len(domain_list))
@@ -267,6 +282,7 @@ def dataset_sources(
                     patch_w=patch_w,
                     y_mask=y_mask,
                     label_last_only=label_last_only,
+                    binarize=binarize,
                 )
 
                 if add_spurious_pixel_to_train and not is_test:
@@ -390,8 +406,8 @@ def task_iterator(
     xs, ys = xs[perm], ys[perm]
 
     for i in range(math.ceil(xs.shape[0] / batch)):
-        X_batch = xs[i * batch:(i + 1) * batch]
-        Y_batch = ys[i * batch:(i + 1) * batch]
+        X_batch = xs[i * batch : (i + 1) * batch]
+        Y_batch = ys[i * batch : (i + 1) * batch]
 
         if X_batch.shape[0] < batch:
             pad_size = batch - X_batch.shape[0]

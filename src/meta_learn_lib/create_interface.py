@@ -424,6 +424,14 @@ def create_meta_interfaces(config: GodConfig, i: int) -> tuple[list[dict[str, Go
                         get_autoregressive_predictions=get_autoregressive_predictions(i, level),
                         put_autoregressive_predictions=put_autoregressive_predictions(i, level),
                     )
+                case ReparameterizeLayer():
+                    interface = copy.replace(
+                        default_interface,
+                        put_logs=put_logs(level),
+                        get_logs=get_logs(level),
+                        take_prng=prng_factory(i, level),
+                        put_prng=put_prng(i, level),
+                    )
                 case _:
                     interface = default_interface
 

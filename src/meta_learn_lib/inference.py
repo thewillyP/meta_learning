@@ -63,7 +63,17 @@ def get_reader[ENV](
             case Scan(graph, autoregressive_mask, pred_source, _start_token):
                 sub_from_env = get_reader(graph, nodes, meta_interface)
                 from_env = from_env.set(node_name, make_scan_reader(sub_from_env))
-            case Repeat() | Concat() | ToEmpty() | UnlabeledSource() | LabeledSource():
+            case (
+                Repeat()
+                | Concat()
+                | ToEmpty()
+                | UnlabeledSource()
+                | LabeledSource()
+                | ReparameterizeLayer()
+                | MergeOutputs()
+                | ExtractZ()
+                | Reshape()
+            ):
                 from_env = from_env.set(node_name, lambda env: Outputs())
             case _:
                 from_env = from_env.set(node_name, lambda env: Outputs())
@@ -205,6 +215,31 @@ def get_inference[ENV](
                     outputs = outputs.set(node_name, Outputs(prediction=x_data))
                 case LabeledSource():
                     outputs = outputs.set(node_name, Outputs(prediction=y_data))
+                case ReparameterizeLayer():
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = to_vector(deps).vector
+                    n = x.shape[0] // 2
+                    mu, log_sigma = x[:n], x[n:]
+                    key, env = meta_interface[node_name].take_prng(env)
+                    z = mu + jnp.exp(log_sigma) * jax.random.normal(key, mu.shape)
+                    outputs = outputs.set(node_name, Outputs(mu=mu, log_sigma=log_sigma, z=z))
+                case MergeOutputs():
+                    upstream = [outputs[n] for n in node_graph[node_name] if n in outputs]
+                    merged = eqx.combine(*upstream, is_leaf=lambda x: x is None)
+                    outputs = outputs.set(node_name, merged)
+                case ExtractZ(i):
+                    dep = [outputs[dep_name] for dep_name in node_graph[node_name] if dep_name in outputs][0]
+                    outputs = outputs.set(node_name, Outputs(prediction=dep.z))
+                case Reshape(target_shape):
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = to_vector(deps).vector
+                    outputs = outputs.set(node_name, Outputs(prediction=x.reshape(target_shape)))
                 case _:
                     outputs = outputs.set(node_name, Outputs())
         return env, outputs

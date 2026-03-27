@@ -86,7 +86,20 @@ def make_converter() -> Converter:
     setup_flattened_union(
         converter,
         Union[
-            NNLayer, VanillaRNNLayer, GRULayer, LSTMLayer, Scan, UnlabeledSource, LabeledSource, Repeat, Concat, ToEmpty
+            NNLayer,
+            VanillaRNNLayer,
+            GRULayer,
+            LSTMLayer,
+            Scan,
+            UnlabeledSource,
+            LabeledSource,
+            Repeat,
+            Concat,
+            ToEmpty,
+            ReparameterizeLayer,
+            MergeOutputs,
+            ExtractZ,
+            Reshape,
         ],
     )
 

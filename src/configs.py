@@ -128,6 +128,7 @@ OHO_RNN32 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -189,6 +190,7 @@ OHO_RNN32 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -257,6 +259,7 @@ OHO_RNN32 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -454,6 +457,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -515,6 +519,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -583,6 +588,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -759,6 +765,7 @@ OHO_RNN256_V2 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -820,6 +827,7 @@ OHO_RNN256_V2 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -888,6 +896,7 @@ OHO_RNN256_V2 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -1064,6 +1073,7 @@ OHO_RNN256_V3 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -1125,6 +1135,7 @@ OHO_RNN256_V3 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -1193,6 +1204,7 @@ OHO_RNN256_V3 = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=500,
@@ -2677,6 +2689,343 @@ OHO_GRU128_CIFAR10 = GodConfig(
 )
 
 
+VAE_BETA_OHO = GodConfig(
+    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="vae_beta_oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
+    ),
+    epochs=100,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={},
+    readout_graph={
+        "x": {},
+        "concat": {"x"},
+        "encoder_hidden": {"concat"},
+        "encoder_out": {"encoder_hidden"},
+        "latent": {"encoder_out"},
+        "latent_z": {"latent"},
+        "decoder_hidden": {"latent_z"},
+        "decoder_out": {"decoder_hidden"},
+        "decoder_reshape": {"decoder_out"},
+        "merge": {"decoder_reshape", "latent"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "encoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
+        "encoder_out": NNLayer(n=128 * 2, activation_fn="identity", use_bias=True, layer_norm=None),
+        "latent": ReparameterizeLayer(),
+        "latent_z": ExtractZ(n=128),
+        "decoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
+        "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True, layer_norm=None),
+        "decoder_reshape": Reshape(shape=(1, 28, 28)),
+        "merge": MergeOutputs(),
+    },
+    hyperparameters={
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_beta": HyperparameterConfig(
+            value=1.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.01,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_beta": HyperparameterConfig(
+            value=0.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=0.0,
+            level=2,
+            parametrizes_transition=False,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta1_beta",
+                likelihood=BernoulliObjective(),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=False,
+                binarize=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=128,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    # add_clip=HardClip(1.0),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"encoder_hidden", "encoder_out", "decoder_hidden", "decoder_out"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=BernoulliObjective(),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=False,
+                binarize=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=128,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    # add_clip=HardClip(1.0),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    # method=RTRLFiniteHvpConfig(
+                    #     epsilon=1e-3,
+                    #     rtrl_config=RTRLConfig(
+                    #         start_at_step=0,
+                    #         damping=1e-4,
+                    #         beta=0.1,
+                    #     ),
+                    # ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_beta"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=BernoulliObjective(),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=False,
+                binarize=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=128,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=17,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-1.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
 OHO_RNN256_CIFAR10_ADAM = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
     clearml_run=True,
@@ -2971,6 +3320,321 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
     num_tasks=1,
     prefetch_buffer_size=2,
 )
+
+
+VAE_BASELINE = GodConfig(
+    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="vae_baseline",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
+    ),
+    epochs=100,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={},
+    readout_graph={
+        "x": {},
+        "concat": {"x"},
+        "encoder_hidden": {"concat"},
+        "encoder_out": {"encoder_hidden"},
+        "latent": {"encoder_out"},
+        "latent_z": {"latent"},
+        "decoder_hidden": {"latent_z"},
+        "decoder_out": {"decoder_hidden"},
+        "decoder_reshape": {"decoder_out"},
+        "merge": {"decoder_reshape", "latent"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "encoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
+        "encoder_out": NNLayer(n=128 * 2, activation_fn="identity", use_bias=True, layer_norm=None),
+        "latent": ReparameterizeLayer(),
+        "latent_z": ExtractZ(n=128),
+        "decoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
+        "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True, layer_norm=None),
+        "decoder_reshape": Reshape(shape=(1, 28, 28)),
+        "merge": MergeOutputs(),
+    },
+    hyperparameters={
+        "meta1_adam1_lr": HyperparameterConfig(
+            value=0.0001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_beta": HyperparameterConfig(
+            value=1.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.0,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_beta": HyperparameterConfig(
+            value=0.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=0.0,
+            level=2,
+            parametrizes_transition=False,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta1_beta",
+                likelihood=BernoulliObjective(),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=False,
+                binarize=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=128,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_adam1": OptimizerAssignment(
+                        target=frozenset({"encoder_hidden", "encoder_out", "decoder_hidden", "decoder_out"}),
+                        optimizer=AdamConfig(
+                            learning_rate="meta1_adam1_lr",
+                            weight_decay="meta1_adam1_wd",
+                            momentum="meta1_adam1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=BernoulliObjective(),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=False,
+                binarize=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=128,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=BernoulliObjective(),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=False,
+                binarize=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=128,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=17,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-1.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
 
 OHO_UORO_RNN256_CIFAR10 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
@@ -3268,6 +3932,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
     prefetch_buffer_size=2,
 )
 
+
 OHO_UORO_FD_RNN32_SMNIST = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
     clearml_run=True,
@@ -3393,6 +4058,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -3454,6 +4120,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -3523,6 +4190,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -3572,6 +4240,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
     num_tasks=1,
     prefetch_buffer_size=2,
 )
+
 
 OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
@@ -3866,6 +4535,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
     prefetch_buffer_size=2,
 )
 
+
 OHO_RNN32_TEST = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
     clearml_run=True,
@@ -3991,6 +4661,7 @@ OHO_RNN32_TEST = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -4052,6 +4723,7 @@ OHO_RNN32_TEST = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -4120,6 +4792,7 @@ OHO_RNN32_TEST = GodConfig(
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
                 normalize=True,
+                binarize=False,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,

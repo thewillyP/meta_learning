@@ -177,6 +177,7 @@ def main(config_name: str | None, config_id: str | None, skip_jitter: bool, resu
         _jitter_rng = random.Random()
         time.sleep(_jitter_rng.uniform(1, 60))
 
+    os.environ["CLEARML_SET_ITERATION_OFFSET"] = "0"
     task: clearml.Task = clearml.Task.init(
         project_name="temp",
         task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),

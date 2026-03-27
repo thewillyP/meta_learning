@@ -67,7 +67,7 @@ class ClearMLLogger:
         pass
 
     def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
-        self.task.get_logger().report_scalar(title=title, series=series, value=value, iteration=iteration)
+        self.task.get_logger().report_scalar(title=title, series=series, value=value, iteration=iteration + iteration_offset)
 
 
 class ConsoleLogger:

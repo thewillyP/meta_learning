@@ -26,13 +26,13 @@ class SeedConfig:
 @dataclass(frozen=True)
 class MNISTTaskFamily:
     type Domain = Literal["mnist", "fashion_mnist"]
+    type PixelTransform = Literal["normalize", "binarize", "raw"]
     patch_h: int
     patch_w: int
     label_last_only: bool
     add_spurious_pixel_to_train: bool
     domain: frozenset[Domain]
-    normalize: bool
-    binarize: bool
+    pixel_transform: PixelTransform
 
 
 @dataclass(frozen=True)

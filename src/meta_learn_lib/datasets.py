@@ -70,7 +70,7 @@ class PyTreeDataset(Dataset):
 
 def get_seq_len(task: Task, is_test: bool) -> int:
     match task:
-        case MNISTTaskFamily(ph, pw, _, _, _, _, _):
+        case MNISTTaskFamily(ph, pw, _, _, _, _):
             return (MNIST_HEIGHT // ph) * (MNIST_WIDTH // pw)
         case CIFAR10TaskFamily(ph, pw, _):
             return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
@@ -192,7 +192,7 @@ def image_transforms(
     patch_w: int,
     y_mask: float,
     label_last_only: bool,
-    binarize: bool = False,
+    pixel_transform: MNISTTaskFamily.PixelTransform,
 ) -> tuple[Lambda, Lambda, Callable[[jax.Array], jax.Array]]:
     """Returns (x_pre, y_pre, patch_reshape).
 
@@ -202,16 +202,18 @@ def image_transforms(
     """
     seq_len = (height // patch_h) * (width // patch_w)
 
-    pixel_transform = (
-        torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
-        if binarize
-        else torchvision.transforms.Normalize(mean, std)
-    )
+    match pixel_transform:
+        case "normalize":
+            tv_transform = torchvision.transforms.Normalize(mean, std)
+        case "binarize":
+            tv_transform = torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
+        case "raw":
+            tv_transform = torchvision.transforms.Lambda(lambda x: x)
 
     x_pre = torchvision.transforms.Compose(
         [
             torchvision.transforms.ToTensor(),
-            pixel_transform,
+            tv_transform,
         ]
     )
 
@@ -255,8 +257,7 @@ def dataset_sources(
             label_last_only,
             add_spurious_pixel_to_train,
             domain,
-            normalize,
-            binarize,
+            pixel_transform,
         ):
             domain_list = sorted(domain)
             seed_assign, seed_split = jax.random.split(seed)
@@ -267,10 +268,10 @@ def dataset_sources(
                 match d:
                     case "mnist":
                         factory = torchvision.datasets.MNIST
-                        mean, std = (MNIST_MEAN, MNIST_STD) if normalize else ((0.0,), (1.0,))
+                        mean, std = MNIST_MEAN, MNIST_STD
                     case "fashion_mnist":
                         factory = torchvision.datasets.FashionMNIST
-                        mean, std = (FASHION_MNIST_MEAN, FASHION_MNIST_STD) if normalize else ((0.0,), (1.0,))
+                        mean, std = FASHION_MNIST_MEAN, FASHION_MNIST_STD
 
                 x_pre, y_pre, patch_reshape_fn = image_transforms(
                     mean=mean,
@@ -282,7 +283,7 @@ def dataset_sources(
                     patch_w=patch_w,
                     y_mask=y_mask,
                     label_last_only=label_last_only,
-                    binarize=binarize,
+                    pixel_transform=pixel_transform,
                 )
 
                 if add_spurious_pixel_to_train and not is_test:
@@ -329,6 +330,7 @@ def dataset_sources(
                 patch_w=patch_w,
                 y_mask=y_mask,
                 label_last_only=label_last_only,
+                pixel_transform="normalize",
             )
             ds = factory(
                 root=f"{root_dir}/data", train=not is_test, download=True, transform=x_pre, target_transform=y_pre

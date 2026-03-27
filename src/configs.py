@@ -127,8 +127,7 @@ OHO_RNN32 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -189,8 +188,7 @@ OHO_RNN32 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -258,8 +256,7 @@ OHO_RNN32 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -456,8 +453,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -518,8 +514,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -587,8 +582,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -764,8 +758,7 @@ OHO_RNN256_V2 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -826,8 +819,7 @@ OHO_RNN256_V2 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -895,8 +887,7 @@ OHO_RNN256_V2 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -1072,8 +1063,7 @@ OHO_RNN256_V3 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -1134,8 +1124,7 @@ OHO_RNN256_V3 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -1203,8 +1192,7 @@ OHO_RNN256_V3 = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=500,
@@ -2825,8 +2813,7 @@ VAE_BETA_OHO = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=False,
-                binarize=True,
+                pixel_transform="binarize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=128,
@@ -2893,8 +2880,7 @@ VAE_BETA_OHO = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=False,
-                binarize=True,
+                pixel_transform="binarize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=128,
@@ -2973,8 +2959,7 @@ VAE_BETA_OHO = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=False,
-                binarize=True,
+                pixel_transform="binarize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=128,
@@ -3458,8 +3443,7 @@ VAE_BASELINE = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=False,
-                binarize=True,
+                pixel_transform="binarize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=128,
@@ -3525,8 +3509,7 @@ VAE_BASELINE = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=False,
-                binarize=True,
+                pixel_transform="binarize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=128,
@@ -3583,8 +3566,7 @@ VAE_BASELINE = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=False,
-                binarize=True,
+                pixel_transform="binarize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=128,
@@ -4057,8 +4039,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -4119,8 +4100,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -4189,8 +4169,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -4660,8 +4639,7 @@ OHO_RNN32_TEST = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -4722,8 +4700,7 @@ OHO_RNN32_TEST = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,
@@ -4791,8 +4768,7 @@ OHO_RNN32_TEST = GodConfig(
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                normalize=True,
-                binarize=False,
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=5_000,

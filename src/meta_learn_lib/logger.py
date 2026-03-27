@@ -21,7 +21,7 @@ class Logger(Protocol):
 
     def close_context(self, context): ...
 
-    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int): ...
+    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int): ...
 
 
 class HDF5Logger:
@@ -41,16 +41,17 @@ class HDF5Logger:
     def close_context(self, f: h5py.File):
         f.close()
 
-    def log_scalar(self, f: h5py.File, title: str, series: str, value: float, iteration: int, max_count: int):
+    def log_scalar(self, f: h5py.File, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         if title not in f:
             dataset = f.create_dataset(title, shape=(max_count,), dtype=np.float64, fillvalue=np.nan)
             dataset.attrs["series"] = series
             f.create_dataset(f"{title}_iterations", shape=(max_count,), dtype=np.int32, fillvalue=-1)
 
-        idx = iteration // self.checkpoint_every - 1
+        absolute_iteration = iteration + iteration_offset
+        idx = absolute_iteration // self.checkpoint_every - 1
         if 0 <= idx < len(f[title]):
             f[title][idx] = value
-            f[f"{title}_iterations"][idx] = iteration
+            f[f"{title}_iterations"][idx] = absolute_iteration
 
 
 class ClearMLLogger:
@@ -65,8 +66,7 @@ class ClearMLLogger:
         """No context to close for ClearML"""
         pass
 
-    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
-        """Log a scalar metric to ClearML"""
+    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         self.task.get_logger().report_scalar(title=title, series=series, value=value, iteration=iteration)
 
 
@@ -82,9 +82,8 @@ class ConsoleLogger:
         """No context to close for ConsoleLogger"""
         pass
 
-    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
-        """Print the scalar metric to console"""
-        print(f"[{title}] {series} @ {iteration}/{max_count}: {value}")
+    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
+        print(f"[{title}] {series} @ {iteration + iteration_offset}/{max_count}: {value}")
 
 
 class MatplotlibLogger:
@@ -99,8 +98,8 @@ class MatplotlibLogger:
     def close_context(self, context):
         pass
 
-    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int):
-        self.data[series]["iterations"].append(iteration)
+    def log_scalar(self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
+        self.data[series]["iterations"].append(iteration + iteration_offset)
         self.data[series]["values"].append(value)
         self.data[series]["title"] = title
 
@@ -129,9 +128,9 @@ class MultiLogger:
         for logger, context in zip(self.loggers, contexts):
             logger.close_context(context)
 
-    def log_scalar(self, contexts, title: str, series: str, value: float, iteration: int, max_count: int):
+    def log_scalar(self, contexts, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         for logger, context in zip(self.loggers, contexts):
-            logger.log_scalar(context, title, series, value, iteration, max_count)
+            logger.log_scalar(context, title, series, value, iteration, max_count, iteration_offset)
 
 
 def infer_level(key: str) -> int:
@@ -162,7 +161,7 @@ class ScalarLogger:
         total_iterations: int,
         checkpoint_every: int,
         log_title: str,
-        global_step: int,
+        iteration_offset: int,
     ):
         self.logger = logger
         self.num_levels = num_levels
@@ -170,7 +169,8 @@ class ScalarLogger:
         self.checkpoint_every = checkpoint_every
         self.log_title = log_title
         self.counters: dict[str, int] = {}
-        self.global_step = global_step
+        self.global_step = 0
+        self.iteration_offset = iteration_offset
 
     def log(self, stats: dict[str, jax.Array]):
         # Bulk transfer all JAX arrays to numpy once (single device-to-host copy)
@@ -240,12 +240,12 @@ class ScalarLogger:
                         mean_v = float(np.nanmean(time_slice))
                         if not np.isnan(mean_v):
                             self.logger.log_scalar(
-                                context, series, self.log_title, mean_v, iteration, self.total_iterations
+                                context, series, self.log_title, mean_v, iteration, self.total_iterations, self.iteration_offset
                             )
                     else:
                         v = float(value[tuple(full_idx)])
                         if not np.isnan(v):
-                            self.logger.log_scalar(context, series, self.log_title, v, iteration, self.total_iterations)
+                            self.logger.log_scalar(context, series, self.log_title, v, iteration, self.total_iterations, self.iteration_offset)
 
         self.global_step += math.prod(ref_shape)
         self.logger.close_context(context)
@@ -262,10 +262,10 @@ class ThreadedScalarLogger:
         total_iterations: int,
         checkpoint_every: int,
         log_title: str,
-        global_step: int,
+        iteration_offset: int,
     ):
         self.scalar_logger = ScalarLogger(
-            logger, num_levels, total_iterations, checkpoint_every, log_title, global_step
+            logger, num_levels, total_iterations, checkpoint_every, log_title, iteration_offset
         )
         self.loggers = loggers
         self.job_queue = queue.Queue()
@@ -316,8 +316,8 @@ def create_logger(
     total_iterations: int,
     checkpoint_every: int,
     log_title: str,
-    global_step: int,
+    iteration_offset: int,
 ) -> ThreadedScalarLogger:
     """Construct a ThreadedScalarLogger from a list of loggers."""
     logger = MultiLogger(loggers)
-    return ThreadedScalarLogger(logger, loggers, num_levels, total_iterations, checkpoint_every, log_title, global_step)
+    return ThreadedScalarLogger(logger, loggers, num_levels, total_iterations, checkpoint_every, log_title, iteration_offset)

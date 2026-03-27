@@ -12,6 +12,7 @@ import math
 import equinox as eqx
 import threading
 import queue
+import time
 
 from meta_learn_lib.checkpoint import CheckpointManager, CheckpointMetadata, NullCheckpointManager
 from meta_learn_lib.config import *
@@ -201,6 +202,7 @@ def run(
     for k, data in enumerate(dataloader):
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
+        time.sleep(1)
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 

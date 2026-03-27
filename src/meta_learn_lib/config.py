@@ -169,6 +169,7 @@ class OptimizerAssignment:
 class RTRLConfig:
     start_at_step: int
     damping: float
+    beta: float
 
 
 @dataclass(frozen=True)
@@ -190,6 +191,7 @@ class IdentityLearnerConfig: ...
 class RFLOConfig:
     time_constant: HP
     damping: float
+    beta: float
 
 
 @dataclass(frozen=True)
@@ -198,6 +200,13 @@ class UOROConfig:
     std: float
     distribution: Distribution
     damping: float
+    beta: float
+
+
+@dataclass(frozen=True)
+class UOROFiniteDiffConfig:
+    epsilon: float
+    uoro_config: UOROConfig
 
 
 @dataclass(frozen=True)
@@ -211,6 +220,7 @@ type GradientMethod = Union[
     IdentityLearnerConfig,
     RFLOConfig,
     UOROConfig,
+    UOROFiniteDiffConfig,
     ImmediateLearnerConfig,
 ]
 
@@ -420,6 +430,7 @@ class DatasetConfig:
     num_examples_in_minibatch: int
     num_examples_total: int
     is_test: bool
+    augment: bool
 
 
 @dataclass(frozen=True)
@@ -444,6 +455,7 @@ class GodConfig:
     logger_config: LoggersConfig
     epochs: int
     checkpoint_every_n_minibatches: int
+    checkpoint_every_n_epochs: int
 
     transition_graph: dict[str, set[str]]
     readout_graph: dict[str, set[str]]
@@ -455,3 +467,4 @@ class GodConfig:
     label_mask_value: float
     unlabeled_mask_value: float
     num_tasks: int
+    prefetch_buffer_size: int

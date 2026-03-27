@@ -1,34 +1,30 @@
-from clearml.automation import HyperParameterOptimizer, DiscreteParameterRange, GridSearch
+from clearml.automation import HyperParameterOptimizer, DiscreteParameterRange, ParameterSet, GridSearch
 from clearml import Task
 
-# Create optimizer task
 opt_task = Task.init(
     project_name="oho",
-    task_name="Fixed Seed+ILR Sweep: Batch-4000,Epochs-1000,CIFAR10,GRU-128,SGD-SGD,BPTT-ID",
+    task_name="Fixed Seed+ILR Sweep: Batch-4000,Epochs-2000,sCIFAR10,RNN-256,SGD,BPTT-ID",
     task_type=Task.TaskTypes.optimizer,
 )
-# task_name="Fixed Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD-Adam,BPTT-ID"
-# task_name="OHO Seed+ILR Sweep: Batch-2,Epochs-20,FashionMNIST,MLP,SGD/SGDN-Adam,BPTT-RTRL"
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
 
-task = Task.get_task(project_name="oho", task_name="gru128_exp")
+task = Task.get_task(project_name="oho", task_name="FIXED_RNN256_sCIFAR10_v1")
 
-# Configure optimizer
 optimizer = HyperParameterOptimizer(
     base_task_id=task.id,
     hyper_parameters=[
-        # Seed configurations as complete seed objects
+        # Sweep
         DiscreteParameterRange(
             "config/seed/global_seed",
             values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
         ),
-        DiscreteParameterRange("config/seed/test_seed", values=[12345]),
+        # Inner optimizer hyperparameters
         DiscreteParameterRange(
-            "config/learners/0/optimizer/learning_rate/value",
+            "config/hyperparameters/meta1_sgd1_lr/value",
             values=[
                 0.0001,
                 0.005,
-                0.041874999999999996,
+                0.041875,
                 0.07875,
                 0.115625,
                 0.1525,
@@ -39,49 +35,50 @@ optimizer = HyperParameterOptimizer(
             ],
         ),
         DiscreteParameterRange(
-            "config/learners/0/optimizer/weight_decay/value",
+            "config/hyperparameters/meta1_sgd1_wd/value",
             values=[
                 0.0,
                 1e-06,
-                3.627773439663084e-06,
-                1.3160740129524926e-05,
-                4.774418348819862e-05,
-                0.00017320508075688776,
-                0.000628348791584537,
-                0.002279507056954778,
-                0.00826953515674511,
-                0.029999999999999995,
+                3.4485e-06,
+                1.18921e-05,
+                4.10097e-05,
+                0.0001414214,
+                0.0004876899,
+                0.0016817928,
+                0.0057996428,
+                0.02,
             ],
         ),
-        DiscreteParameterRange("config/learners/1/learner/_type", values=["IdentityConfig"]),
-        DiscreteParameterRange("config/learners/1/learner/epsilon", values=[None]),
+        # Batch sizes
+        DiscreteParameterRange("config/levels/0/dataset/num_examples_in_minibatch", values=[4000]),
+        DiscreteParameterRange("config/levels/1/dataset/num_examples_in_minibatch", values=[4000]),
         # Fixed parameters
         DiscreteParameterRange("config/clearml_run", values=[True]),
-        DiscreteParameterRange("config/num_base_epochs", values=[1000]),
-        DiscreteParameterRange("config/data/0/num_examples_in_minibatch", values=[4000]),
-        DiscreteParameterRange("config/data/1/num_examples_in_minibatch", values=[4000]),
-        # DiscreteParameterRange("config/data/0/train_percent", values=[80.00]),
-        # DiscreteParameterRange("config/data/1/train_percent", values=[20.00]),
-        # DiscreteParameterRange("config/data/0/num_steps_in_timeseries", values=[28]),
-        # DiscreteParameterRange("config/data/1/num_steps_in_timeseries", values=[28]),
-        DiscreteParameterRange("config/learners/0/num_virtual_minibatches_per_turn", values=[1]),
-        DiscreteParameterRange("config/learners/1/num_virtual_minibatches_per_turn", values=[10]),
-        # DiscreteParameterRange("config/readout_uses_input_data", values=[False]),
-        DiscreteParameterRange("config/treat_inference_state_as_online", values=[False]),
-        DiscreteParameterRange("config/logger_config", values=[({"_type": "HDF5LoggerConfig"},)]),
-        DiscreteParameterRange("config/data_root_dir", values=["/scratch/datasets"]),
-        # Slurm configurations
+        DiscreteParameterRange("config/epochs", values=[2000]),
+        DiscreteParameterRange("config/data_root_dir", values=["/scratch/wlp9800/datasets"]),
+        DiscreteParameterRange("config/log_dir", values=["/scratch/wlp9800/offline_logs"]),
+        DiscreteParameterRange("config/log_title", values=["no_oho"]),
+        # Logger config
+        ParameterSet(
+            parameter_combinations=[
+                {
+                    "config/logger_config/clearml/enabled": False,
+                    "config/logger_config/hdf5/enabled": True,
+                    "config/logger_config/console/enabled": False,
+                    "config/logger_config/matplotlib/enabled": False,
+                },
+            ]
+        ),
+        # Slurm
         DiscreteParameterRange("slurm/time", values=["04:00:00"]),
         DiscreteParameterRange("slurm/cpu", values=[4]),
         DiscreteParameterRange("slurm/memory", values=["16GB"]),
-        DiscreteParameterRange("slurm/use_singularity", values=[True]),
+        DiscreteParameterRange("slurm/gpu", values=[0]),
+        DiscreteParameterRange("slurm/log_dir", values=["/scratch/wlp9800/offline_logs"]),
         DiscreteParameterRange("slurm/skip_python_env_install", values=[True]),
-        # gpu
-        # DiscreteParameterRange("slurm/gpu", values=[1]),
-        # DiscreteParameterRange("slurm/container_source/sif_path", values=["/scratch/wlp9800/images/devenv-gpu.sif"]),
     ],
-    objective_metric_title="final_test/loss",
-    objective_metric_series="final_test_loss",
+    objective_metric_title="eval_accumulated/level2/loss/0/0/0",
+    objective_metric_series="no_oho",
     objective_metric_sign="min",
     max_number_of_concurrent_tasks=100_000,
     optimizer_class=GridSearch,
@@ -89,7 +86,6 @@ optimizer = HyperParameterOptimizer(
     total_max_jobs=100_000,
 )
 
-# Start optimization
 optimizer.start()
 optimizer.wait()
 optimizer.stop()

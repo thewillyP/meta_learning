@@ -12,7 +12,9 @@ import math
 import equinox as eqx
 import threading
 import queue
+import time
 
+from meta_learn_lib.checkpoint import CheckpointManager, CheckpointMetadata, NullCheckpointManager
 from meta_learn_lib.config import *
 from meta_learn_lib.create_env import create_env, create_inference_axes, create_transition_fns
 from meta_learn_lib.create_interface import create_learn_interfaces, create_meta_interfaces, create_task_interfaces
@@ -53,13 +55,34 @@ def prefetch[T](iterator: Iterator[T], buffer_size: int) -> Iterator[T]:
         yield item
 
 
-def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> int:
+def get_consumption(level_idx: int, config: GodConfig) -> int:
+    return math.prod(config.levels[i].nested.num_steps for i in range(level_idx, len(config.levels)))
+
+
+def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> tuple[int, int, int]:
+    """Returns (total_iterations, iterations_per_epoch, logger_capacity).
+
+    Raises ValueError if steps_per_epoch is not divisible by consumption,
+    which would mean 1 epoch does not correspond to an integer number of
+    dataloader iterations.
+    """
     level = config.levels[level_idx]
     seq_len = get_seq_len(level.dataset_source, level.dataset.is_test)
     num_vb = math.ceil(seq_len / level.validation.num_steps)
     num_mb = math.ceil(level.dataset.num_examples_total / level.dataset.num_examples_in_minibatch)
-    consumption = math.prod(config.levels[i].nested.num_steps for i in range(level_idx, len(config.levels)))
-    return (num_mb * num_vb * epochs) // consumption
+    consumption = get_consumption(level_idx, config)
+    steps_per_epoch = num_mb * num_vb
+    if steps_per_epoch % consumption != 0:
+        raise ValueError(
+            f"Level {level_idx}: steps_per_epoch ({steps_per_epoch} = {num_mb} minibatches * {num_vb} validation batches) "
+            f"is not divisible by consumption ({consumption} = product of nested.num_steps from level {level_idx} onward). "
+            f"An epoch boundary will not align with iteration boundaries."
+        )
+    iterations_per_epoch = steps_per_epoch // consumption
+    total_iterations = iterations_per_epoch * epochs
+    total_steps = steps_per_epoch * epochs
+    logger_capacity = total_steps // config.checkpoint_every_n_minibatches
+    return total_iterations, iterations_per_epoch, logger_capacity
 
 
 def make_eval_config(config: GodConfig) -> GodConfig:
@@ -108,15 +131,17 @@ def run(
     data_prng: PRNG,
     task_prng: PRNG,
     total_iterations: int,
-    scalar_logger: ThreadedScalarLogger,
+    iterations_per_epoch: int,
+    logger_capacity: int,
+    loggers: list[Logger],
     stat_collector: Callable[[STAT, tuple[STAT, ...]], tuple[STAT, ...]],
     stat_prefix: str,
+    checkpoint_manager: CheckpointManager,
 ) -> tuple[GodState, tuple[STAT, ...]]:
     dataset_prng, loader_prng = jax.random.split(data_prng, 2)
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, loader_prng, task_prng)
     x, dataloader = toolz.peek(dataloader)
-    dataloader = prefetch(toolz.take(total_iterations, dataloader), buffer_size=2)
 
     meta_interfaces, count = create_meta_interfaces(config, 0)
     learn_interfaces, count = create_learn_interfaces(config, count)
@@ -151,6 +176,31 @@ def run(
 
     arr, static = eqx.partition(env, eqx.is_array)
 
+    # Load checkpoint if available — fresh arr serves as structure template
+    start_step = 0
+    loaded = checkpoint_manager.load(arr)
+    if loaded is not None:
+        arr, meta = loaded
+        start_step = meta.global_step
+        print(f"Resumed from checkpoint at step {start_step} (epoch {start_step // iterations_per_epoch})")
+
+    consumption = get_consumption(0, config)
+    scalar_logger = create_logger(
+        loggers,
+        len(config.levels),
+        logger_capacity,
+        config.checkpoint_every_n_minibatches,
+        config.log_title,
+        start_step * consumption,
+    )
+
+    # Advance dataloader to resume point
+    if start_step > 0:
+        print(f"Skipping {start_step} dataloader iterations...")
+        dataloader = toolz.drop(start_step, dataloader)
+    remaining = total_iterations - start_step
+    dataloader = prefetch(toolz.take(remaining, dataloader), buffer_size=config.prefetch_buffer_size)
+
     def update_fn(data: tuple, arr: GodState) -> tuple[GodState, STAT]:
         e = eqx.combine(arr, static)
         e, stat = meta_learner(e, data)
@@ -159,12 +209,22 @@ def run(
 
     compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
+    checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
+
+    print("Starting main loop...")
+
     collected: tuple[STAT, ...] = ()
     for k, data in enumerate(dataloader):
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
+        time.sleep(1)
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
+
+        global_step = start_step + k + 1
+        if checkpoint_interval > 0 and global_step % checkpoint_interval == 0:
+            checkpoint_manager.save(arr, CheckpointMetadata(global_step=global_step))
+            print(f"Checkpoint saved at step {global_step} (epoch {global_step // iterations_per_epoch})")
 
     scalar_logger.flush()
     scalar_logger.shutdown()
@@ -183,7 +243,7 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def runApp(config: GodConfig, loggers: list[Logger]) -> None:
+def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: CheckpointManager) -> None:
 
     if not config.clearml_run:
         return
@@ -211,52 +271,44 @@ def runApp(config: GodConfig, loggers: list[Logger]) -> None:
         raise ValueError("\n".join(errors))
 
     # Train
-    train_iterations = get_iterations(0, config, config.epochs)
-    train_logger = create_logger(
-        loggers,
-        len(config.levels),
-        train_iterations,
-        config.checkpoint_every_n_minibatches,
-        config.log_title,
-    )
+    train_dl_iters, train_iters_per_epoch, train_log_cap = get_iterations(0, config, config.epochs)
 
     trained_env, _ = run(
         config,
         lambda cfg, shapes, mi, li: create_env(cfg, shapes, mi, li, env_prng),
         dataset_gen_prng,
         task_prng,
-        train_iterations,
-        train_logger,
+        train_dl_iters,
+        train_iters_per_epoch,
+        train_log_cap,
+        loggers,
         lambda s, acc: acc,
         "train",
+        checkpoint_manager,
     )
 
     # Evaluate on last level's dataset
     eval_config = make_eval_config(config)
     last_idx = len(eval_config.levels) - 1
-    eval_iterations = get_iterations(last_idx, eval_config, 1)
-    eval_logger = create_logger(
-        loggers,
-        len(eval_config.levels),
-        eval_iterations,
-        config.checkpoint_every_n_minibatches,
-        config.log_title,
-    )
+    eval_dl_iters, eval_iters_per_epoch, eval_log_cap = get_iterations(last_idx, eval_config, 1)
 
     _, eval_stats = run(
         eval_config,
         lambda *_: trained_env,
         dataset_gen_prng,
         task_prng,
-        eval_iterations,
-        eval_logger,
+        eval_dl_iters,
+        eval_iters_per_epoch,
+        eval_log_cap,
+        loggers,
         lambda s, acc: acc + (s,),
         "eval",
+        NullCheckpointManager(),
     )
 
     accumulated = jax.tree.map(lambda *xs: jnp.nanmean(jnp.stack(xs), axis=0), *eval_stats)
     accumulated = prefix_stats(accumulated, "eval_accumulated")
-    acc_logger = create_logger(loggers, len(eval_config.levels), 1, 1, config.log_title)
+    acc_logger = create_logger(loggers, len(eval_config.levels), 1, 1, config.log_title, 0)
     acc_logger.log(accumulated)
     acc_logger.flush()
     acc_logger.shutdown()

@@ -11,7 +11,13 @@ from meta_learn_lib.create_env import env_resetters, env_validation_resetters, m
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.optimizer import get_opt_step
-from meta_learn_lib.util import filter_cond, jacobian_matrix_product, softclip
+from meta_learn_lib.util import (
+    filter_cond,
+    finite_difference_jmp,
+    finite_difference_jvp,
+    jacobian_matrix_product,
+    softclip,
+)
 
 
 def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
@@ -58,6 +64,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             p = learn_interface.get_param(env)
             t = learn_interface.get_tick(env)
             mu = config.damping
+            beta = config.beta
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
             def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
@@ -88,19 +95,16 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             hmp: JACOBIAN
             match _config:
                 case RTRLConfig():
-                    _primals, hmp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
-                    hmp = hmp - mu * influence_tensor_s.value
+                    _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
+                    hmp = hmp_jvp - mu * influence_tensor_s.value
                 case RTRLFiniteHvpConfig(eps, ___):
-
-                    def finite_hvp(v: jax.Array) -> jax.Array:
-                        return (state_fn(env)(s + eps * v)[0] - state_fn(env)(s - eps * v)[0]) / (2 * eps) - mu * v
-
-                    hmp = eqx.filter_vmap(finite_hvp, in_axes=1, out_axes=1)(influence_tensor_s.value)
+                    f = lambda x: state_fn(env)(x)[0]
+                    hmp = finite_difference_jmp(f, s, influence_tensor_s.value, eps) - mu * influence_tensor_s.value
 
             influence_tensor: JACOBIAN
             influence_tensor = filter_cond(
                 t >= config.start_at_step,
-                lambda _: hmp + dhdp,
+                lambda _: beta * (hmp + dhdp) + (1 - beta) * influence_tensor_s.value,
                 lambda _: influence_tensor_s.value,
                 None,
             )
@@ -128,7 +132,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
     readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
-    config: UOROConfig,
+    _config: UOROConfig | UOROFiniteDiffConfig,
     grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
@@ -137,28 +141,36 @@ def uoro[ENV, TR_DATA, VL_DATA](
     ],
     track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+
+    match _config:
+        case UOROConfig():
+            config = _config
+        case UOROFiniteDiffConfig():
+            config = _config.uoro_config
+
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
         std = config.std
-        state_shape = learn_interface.get_state(env_init).shape
         match config.distribution:
             case "uniform":
-                distribution = lambda key: jax.random.uniform(key, state_shape, minval=-std, maxval=std)
+                distribution = lambda key, shape: jax.random.uniform(key, shape, minval=-std, maxval=std)
             case "normal":
-                distribution = lambda key: jax.random.normal(key, state_shape) * std
+                distribution = lambda key, shape: jax.random.normal(key, shape) * std
 
         def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
             key, env = learn_interface.take_prng(env)
-            random_vector = distribution(key)
             mu = config.damping
+            beta = config.beta
             uoro_state = learn_interface.get_uoro_state(env)
             A_s = uoro_state.A
             B_s = uoro_state.B
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
+            state_shape = s.shape
+            random_vector = distribution(key, state_shape)
 
             def state_fn(e: ENV) -> Callable[[jax.Array], jax.Array]:
                 def fn(state: jax.Array) -> jax.Array:
@@ -179,24 +191,33 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
                 return fn
 
-            immediateJacobian__A_projection = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
+            match _config:
+                case UOROConfig():
+                    damped_jvp = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
+                case UOROFiniteDiffConfig(eps, _):
+                    damped_jvp = finite_difference_jvp(state_fn(env), s, A_s.value, eps) - mu * A_s.value
+            A_propagated = beta * damped_jvp + (1 - beta) * A_s.value
             _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn(env), p, has_aux=True)
             (immediateInfluence__random_projection,) = vjp_func(random_vector)
+            scaled_immediate = beta * immediateInfluence__random_projection
             new_env = eqx.combine(arr, static)
 
-            rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(immediateJacobian__A_projection))
-            rho1 = jnp.sqrt(jnp.linalg.norm(immediateInfluence__random_projection) / jnp.linalg.norm(random_vector))
+            rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(A_propagated))
+            rho1 = jnp.sqrt(jnp.linalg.norm(scaled_immediate) / jnp.linalg.norm(random_vector))
 
-            A_new: jax.Array = rho0 * immediateJacobian__A_projection + rho1 * random_vector
-            B_new: jax.Array = B_s.value / rho0 + immediateInfluence__random_projection / rho1
+            A_new: jax.Array = rho0 * A_propagated + rho1 * random_vector
+            B_new: jax.Array = B_s.value / rho0 + scaled_immediate / rho1
 
             new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            grad = (credit_gr[: A_new.shape[0]] @ A_new) * B_new + credit_gr[A_new.shape[0] :]
+            grad = (credit_gr[..., : A_new.shape[0]] @ A_new) * B_new + credit_gr[..., A_new.shape[0] :]
 
             new_env = learn_interface.put_uoro_state(
                 new_env,
                 UOROState(A=A_s.set(value=A_new), B=B_s.set(value=B_new)),
             )
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(A_new) * jnp.linalg.norm(B_new)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
 
             arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
@@ -232,6 +253,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
             mu = config.damping
+            beta = config.beta
             alpha = learn_interface.get_time_constant(env).value
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
@@ -252,12 +274,16 @@ def rflo[ENV, TR_DATA, VL_DATA](
             new_env = eqx.combine(arr, static)
 
             influence_tensor: JACOBIAN
-            influence_tensor = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
+            naive = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
+            influence_tensor = beta * naive + (1 - beta) * influence_tensor_s.value
 
             new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
             new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
 
             arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
@@ -398,7 +424,7 @@ def immediate[ENV, TR_DATA, VL_DATA](
             env, trans_stat = transition(env, tr_data)
             env, credit_gr, readout_stat = readout_gr(env, vl_data)
             n_s = learn_interface.get_state(env).shape[0]
-            grad = GRADIENT(credit_gr[n_s:])
+            grad = GRADIENT(credit_gr[..., n_s:])
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
@@ -491,7 +517,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = identity(transition, readout_fn, interface, model_grad_config, length, lambda f: f, track_logs)
             case RTRLConfig() | RTRLFiniteHvpConfig():
                 fn = rtrl(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
-            case UOROConfig():
+            case UOROConfig() | UOROFiniteDiffConfig():
                 fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
                 fn = rflo(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
@@ -606,7 +632,7 @@ def create_meta_learner[ENV](
                     vmap_this,
                     track_logs,
                 )
-            case UOROConfig():
+            case UOROConfig() | UOROFiniteDiffConfig():
                 grad_fn = uoro(
                     composed_inner,
                     readout_gr,

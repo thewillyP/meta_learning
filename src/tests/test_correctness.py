@@ -60,6 +60,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
         logger_config=[],
         epochs=1,
         checkpoint_every_n_minibatches=1,
+        checkpoint_every_n_epochs=0,
         transition_graph={
             "x": {},
             "concat": {"x"},
@@ -146,6 +147,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     num_examples_in_minibatch=10,
                     num_examples_total=100,
                     is_test=False,
+                    augment=False,
                 ),
                 validation=StepConfig(
                     num_steps=28,
@@ -166,7 +168,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                         scale=1.0,
                     ),
                     optimizer_learner=GradientConfig(
-                        method=RTRLConfig(start_at_step=0, damping=0.0),
+                        method=RTRLConfig(start_at_step=0, damping=0.0, beta=1.0),
                         add_clip=None,
                         scale=1.0,
                     ),
@@ -289,7 +291,7 @@ def test_rtrl_vs_bptt_level0():
     print("=" * 60)
 
     config_bptt = make_single_level_config(BPTTConfig(truncate_at=None))
-    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0))
+    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0))
 
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
@@ -350,7 +352,7 @@ def test_validation_gradient_rtrl_vs_bptt():
     from meta_learn_lib.create_axes import diff_axes
 
     config_bptt = make_single_level_config(BPTTConfig(truncate_at=None))
-    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0))
+    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0))
 
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
@@ -481,7 +483,7 @@ def test_reset_zeros_influence_tensor():
     print("TEST 4: Reset zeros influence tensor")
     print("=" * 60)
 
-    config = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0))
+    config = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0))
     stuff = setup_env_and_fns(config)
     env = stuff[0]
     val_learn_interfaces = stuff[7]

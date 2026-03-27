@@ -604,7 +604,7 @@ def create_learn_interfaces(
                         config.hyperparameters[time_constant].level,
                     ),
                 )
-            case UOROConfig():
+            case UOROConfig() | UOROFiniteDiffConfig():
                 return copy.replace(
                     default_god_interface(),
                     put_logs=put_logs(level),

@@ -1,8 +1,9 @@
 import jax.numpy as jnp
 from meta_learn_lib.config import *
+from upload_configs import upload_config
 
 
-OHO_RNN256 = GodConfig(
+OHO_RNN32 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
@@ -10,12 +11,13 @@ OHO_RNN256 = GodConfig(
     log_title="train",
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
-        hdf5=HDF5LoggerConfig(enabled=False),
+        hdf5=HDF5LoggerConfig(enabled=True),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=25,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -29,7 +31,7 @@ OHO_RNN256 = GodConfig(
         "concat": Concat(),
         "rnn1": VanillaRNNLayer(
             nn_layer=NNLayer(
-                n=256,
+                n=32,
                 activation_fn="tanh",
                 use_bias=True,
                 layer_norm=None,
@@ -132,6 +134,7 @@ OHO_RNN256 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -193,6 +196,7 @@ OHO_RNN256 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -218,6 +222,7 @@ OHO_RNN256 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -260,6 +265,7 @@ OHO_RNN256 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -301,6 +307,7 @@ OHO_RNN256 = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
 )
 
 
@@ -318,6 +325,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -455,6 +463,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -516,6 +525,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -541,6 +551,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -583,6 +594,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -624,6 +636,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
 )
 
 
@@ -641,6 +654,7 @@ OHO_RNN256_V2 = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -757,6 +771,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -818,6 +833,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -843,6 +859,7 @@ OHO_RNN256_V2 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -885,6 +902,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -926,6 +944,7 @@ OHO_RNN256_V2 = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
 )
 
 
@@ -943,6 +962,7 @@ OHO_RNN256_V3 = GodConfig(
     ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -1059,6 +1079,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_in_minibatch=5_000,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1120,6 +1141,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_in_minibatch=5_000,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1145,6 +1167,7 @@ OHO_RNN256_V3 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -1187,6 +1210,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_in_minibatch=500,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1228,12 +1252,13 @@ OHO_RNN256_V3 = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
 )
 
 
 OHO_RNN256_CIFAR10 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="oho",
@@ -1243,8 +1268,9 @@ OHO_RNN256_CIFAR10 = GodConfig(
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
     ),
-    epochs=1_000,
+    epochs=2_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -1275,6 +1301,851 @@ OHO_RNN256_CIFAR10 = GodConfig(
     },
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=40_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLFiniteHvpConfig(
+                        epsilon=1e-3,
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
+                            damping=1e-4,
+                            beta=0.1,
+                        ),
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+OHO_RFLO_RNN256_CIFAR10 = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=2_000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=256,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_rflo_time_constant": HyperparameterConfig(
+            value=0.5,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=False,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=40_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RFLOConfig(
+                        time_constant="meta2_rflo_time_constant",
+                        damping=0.0,
+                        beta=0.1,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+RNN256_CIFAR10 = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="no_oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=2_000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=256,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.3,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.0001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=40_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+OHO_LSTM128_CIFAR10 = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=1_000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "lstm1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"lstm1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "lstm1": LSTMLayer(
+            n=128,
+            use_bias=True,
+            use_random_init=False,
+            time_constant="meta1_lstm1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_lstm1_time_constant": HyperparameterConfig(
             value=1.0,
             kind="time_constant",
             count=1,
@@ -1357,6 +2228,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=40_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1383,7 +2255,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
-                        target=frozenset({"rnn1", "readout"}),
+                        target=frozenset({"lstm1", "readout"}),
                         optimizer=SGDConfig(
                             learning_rate="meta1_sgd1_lr",
                             weight_decay="meta1_sgd1_wd",
@@ -1414,6 +2286,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1438,7 +2311,8 @@ OHO_RNN256_CIFAR10 = GodConfig(
                         epsilon=1e-3,
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
-                            damping=1e-5,
+                            damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -1477,6 +2351,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1518,6 +2393,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
 )
 
 
@@ -1535,6 +2411,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
     ),
     epochs=1_000,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -1643,6 +2520,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=40_000,
                 is_test=False,
+                augment=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1700,6 +2578,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1725,6 +2604,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
                             damping=1e-4,
+                            beta=0.1,
                         ),
                     ),
                     add_clip=None,
@@ -1763,6 +2643,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_in_minibatch=4_000,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1804,6 +2685,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
 )
 
 
@@ -1821,6 +2703,7 @@ VAE_BETA_OHO = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={},
     readout_graph={
         "x": {},
@@ -1949,6 +2832,7 @@ VAE_BETA_OHO = GodConfig(
                 num_examples_in_minibatch=128,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -2016,6 +2900,7 @@ VAE_BETA_OHO = GodConfig(
                 num_examples_in_minibatch=128,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -2042,11 +2927,13 @@ VAE_BETA_OHO = GodConfig(
                     #     rtrl_config=RTRLConfig(
                     #         start_at_step=0,
                     #         damping=1e-4,
+                    #         beta=0.1,
                     #     ),
                     # ),
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=1e-4,
+                        beta=0.1,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -2093,6 +2980,7 @@ VAE_BETA_OHO = GodConfig(
                 num_examples_in_minibatch=128,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -2134,6 +3022,303 @@ VAE_BETA_OHO = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-1.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+OHO_RNN256_CIFAR10_ADAM = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=100,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=256,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_adam1_lr": HyperparameterConfig(
+            value=0.00001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_adam1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_adam1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=40_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLFiniteHvpConfig(
+                        epsilon=1e-3,
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
+                            damping=1e-5,
+                            beta=0.1,
+                        ),
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_adam1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=AdamConfig(
+                            learning_rate="meta2_adam1_lr",
+                            weight_decay="meta2_adam1_wd",
+                            momentum="meta2_adam1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=400,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
 )
 
 
@@ -2151,6 +3336,7 @@ VAE_BASELINE = GodConfig(
     ),
     epochs=100,
     checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
     transition_graph={},
     readout_graph={
         "x": {},
@@ -2279,6 +3465,7 @@ VAE_BASELINE = GodConfig(
                 num_examples_in_minibatch=128,
                 num_examples_total=50_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -2345,6 +3532,7 @@ VAE_BASELINE = GodConfig(
                 num_examples_in_minibatch=128,
                 num_examples_total=10_000,
                 is_test=False,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -2402,6 +3590,7 @@ VAE_BASELINE = GodConfig(
                 num_examples_in_minibatch=128,
                 num_examples_total=10_000,
                 is_test=True,
+                augment=False,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -2443,4 +3632,1223 @@ VAE_BASELINE = GodConfig(
     label_mask_value=-1.0,
     unlabeled_mask_value=-1.0,
     num_tasks=1,
+    prefetch_buffer_size=2,
 )
+
+
+OHO_UORO_RNN256_CIFAR10 = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=2_000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=256,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=1e-5,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=False,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.0001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=40_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=UOROFiniteDiffConfig(
+                        epsilon=1e-3,
+                        uoro_config=UOROConfig(
+                            std=1.0,
+                            distribution="uniform",
+                            damping=0.0,
+                            beta=0.1,
+                        ),
+                    ),
+                    add_clip=None,
+                    scale=1 / 10.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=4_000,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+OHO_UORO_FD_RNN32_SMNIST = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=100,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=32,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=1e-5,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=False,
+        ),
+        "meta2_adam1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_adam1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_adam1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=True,
+                binarize=False,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=True,
+                binarize=False,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=50,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=UOROFiniteDiffConfig(
+                        epsilon=1e-3,
+                        uoro_config=UOROConfig(
+                            std=1.0,
+                            distribution="uniform",
+                            damping=1e-2,
+                            beta=0.1,
+                        ),
+                    ),
+                    add_clip=None,
+                    scale=1 / 50.0,
+                ),
+                optimizer={
+                    "meta2_adam1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=AdamConfig(
+                            learning_rate="meta2_adam1_lr",
+                            weight_decay="meta2_adam1_wd",
+                            momentum="meta2_adam1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=True,
+                binarize=False,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=2_000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=0,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=256,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=False,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=2_000,
+                num_examples_total=20_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=2_000,
+                num_examples_total=5_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=2,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=UOROConfig(
+                        std=1e-3,
+                        distribution="normal",
+                        damping=1e-4,
+                        beta=0.1,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=CIFAR10TaskFamily(
+                patch_h=1,
+                patch_w=32,
+                label_last_only=True,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=2_000,
+                num_examples_total=4_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=32,
+                batch=1,
+                reset_t=32,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=2,
+    prefetch_buffer_size=2,
+)
+
+
+OHO_RNN32_TEST = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="train",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=True),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=100,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=5,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=32,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.0001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=True,
+                binarize=False,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5_000,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=True,
+                binarize=False,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5_000,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLFiniteHvpConfig(
+                        epsilon=1e-3,
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
+                            damping=1e-4,
+                            beta=0.1,
+                        ),
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                normalize=True,
+                binarize=False,
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5_000,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+if __name__ == "__main__":
+    for name, config in [
+        ("OHO_RNN32", OHO_RNN32),
+        ("OHO_RNN32_TEST", OHO_RNN32_TEST),
+    ]:
+        upload_config(name, config)
+
+    print("Done.")

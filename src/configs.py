@@ -2772,7 +2772,7 @@ VAE_BETA_OHO = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.01,
+            value=0.001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -2930,18 +2930,13 @@ VAE_BETA_OHO = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    # method=RTRLFiniteHvpConfig(
-                    #     epsilon=1e-3,
-                    #     rtrl_config=RTRLConfig(
-                    #         start_at_step=0,
-                    #         damping=1e-4,
-                    #         beta=0.1,
-                    #     ),
-                    # ),
-                    method=RTRLConfig(
-                        start_at_step=0,
-                        damping=1e-4,
-                        beta=0.1,
+                    method=RTRLFiniteHvpConfig(
+                        epsilon=1e-3,
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
+                            damping=1e-4,
+                            beta=0.1,
+                        ),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -3393,8 +3388,8 @@ VAE_BASELINE = GodConfig(
         "merge": MergeOutputs(),
     },
     hyperparameters={
-        "meta1_adam1_lr": HyperparameterConfig(
-            value=0.001,
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.01,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3403,7 +3398,7 @@ VAE_BASELINE = GodConfig(
             level=1,
             parametrizes_transition=True,
         ),
-        "meta1_adam1_wd": HyperparameterConfig(
+        "meta1_sgd1_wd": HyperparameterConfig(
             value=0.0,
             kind="weight_decay",
             count=1,
@@ -3413,8 +3408,8 @@ VAE_BASELINE = GodConfig(
             level=1,
             parametrizes_transition=True,
         ),
-        "meta1_adam1_momentum": HyperparameterConfig(
-            value=0.9,
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3520,7 +3515,7 @@ VAE_BASELINE = GodConfig(
                     scale=1.0,
                 ),
                 optimizer={
-                    "meta1_adam1": OptimizerAssignment(
+                    "meta1_sgd1": OptimizerAssignment(
                         target=frozenset(
                             {
                                 "encoder_hidden1",
@@ -3531,10 +3526,10 @@ VAE_BASELINE = GodConfig(
                                 "decoder_out",
                             }
                         ),
-                        optimizer=AdamConfig(
-                            learning_rate="meta1_adam1_lr",
-                            weight_decay="meta1_adam1_wd",
-                            momentum="meta1_adam1_momentum",
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
                         ),
                     ),
                 },
@@ -4899,6 +4894,7 @@ OHO_RNN32_TEST = GodConfig(
 if __name__ == "__main__":
     for name, config in [
         ("VAE_BASELINE", VAE_BASELINE),
+        ("VAE_BETA_OHO", VAE_BETA_OHO),
     ]:
         upload_config(name, config)
 

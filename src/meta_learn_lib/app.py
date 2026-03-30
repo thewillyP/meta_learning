@@ -12,7 +12,6 @@ import math
 import equinox as eqx
 import threading
 import queue
-import time
 
 from meta_learn_lib.checkpoint import CheckpointManager, CheckpointMetadata, NullCheckpointManager
 from meta_learn_lib.config import *
@@ -26,6 +25,7 @@ from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, get_seq_len, validate_dataloader_config
 from meta_learn_lib.logger import MatplotlibLogger, ThreadedScalarLogger, create_logger
 from meta_learn_lib.loss_function import create_readout_loss_fns
+from meta_learn_lib.sample import build_sample_runner, validate_sample_generators
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +130,7 @@ def run(
     ],
     data_prng: PRNG,
     task_prng: PRNG,
+    sample_prng: PRNG,
     total_iterations: int,
     iterations_per_epoch: int,
     logger_capacity: int,
@@ -210,6 +211,7 @@ def run(
     compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
     checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
+    sample_runner = build_sample_runner(config, meta_interfaces, iterations_per_epoch)
 
     print("Starting main loop...")
 
@@ -217,7 +219,6 @@ def run(
     for k, data in enumerate(dataloader):
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
-        time.sleep(1)
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 
@@ -225,6 +226,9 @@ def run(
         if checkpoint_interval > 0 and global_step % checkpoint_interval == 0:
             checkpoint_manager.save(arr, CheckpointMetadata(global_step=global_step))
             print(f"Checkpoint saved at step {global_step} (epoch {global_step // iterations_per_epoch})")
+
+        step_sample_prng, sample_prng = jax.random.split(sample_prng)
+        sample_runner(eqx.combine(arr, static), scalar_logger, PRNG(step_sample_prng), global_step)
 
     scalar_logger.flush()
     scalar_logger.shutdown()
@@ -254,6 +258,7 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
     data_prng = PRNG(jax.random.fold_in(keys[0], config.seed.data_seed))
     env_prng = PRNG(jax.random.fold_in(keys[1], config.seed.parameter_seed))
     task_prng = PRNG(jax.random.fold_in(keys[2], config.seed.task_seed))
+    sample_prng = PRNG(jax.random.key(config.seed.sample_seed))
     dataset_gen_prng, torch_prng = jax.random.split(data_prng, 2)
     torch_seed = jax.random.randint(torch_prng, shape=(), minval=0, maxval=1e6, dtype=jnp.uint32)
     torch_seed = int(torch_seed)
@@ -267,8 +272,9 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
     torch.backends.cudnn.benchmark = True
 
     errors = validate_dataloader_config(config)
-    if errors:
-        raise ValueError("\n".join(errors))
+    sample_errors = validate_sample_generators(config)
+    if errors or sample_errors:
+        raise ValueError("\n".join(errors + sample_errors))
 
     # Train
     train_dl_iters, train_iters_per_epoch, train_log_cap = get_iterations(0, config, config.epochs)
@@ -278,6 +284,7 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
         lambda cfg, shapes, mi, li: create_env(cfg, shapes, mi, li, env_prng),
         dataset_gen_prng,
         task_prng,
+        sample_prng,
         train_dl_iters,
         train_iters_per_epoch,
         train_log_cap,
@@ -297,6 +304,7 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
         lambda *_: trained_env,
         dataset_gen_prng,
         task_prng,
+        sample_prng,
         eval_dl_iters,
         eval_iters_per_epoch,
         eval_log_cap,

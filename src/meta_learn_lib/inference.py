@@ -247,30 +247,50 @@ def get_inference[ENV](
     return infer
 
 
-def create_inference_and_readout[ENV](
-    config: GodConfig,
+type TransitionFn[ENV] = Callable[[ENV, tuple[jax.Array, jax.Array]], ENV]
+type ReadoutFn[ENV] = Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]
+
+
+def create_raw_inference[ENV](
+    transition_graph: dict[str, set[str]],
+    readout_graph: dict[str, set[str]],
+    nodes: dict[str, Node],
     meta_interface: dict[str, GodInterface[ENV]],
-    axes: ENV,
-):
-    env_readout = get_reader(config.transition_graph, config.nodes, meta_interface)
-    raw_transition = get_inference(config.transition_graph, config.nodes, meta_interface, pmap())
-    raw_readout = get_inference(config.readout_graph, config.nodes, meta_interface, env_readout)
+) -> tuple[TransitionFn[ENV], ReadoutFn[ENV]]:
+    env_readout = get_reader(transition_graph, nodes, meta_interface)
+    raw_transition = get_inference(transition_graph, nodes, meta_interface, pmap())
+    raw_readout = get_inference(readout_graph, nodes, meta_interface, env_readout)
+    last_node = toposort_flatten(readout_graph)[-1]
 
     def transition_fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> ENV:
         env, _ = raw_transition(env, data)
         return env
 
     def readout_fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> Outputs:
-        last_node = toposort_flatten(config.readout_graph)[-1]
         _, outputs = raw_readout(env, data)
         return outputs[last_node]
 
-    transition_inference = eqx.filter_vmap(
+    return transition_fn, readout_fn
+
+
+def create_inference_and_readout[ENV](
+    config: GodConfig,
+    meta_interface: dict[str, GodInterface[ENV]],
+    axes: ENV,
+) -> tuple[TransitionFn[ENV], ReadoutFn[ENV]]:
+    transition_fn, readout_fn = create_raw_inference(
+        config.transition_graph,
+        config.readout_graph,
+        config.nodes,
+        meta_interface,
+    )
+
+    transition_inference: TransitionFn[ENV] = eqx.filter_vmap(
         eqx.filter_vmap(lambda e, d: transition_fn(e, d), in_axes=(axes, 0), out_axes=axes),
         in_axes=(axes, 0),
         out_axes=axes,
     )
-    readout_inference = eqx.filter_vmap(
+    readout_inference: ReadoutFn[ENV] = eqx.filter_vmap(
         eqx.filter_vmap(lambda e, d: readout_fn(e, d), in_axes=(axes, 0), out_axes=0),
         in_axes=(axes, 0),
         out_axes=0,

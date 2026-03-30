@@ -21,6 +21,7 @@ class SeedConfig:
     data_seed: int
     parameter_seed: int
     task_seed: int
+    sample_seed: int
 
 
 @dataclass(frozen=True)
@@ -407,6 +408,33 @@ type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjecti
 
 
 @dataclass(frozen=True)
+class GaussianSampleInput: ...
+
+
+type SampleInput = Union[GaussianSampleInput]
+
+
+@dataclass(frozen=True)
+class ImageReporter:
+    title: str
+
+
+type SampleReporter = Union[ImageReporter]
+
+
+@dataclass(frozen=True)
+class SampleGeneratorConfig:
+    transition_graph: dict[str, set[str]]
+    readout_graph: dict[str, set[str]]
+    source_nodes: dict[str, Node]
+    input_shape: tuple[int, ...]
+    num_samples: int
+    every_n_epochs: int
+    input: SampleInput
+    reporter: SampleReporter
+
+
+@dataclass(frozen=True)
 class TrackLogs:
     gradient: bool
     hessian_contains_nans: bool
@@ -463,6 +491,8 @@ class GodConfig:
     hyperparameters: dict[HP, HyperparameterConfig]
 
     levels: list[MetaConfig]
+
+    sample_generators: list[SampleGeneratorConfig]
 
     label_mask_value: float
     unlabeled_mask_value: float

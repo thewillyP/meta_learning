@@ -4,7 +4,7 @@ from upload_configs import upload_config
 
 
 OHO_RNN32 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -301,6 +301,7 @@ OHO_RNN32 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -309,7 +310,7 @@ OHO_RNN32 = GodConfig(
 
 
 OHO_RNN1_32_RNN2_32 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -627,6 +628,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -635,7 +637,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
 
 
 OHO_RNN256_V2 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -932,6 +934,7 @@ OHO_RNN256_V2 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -940,7 +943,7 @@ OHO_RNN256_V2 = GodConfig(
 
 
 OHO_RNN256_V3 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -1237,6 +1240,7 @@ OHO_RNN256_V3 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -1245,7 +1249,7 @@ OHO_RNN256_V3 = GodConfig(
 
 
 OHO_RNN256_CIFAR10 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -1533,6 +1537,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -1541,7 +1546,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
 
 
 OHO_RFLO_RNN256_CIFAR10 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -1836,6 +1841,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -1844,7 +1850,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
 
 
 RNN256_CIFAR10 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -2086,6 +2092,7 @@ RNN256_CIFAR10 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -2094,7 +2101,7 @@ RNN256_CIFAR10 = GodConfig(
 
 
 OHO_LSTM128_CIFAR10 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -2378,6 +2385,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -2386,7 +2394,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
 
 
 OHO_GRU128_CIFAR10 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=False,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -2670,6 +2678,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -2678,7 +2687,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
 
 
 VAE_BETA_OHO = GodConfig(
-    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -3004,6 +3013,23 @@ VAE_BETA_OHO = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph={
+                "z_input": {},
+                "decoder_hidden": {"z_input"},
+                "decoder_out": {"decoder_hidden"},
+                "decoder_reshape": {"decoder_out"},
+            },
+            source_nodes={"z_input": UnlabeledSource()},
+            input_shape=(128,),
+            num_samples=4,
+            every_n_epochs=10,
+            input=GaussianSampleInput(),
+            reporter=ImageReporter(title="vae_samples"),
+        ),
+    ],
     label_mask_value=-1.0,
     unlabeled_mask_value=-1.0,
     num_tasks=1,
@@ -3012,7 +3038,7 @@ VAE_BETA_OHO = GodConfig(
 
 
 OHO_RNN256_CIFAR10_ADAM = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -3300,6 +3326,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -3308,7 +3335,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
 
 
 VAE_BASELINE = GodConfig(
-    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -3611,6 +3638,23 @@ VAE_BASELINE = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph={
+                "z_input": {},
+                "decoder_hidden": {"z_input"},
+                "decoder_out": {"decoder_hidden"},
+                "decoder_reshape": {"decoder_out"},
+            },
+            source_nodes={"z_input": UnlabeledSource()},
+            input_shape=(128,),
+            num_samples=4,
+            every_n_epochs=10,
+            input=GaussianSampleInput(),
+            reporter=ImageReporter(title="vae_samples"),
+        ),
+    ],
     label_mask_value=-1.0,
     unlabeled_mask_value=-1.0,
     num_tasks=1,
@@ -3619,7 +3663,7 @@ VAE_BASELINE = GodConfig(
 
 
 OHO_UORO_RNN256_CIFAR10 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -3908,6 +3952,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -3916,7 +3961,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
 
 
 OHO_UORO_FD_RNN32_SMNIST = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -4214,6 +4259,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,
@@ -4222,7 +4268,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
 
 
 OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -4508,6 +4554,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=2,
@@ -4516,7 +4563,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
 
 
 OHO_RNN32_TEST = GodConfig(
-    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1),
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -4813,6 +4860,7 @@ OHO_RNN32_TEST = GodConfig(
             test_seed=0,
         ),
     ],
+    sample_generators=[],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,

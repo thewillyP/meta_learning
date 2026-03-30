@@ -372,8 +372,12 @@ class LoggersConfig:
     matplotlib: MatplotlibLoggerConfig
 
 
+type Reduction = Literal["sum", "mean"]
+
+
 @dataclass(frozen=True)
-class RegressionObjective: ...
+class RegressionObjective:
+    reduction: Reduction
 
 
 @dataclass(frozen=True)
@@ -382,7 +386,8 @@ class CrossEntropyObjective:
 
 
 @dataclass(frozen=True)
-class BernoulliObjective: ...
+class BernoulliObjective:
+    reduction: Reduction
 
 
 @dataclass(frozen=True)
@@ -393,7 +398,7 @@ class ELBOObjective:
     @dataclass(frozen=True)
     class GaussianPrior:
         mu: float
-        log_sigma: float
+        log_var: float
 
     type Posterior = GaussianPosterior
     type Prior = GaussianPrior

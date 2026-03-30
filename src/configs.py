@@ -2698,30 +2698,34 @@ VAE_BETA_OHO = GodConfig(
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
     ),
-    epochs=100,
+    epochs=30,
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=0,
     transition_graph={},
     readout_graph={
         "x": {},
         "concat": {"x"},
-        "encoder_hidden": {"concat"},
-        "encoder_out": {"encoder_hidden"},
+        "encoder_hidden1": {"concat"},
+        "encoder_hidden2": {"encoder_hidden1"},
+        "encoder_out": {"encoder_hidden2"},
         "latent": {"encoder_out"},
         "latent_z": {"latent"},
-        "decoder_hidden": {"latent_z"},
-        "decoder_out": {"decoder_hidden"},
+        "decoder_hidden1": {"latent_z"},
+        "decoder_hidden2": {"decoder_hidden1"},
+        "decoder_out": {"decoder_hidden2"},
         "decoder_reshape": {"decoder_out"},
         "merge": {"decoder_reshape", "latent"},
     },
     nodes={
         "x": UnlabeledSource(),
         "concat": Concat(),
-        "encoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
-        "encoder_out": NNLayer(n=128 * 2, activation_fn="identity", use_bias=True, layer_norm=None),
+        "encoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
+        "encoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
+        "encoder_out": NNLayer(n=200 * 2, activation_fn="identity", use_bias=True, layer_norm=None),
         "latent": ReparameterizeLayer(),
-        "latent_z": ExtractZ(n=128),
-        "decoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
+        "latent_z": ExtractZ(n=200),
+        "decoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
+        "decoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
         "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True, layer_norm=None),
         "decoder_reshape": Reshape(shape=(1, 28, 28)),
         "merge": MergeOutputs(),
@@ -2812,9 +2816,9 @@ VAE_BETA_OHO = GodConfig(
         MetaConfig(
             objective_fn=ELBOObjective(
                 beta="meta1_beta",
-                likelihood=BernoulliObjective(),
+                likelihood=BernoulliObjective(reduction="sum"),
                 posterior=ELBOObjective.GaussianPosterior(),
-                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
             ),
             dataset_source=MNISTTaskFamily(
                 patch_h=28,
@@ -2822,10 +2826,10 @@ VAE_BETA_OHO = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                pixel_transform="binarize",
+                pixel_transform="raw",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=128,
+                num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
@@ -2856,7 +2860,16 @@ VAE_BETA_OHO = GodConfig(
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
-                        target=frozenset({"encoder_hidden", "encoder_out", "decoder_hidden", "decoder_out"}),
+                        target=frozenset(
+                            {
+                                "encoder_hidden1",
+                                "encoder_hidden2",
+                                "encoder_out",
+                                "decoder_hidden1",
+                                "decoder_hidden2",
+                                "decoder_out",
+                            }
+                        ),
                         optimizer=SGDConfig(
                             learning_rate="meta1_sgd1_lr",
                             weight_decay="meta1_sgd1_wd",
@@ -2879,9 +2892,9 @@ VAE_BETA_OHO = GodConfig(
         MetaConfig(
             objective_fn=ELBOObjective(
                 beta="meta2_beta",
-                likelihood=BernoulliObjective(),
+                likelihood=BernoulliObjective(reduction="sum"),
                 posterior=ELBOObjective.GaussianPosterior(),
-                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
             ),
             dataset_source=MNISTTaskFamily(
                 patch_h=28,
@@ -2889,10 +2902,10 @@ VAE_BETA_OHO = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                pixel_transform="binarize",
+                pixel_transform="raw",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=128,
+                num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -2958,9 +2971,9 @@ VAE_BETA_OHO = GodConfig(
         MetaConfig(
             objective_fn=ELBOObjective(
                 beta="meta2_beta",
-                likelihood=BernoulliObjective(),
+                likelihood=BernoulliObjective(reduction="sum"),
                 posterior=ELBOObjective.GaussianPosterior(),
-                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
             ),
             dataset_source=MNISTTaskFamily(
                 patch_h=28,
@@ -2968,10 +2981,10 @@ VAE_BETA_OHO = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                pixel_transform="binarize",
+                pixel_transform="raw",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=128,
+                num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -2983,7 +2996,7 @@ VAE_BETA_OHO = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=17,
+                num_steps=500,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -3018,12 +3031,13 @@ VAE_BETA_OHO = GodConfig(
             transition_graph={},
             readout_graph={
                 "z_input": {},
-                "decoder_hidden": {"z_input"},
-                "decoder_out": {"decoder_hidden"},
+                "decoder_hidden1": {"z_input"},
+                "decoder_hidden2": {"decoder_hidden1"},
+                "decoder_out": {"decoder_hidden2"},
                 "decoder_reshape": {"decoder_out"},
             },
             source_nodes={"z_input": UnlabeledSource()},
-            input_shape=(128,),
+            input_shape=(200,),
             num_samples=4,
             every_n_epochs=10,
             input=GaussianSampleInput(),
@@ -3346,37 +3360,41 @@ VAE_BASELINE = GodConfig(
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
     ),
-    epochs=100,
+    epochs=30,
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=0,
     transition_graph={},
     readout_graph={
         "x": {},
         "concat": {"x"},
-        "encoder_hidden": {"concat"},
-        "encoder_out": {"encoder_hidden"},
+        "encoder_hidden1": {"concat"},
+        "encoder_hidden2": {"encoder_hidden1"},
+        "encoder_out": {"encoder_hidden2"},
         "latent": {"encoder_out"},
         "latent_z": {"latent"},
-        "decoder_hidden": {"latent_z"},
-        "decoder_out": {"decoder_hidden"},
+        "decoder_hidden1": {"latent_z"},
+        "decoder_hidden2": {"decoder_hidden1"},
+        "decoder_out": {"decoder_hidden2"},
         "decoder_reshape": {"decoder_out"},
         "merge": {"decoder_reshape", "latent"},
     },
     nodes={
         "x": UnlabeledSource(),
         "concat": Concat(),
-        "encoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
-        "encoder_out": NNLayer(n=128 * 2, activation_fn="identity", use_bias=True, layer_norm=None),
+        "encoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
+        "encoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
+        "encoder_out": NNLayer(n=200 * 2, activation_fn="identity", use_bias=True, layer_norm=None),
         "latent": ReparameterizeLayer(),
-        "latent_z": ExtractZ(n=128),
-        "decoder_hidden": NNLayer(n=512, activation_fn="relu", use_bias=True, layer_norm=None),
+        "latent_z": ExtractZ(n=200),
+        "decoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
+        "decoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, layer_norm=None),
         "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True, layer_norm=None),
         "decoder_reshape": Reshape(shape=(1, 28, 28)),
         "merge": MergeOutputs(),
     },
     hyperparameters={
         "meta1_adam1_lr": HyperparameterConfig(
-            value=0.0001,
+            value=0.001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3460,9 +3478,9 @@ VAE_BASELINE = GodConfig(
         MetaConfig(
             objective_fn=ELBOObjective(
                 beta="meta1_beta",
-                likelihood=BernoulliObjective(),
+                likelihood=BernoulliObjective(reduction="sum"),
                 posterior=ELBOObjective.GaussianPosterior(),
-                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
             ),
             dataset_source=MNISTTaskFamily(
                 patch_h=28,
@@ -3470,10 +3488,10 @@ VAE_BASELINE = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                pixel_transform="binarize",
+                pixel_transform="raw",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=128,
+                num_examples_in_minibatch=100,
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
@@ -3503,7 +3521,16 @@ VAE_BASELINE = GodConfig(
                 ),
                 optimizer={
                     "meta1_adam1": OptimizerAssignment(
-                        target=frozenset({"encoder_hidden", "encoder_out", "decoder_hidden", "decoder_out"}),
+                        target=frozenset(
+                            {
+                                "encoder_hidden1",
+                                "encoder_hidden2",
+                                "encoder_out",
+                                "decoder_hidden1",
+                                "decoder_hidden2",
+                                "decoder_out",
+                            }
+                        ),
                         optimizer=AdamConfig(
                             learning_rate="meta1_adam1_lr",
                             weight_decay="meta1_adam1_wd",
@@ -3526,9 +3553,9 @@ VAE_BASELINE = GodConfig(
         MetaConfig(
             objective_fn=ELBOObjective(
                 beta="meta2_beta",
-                likelihood=BernoulliObjective(),
+                likelihood=BernoulliObjective(reduction="sum"),
                 posterior=ELBOObjective.GaussianPosterior(),
-                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
             ),
             dataset_source=MNISTTaskFamily(
                 patch_h=28,
@@ -3536,10 +3563,10 @@ VAE_BASELINE = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                pixel_transform="binarize",
+                pixel_transform="raw",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=128,
+                num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -3583,9 +3610,9 @@ VAE_BASELINE = GodConfig(
         MetaConfig(
             objective_fn=ELBOObjective(
                 beta="meta2_beta",
-                likelihood=BernoulliObjective(),
+                likelihood=BernoulliObjective(reduction="sum"),
                 posterior=ELBOObjective.GaussianPosterior(),
-                prior=ELBOObjective.GaussianPrior(mu=0.0, log_sigma=0.0),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
             ),
             dataset_source=MNISTTaskFamily(
                 patch_h=28,
@@ -3593,10 +3620,10 @@ VAE_BASELINE = GodConfig(
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
                 domain=frozenset({"mnist"}),
-                pixel_transform="binarize",
+                pixel_transform="raw",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=128,
+                num_examples_in_minibatch=100,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -3608,7 +3635,7 @@ VAE_BASELINE = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=17,
+                num_steps=500,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -3643,12 +3670,13 @@ VAE_BASELINE = GodConfig(
             transition_graph={},
             readout_graph={
                 "z_input": {},
-                "decoder_hidden": {"z_input"},
-                "decoder_out": {"decoder_hidden"},
+                "decoder_hidden1": {"z_input"},
+                "decoder_hidden2": {"decoder_hidden1"},
+                "decoder_out": {"decoder_hidden2"},
                 "decoder_reshape": {"decoder_out"},
             },
             source_nodes={"z_input": UnlabeledSource()},
-            input_shape=(128,),
+            input_shape=(200,),
             num_samples=4,
             every_n_epochs=10,
             input=GaussianSampleInput(),

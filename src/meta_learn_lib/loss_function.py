@@ -12,19 +12,17 @@ from meta_learn_lib.util import accuracy, hyperparameter_reparametrization
 
 def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
     match prior:
-        case ELBOObjective.GaussianPrior(mu, log_sigma):
-            return -0.5 * jnp.sum(jnp.log(2 * jnp.pi) + 2 * log_sigma + (z - mu) ** 2 / jnp.exp(2 * log_sigma), axis=-1)
+        case ELBOObjective.GaussianPrior(mu, log_var):
+            return -0.5 * jnp.sum(jnp.log(2 * jnp.pi) + log_var + (z - mu) ** 2 / jnp.exp(log_var), axis=-1)
 
 
 def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: Outputs, mask: jax.Array) -> jax.Array:
     match (posterior, prior):
-        case (ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(prior_mu, prior_log_sigma)):
+        case (ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(prior_mu, prior_log_var)):
             mu = outputs.mu
-            log_sigma = outputs.log_sigma
-            kl_per_example = 0.5 * jnp.sum(
-                2 * (prior_log_sigma - log_sigma)
-                + (jnp.exp(2 * log_sigma) + (mu - prior_mu) ** 2) / jnp.exp(2 * prior_log_sigma)
-                - 1,
+            log_var = outputs.log_var
+            kl_per_example = -0.5 * jnp.sum(
+                1 + log_var - prior_log_var - (jnp.exp(log_var) + (mu - prior_mu) ** 2) / jnp.exp(prior_log_var),
                 axis=-1,
             )
             return jnp.sum(jnp.where(mask, kl_per_example, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
@@ -94,6 +92,16 @@ def create_loss_fn[ENV](
     task_interface: GodInterface[ENV],
 ) -> Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]:
 
+    def reduce(masked: jax.Array, mask: jax.Array, reduction: Reduction) -> jax.Array:
+        feature_dims = tuple(range(2, masked.ndim))
+        match reduction:
+            case "sum":
+                per_example = jnp.sum(masked, axis=feature_dims)
+                example_mask = jnp.any(mask, axis=feature_dims)
+                return jnp.sum(jnp.where(example_mask, per_example, 0.0)) / jnp.maximum(jnp.sum(example_mask), 1.0)
+            case "mean":
+                return jnp.sum(masked) / jnp.maximum(jnp.sum(mask), 1.0)
+
     match objective_fn:
         case CrossEntropyObjective(mode):
             match mode:
@@ -120,7 +128,7 @@ def create_loss_fn[ENV](
                     "accuracy": jax.lax.stop_gradient(nan_if_masked(acc, has_label)),
                 }
 
-        case RegressionObjective():
+        case RegressionObjective(reduction):
 
             def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 _, target = data
@@ -128,10 +136,10 @@ def create_loss_fn[ENV](
                 mask = target != label_mask_value
                 has_label = jnp.any(mask)
                 raw_loss = optax.losses.squared_error(pred, target)
-                loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
+                loss = LOSS(reduce(jnp.where(mask, raw_loss, 0.0), mask, reduction))
                 return loss, {"loss": nan_if_masked(loss, has_label)}
 
-        case BernoulliObjective():
+        case BernoulliObjective(reduction):
 
             def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 _, target = data
@@ -139,7 +147,7 @@ def create_loss_fn[ENV](
                 mask = target != label_mask_value
                 has_label = jnp.any(mask)
                 raw_loss = optax.losses.sigmoid_binary_cross_entropy(pred, target)
-                loss = LOSS(jnp.sum(jnp.where(mask, raw_loss, 0.0)) / jnp.maximum(jnp.sum(mask), 1.0))
+                loss = LOSS(reduce(jnp.where(mask, raw_loss, 0.0), mask, reduction))
                 return loss, {"loss": nan_if_masked(loss, has_label)}
 
         case ELBOObjective(beta_hp, likelihood, posterior, prior):

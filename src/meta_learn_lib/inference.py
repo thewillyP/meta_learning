@@ -222,10 +222,11 @@ def get_inference[ENV](
                     ]
                     x = to_vector(deps).vector
                     n = x.shape[0] // 2
-                    mu, log_sigma = x[:n], x[n:]
+                    mu, log_var = x[:n], x[n:]
                     key, env = meta_interface[node_name].take_prng(env)
-                    z = mu + jnp.exp(log_sigma) * jax.random.normal(key, mu.shape)
-                    outputs = outputs.set(node_name, Outputs(mu=mu, log_sigma=log_sigma, z=z))
+                    std = jnp.exp(0.5 * log_var)
+                    z = mu + std * jax.random.normal(key, mu.shape)
+                    outputs = outputs.set(node_name, Outputs(mu=mu, log_var=log_var, z=z))
                 case MergeOutputs():
                     upstream = [outputs[n] for n in node_graph[node_name] if n in outputs]
                     merged = eqx.combine(*upstream, is_leaf=lambda x: x is None)

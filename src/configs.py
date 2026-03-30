@@ -2849,7 +2849,6 @@ VAE_BETA_OHO = GodConfig(
             learner=LearnConfig(
                 model_learner=GradientConfig(
                     method=BPTTConfig(None),
-                    # add_clip=HardClip(1.0),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -2925,7 +2924,6 @@ VAE_BETA_OHO = GodConfig(
             learner=LearnConfig(
                 model_learner=GradientConfig(
                     method=BPTTConfig(None),
-                    # add_clip=HardClip(1.0),
                     add_clip=None,
                     scale=1.0,
                 ),

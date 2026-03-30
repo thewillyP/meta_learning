@@ -162,7 +162,6 @@ def create_loss_fn[ENV](
                 kl_value = kl(posterior, prior, outputs, mask)
 
                 loss = LOSS(recon_loss + beta * kl_value)
-                stats["recon_loss"] = jax.lax.stop_gradient(recon_loss)
                 stats["kl"] = jax.lax.stop_gradient(kl_value)
                 stats["elbo_loss"] = jax.lax.stop_gradient(loss)
                 return loss, stats

@@ -146,6 +146,9 @@ def make_converter() -> Converter:
         Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective],
     )
 
+    # -- SampleInput --
+    setup_flattened_union(converter, Union[GaussianSampleInput, DataSampleInput])
+
     return converter
 
 

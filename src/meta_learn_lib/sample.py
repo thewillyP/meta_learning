@@ -3,6 +3,7 @@ import jax
 import numpy as np
 
 from meta_learn_lib.config import (
+    DataSampleInput,
     GaussianSampleInput,
     GodConfig,
     ImageReporter,
@@ -10,6 +11,7 @@ from meta_learn_lib.config import (
     UnlabeledSource,
     LabeledSource,
 )
+from meta_learn_lib.datasets import PrematerializedTask
 from meta_learn_lib.env import Outputs
 from meta_learn_lib.inference import ReadoutFn, TransitionFn, create_raw_inference
 from meta_learn_lib.interface import GodInterface
@@ -61,9 +63,19 @@ def validate_sample_generators(config: GodConfig) -> list[str]:
 def build_sample_runner[ENV](
     config: GodConfig,
     meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    data_sources: list[list[PrematerializedTask]],
+    sample_prng: PRNG,
     iterations_per_epoch: int,
 ) -> SampleRunner[ENV]:
     meta_interface = meta_interfaces[0]
+
+    def make_sample_fn(t: TransitionFn[ENV], r: ReadoutFn[ENV]) -> Callable[[ENV, jax.Array], jax.Array]:
+        def sample_fn(env: ENV, z: jax.Array) -> jax.Array:
+            env = t(env, (z, z))
+            outputs: Outputs = r(env, (z, z))
+            return outputs.prediction
+
+        return sample_fn
 
     sample_fns: list[tuple[SampleGeneratorConfig, Callable[[ENV, jax.Array], jax.Array]]] = []
     for sg in config.sample_generators:
@@ -74,21 +86,16 @@ def build_sample_runner[ENV](
             merged_nodes,
             meta_interface,
         )
-
-        def make_sample_fn(t: TransitionFn[ENV], r: ReadoutFn[ENV]) -> Callable[[ENV, jax.Array], jax.Array]:
-            def sample_fn(env: ENV, z: jax.Array) -> jax.Array:
-                env = t(env, (z, z))
-                outputs: Outputs = r(env, (z, z))
-                return outputs.prediction
-
-            return sample_fn
-
         sample_fns.append((sg, make_sample_fn(transition_fn, readout_fn)))
 
     def generate_input(sg: SampleGeneratorConfig, prng: PRNG) -> jax.Array:
         match sg.input:
             case GaussianSampleInput():
                 return jax.random.normal(prng, (sg.num_samples, *sg.input_shape))
+            case DataSampleInput():
+                xs = data_sources[0][0].xs
+                indices = jax.random.choice(sample_prng, xs.shape[0], shape=(sg.num_samples,), replace=False)
+                return xs[indices]
 
     def report_image(logger: Logger, title: str, samples: np.ndarray, iteration: int) -> None:
         for i, sample in enumerate(samples):
@@ -102,8 +109,8 @@ def build_sample_runner[ENV](
             if interval <= 0 or iteration % interval != 0:
                 continue
 
-            sample_prng, prng = jax.random.split(prng)
-            z: jax.Array = generate_input(sg, PRNG(sample_prng))
+            step_prng, prng = jax.random.split(prng)
+            z: jax.Array = generate_input(sg, PRNG(step_prng))
             samples = np.asarray(jax.vmap(lambda z_i: sample_fn(env, z_i))(z))
 
             match sg.reporter:

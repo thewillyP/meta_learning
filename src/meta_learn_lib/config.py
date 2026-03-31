@@ -416,7 +416,11 @@ type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjecti
 class GaussianSampleInput: ...
 
 
-type SampleInput = Union[GaussianSampleInput]
+@dataclass(frozen=True)
+class DataSampleInput: ...
+
+
+type SampleInput = Union[GaussianSampleInput, DataSampleInput]
 
 
 @dataclass(frozen=True)

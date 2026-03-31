@@ -211,7 +211,7 @@ def run(
     compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
     checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
-    sample_runner = build_sample_runner(config, meta_interfaces, iterations_per_epoch)
+    sample_runner = build_sample_runner(config, meta_interfaces, data_sources, sample_prng, iterations_per_epoch)
 
     print("Starting main loop...")
 

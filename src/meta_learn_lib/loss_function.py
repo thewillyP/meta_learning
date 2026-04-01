@@ -182,12 +182,15 @@ def create_readout_loss_fns[ENV](
         level: int,
         interfaces: dict[str, GodInterface[ENV]],
         task_interface: GodInterface[ENV],
+        collect_predictions: bool,
     ) -> Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]:
         def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, LOSS, STAT]:
             outputs = readout(env, data)
             loss, stat = loss_fn(env, outputs, data)
             stat = {f"level{level}/{k}": v for k, v in stat.items()}
             stat |= get_env_stats(config, env, interfaces, task_interface, level)
+            if collect_predictions:
+                stat[f"level{level}/prediction"] = jax.lax.stop_gradient(outputs.prediction)
             return env, loss, stat
 
         return fn
@@ -204,6 +207,7 @@ def create_readout_loss_fns[ENV](
             level,
             interfaces,
             task_interface,
+            meta_config.collect_predictions,
         )
         for level, (meta_config, task_interface, readout, interfaces) in enumerate(
             zip(config.levels, task_interfaces, readouts, meta_interfaces)

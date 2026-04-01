@@ -1,25 +1,19 @@
-from typing import Callable
-import jax
-import numpy as np
+import dataclasses
 
 from meta_learn_lib.config import (
     DataSampleInput,
     GaussianSampleInput,
+    GaussianNoiseTaskFamily,
     GodConfig,
+    GradientConfig,
+    IdentityLearnerConfig,
     ImageReporter,
+    LearnConfig,
     SampleGeneratorConfig,
-    UnlabeledSource,
-    LabeledSource,
+    TrackLogs,
 )
-from meta_learn_lib.datasets import PrematerializedTask
-from meta_learn_lib.env import Outputs
-from meta_learn_lib.inference import ReadoutFn, TransitionFn, create_raw_inference
-from meta_learn_lib.interface import GodInterface
-from meta_learn_lib.logger import Logger
-from meta_learn_lib.lib_types import PRNG
-
-
-type SampleRunner[ENV] = Callable[[ENV, Logger, PRNG, int], None]
+from meta_learn_lib.logger import ThreadedScalarLogger
+from meta_learn_lib.lib_types import STAT
 
 
 def validate_sample_generators(config: GodConfig) -> list[str]:
@@ -28,20 +22,8 @@ def validate_sample_generators(config: GodConfig) -> list[str]:
         all_graph_nodes = set(sg.transition_graph.keys()) | set(sg.readout_graph.keys())
 
         for node_name in all_graph_nodes:
-            if node_name in sg.source_nodes:
-                node = sg.source_nodes[node_name]
-                if not isinstance(node, (UnlabeledSource, LabeledSource)):
-                    errors.append(
-                        f"Sample generator {i}: source_nodes['{node_name}'] must be UnlabeledSource or LabeledSource"
-                    )
-            elif node_name not in config.nodes:
-                errors.append(f"Sample generator {i}: node '{node_name}' not found in config.nodes or source_nodes")
-
-        for node_name in sg.source_nodes:
-            if node_name in config.nodes:
-                errors.append(
-                    f"Sample generator {i}: source_nodes['{node_name}'] conflicts with existing node in config.nodes"
-                )
+            if node_name not in config.nodes:
+                errors.append(f"Sample generator {i}: node '{node_name}' not found in config.nodes")
 
         for node_name, deps in sg.readout_graph.items():
             for dep in deps:
@@ -60,61 +42,71 @@ def validate_sample_generators(config: GodConfig) -> list[str]:
     return errors
 
 
-def build_sample_runner[ENV](
-    config: GodConfig,
-    meta_interfaces: list[dict[str, GodInterface[ENV]]],
-    data_sources: list[list[PrematerializedTask]],
-    sample_prng: PRNG,
-    iterations_per_epoch: int,
-) -> SampleRunner[ENV]:
-    meta_interface = meta_interfaces[0]
+def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfig:
+    identity_grad = GradientConfig(
+        method=IdentityLearnerConfig(),
+        add_clip=None,
+        scale=1.0,
+    )
+    no_track = TrackLogs(
+        gradient=False,
+        hessian_contains_nans=False,
+        largest_eigenvalue=False,
+        influence_tensor_norm=False,
+        immediate_influence_tensor=False,
+        largest_jac_eigenvalue=False,
+        jacobian=False,
+    )
+    identity_learner = LearnConfig(
+        model_learner=identity_grad,
+        optimizer_learner=identity_grad,
+        optimizer={},
+    )
 
-    def make_sample_fn(t: TransitionFn[ENV], r: ReadoutFn[ENV]) -> Callable[[ENV, jax.Array], jax.Array]:
-        def sample_fn(env: ENV, z: jax.Array) -> jax.Array:
-            env = t(env, (z, z))
-            outputs: Outputs = r(env, (z, z))
-            return outputs.prediction
+    match sg.input:
+        case GaussianSampleInput():
+            dataset_source = GaussianNoiseTaskFamily(
+                shape=sg.input_shape,
+                n=sg.num_samples * len(config.levels),
+            )
+        case DataSampleInput():
+            dataset_source = config.levels[0].dataset_source
 
-        return sample_fn
-
-    sample_fns: list[tuple[SampleGeneratorConfig, Callable[[ENV, jax.Array], jax.Array]]] = []
-    for sg in config.sample_generators:
-        merged_nodes = config.nodes | sg.source_nodes
-        transition_fn, readout_fn = create_raw_inference(
-            sg.transition_graph,
-            sg.readout_graph,
-            merged_nodes,
-            meta_interface,
+    new_levels = []
+    for level in config.levels:
+        new_levels.append(
+            dataclasses.replace(
+                level,
+                dataset_source=dataset_source,
+                dataset=dataclasses.replace(
+                    level.dataset,
+                    num_examples_in_minibatch=sg.num_samples,
+                    num_examples_total=sg.num_samples,
+                    is_test=False,
+                    augment=False,
+                ),
+                nested=dataclasses.replace(level.nested, num_steps=1, reset_t=None),
+                learner=identity_learner,
+                track_logs=no_track,
+                collect_predictions=True,
+            )
         )
-        sample_fns.append((sg, make_sample_fn(transition_fn, readout_fn)))
 
-    def generate_input(sg: SampleGeneratorConfig, prng: PRNG) -> jax.Array:
-        match sg.input:
-            case GaussianSampleInput():
-                return jax.random.normal(prng, (sg.num_samples, *sg.input_shape))
-            case DataSampleInput():
-                xs = data_sources[0][0].xs
-                indices = jax.random.choice(sample_prng, xs.shape[0], shape=(sg.num_samples,), replace=False)
-                return xs[indices]
+    return dataclasses.replace(
+        config,
+        transition_graph=sg.transition_graph,
+        readout_graph=sg.readout_graph,
+        levels=new_levels,
+        sample_generators=[],
+        epochs=1,
+    )
 
-    def report_image(logger: Logger, title: str, samples: np.ndarray, iteration: int) -> None:
-        for i, sample in enumerate(samples):
-            if sample.ndim == 3:
-                sample = np.transpose(sample, (1, 2, 0))
-            logger.log_image(title, f"sample_{i}", iteration, sample)
 
-    def run(env: ENV, logger: Logger, prng: PRNG, iteration: int) -> None:
-        for sg, sample_fn in sample_fns:
-            interval = iterations_per_epoch * sg.every_n_epochs
-            if interval <= 0 or iteration % interval != 0:
-                continue
-
-            step_prng, prng = jax.random.split(prng)
-            z: jax.Array = generate_input(sg, PRNG(step_prng))
-            samples = np.asarray(jax.vmap(lambda z_i: sample_fn(env, z_i))(z))
-
-            match sg.reporter:
-                case ImageReporter(title):
-                    report_image(logger, title, samples, iteration)
-
-    return run
+def report_samples(
+    sg: SampleGeneratorConfig,
+    stats: STAT,
+    sample_logger: ThreadedScalarLogger,
+) -> None:
+    match sg.reporter:
+        case ImageReporter(title):
+            sample_logger.log_image(stats, title, 3)

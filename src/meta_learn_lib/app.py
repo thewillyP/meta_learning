@@ -23,9 +23,9 @@ from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.learning import create_meta_learner
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, get_seq_len, validate_dataloader_config
-from meta_learn_lib.logger import MatplotlibLogger, ThreadedScalarLogger, create_logger
+from meta_learn_lib.logger import MatplotlibLogger, create_logger
 from meta_learn_lib.loss_function import create_readout_loss_fns
-from meta_learn_lib.sample import build_sample_runner, validate_sample_generators
+from meta_learn_lib.sample import make_sample_config, report_samples, validate_sample_generators
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ def make_eval_config(config: GodConfig) -> GodConfig:
                 nested=dataclasses.replace(new_level.nested, num_steps=1),
             )
         new_levels.append(new_level)
-    return dataclasses.replace(config, levels=new_levels)
+    return dataclasses.replace(config, levels=new_levels, sample_generators=[])
 
 
 def prefix_stats(stats: STAT, prefix: str) -> STAT:
@@ -149,7 +149,6 @@ def run(
     task_interfaces, count = create_task_interfaces(config, count)
 
     env = env_factory(config, shapes, meta_interfaces, learn_interfaces)
-
     val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
 
     inference_axes = [
@@ -211,7 +210,6 @@ def run(
     compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
     checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
-    sample_runner = build_sample_runner(config, meta_interfaces, data_sources, sample_prng, iterations_per_epoch)
 
     print("Starting main loop...")
 
@@ -227,8 +225,27 @@ def run(
             checkpoint_manager.save(arr, CheckpointMetadata(global_step=global_step))
             print(f"Checkpoint saved at step {global_step} (epoch {global_step // iterations_per_epoch})")
 
-        step_sample_prng, sample_prng = jax.random.split(sample_prng)
-        sample_runner(eqx.combine(arr, static), scalar_logger, PRNG(step_sample_prng), global_step)
+        for sg in config.sample_generators:
+            sample_interval = iterations_per_epoch * sg.every_n_epochs
+            if sample_interval <= 0 or global_step % sample_interval != 0:
+                continue
+            sample_cfg = make_sample_config(config, sg)
+            sample_dl_iters, sample_iters_per_epoch, sample_log_cap = get_iterations(0, sample_cfg, 1)
+            _, sample_stats = run(
+                sample_cfg,
+                lambda *_: eqx.combine(arr, static),
+                sample_prng,
+                sample_prng,
+                sample_prng,
+                sample_dl_iters,
+                sample_iters_per_epoch,
+                sample_log_cap,
+                [],
+                lambda s, acc: acc + (s,),
+                "sample",
+                NullCheckpointManager(),
+            )
+            report_samples(sg, sample_stats[0], scalar_logger)
 
     scalar_logger.flush()
     scalar_logger.shutdown()

@@ -78,6 +78,8 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
         case DelayAddTaskFamily(_, _, _, _, _, _, t_train, _, t_test, _):
             return t_test if is_test else t_train
+        case GaussianNoiseTaskFamily(_, _):
+            return 1
 
 
 def numpy_collate_fn(batch):
@@ -352,6 +354,15 @@ def dataset_sources(
                 return PyTreeDataset((X, Y)), lambda x: x
 
             return [make_task(k) for k in keys]
+
+        case GaussianNoiseTaskFamily(shape, n):
+            keys = jax.random.split(seed, num_tasks)
+
+            def make_noise_task(key: PRNG) -> DatasetWithReshape:
+                xs = jax.random.normal(key, (n, 1, *shape))
+                return PyTreeDataset((xs, xs)), lambda x: x
+
+            return [make_noise_task(k) for k in keys]
 
 
 def take_datasets(

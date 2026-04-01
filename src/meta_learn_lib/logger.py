@@ -3,7 +3,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-from typing import Protocol
+from typing import Callable, Iterator, Protocol
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from itertools import accumulate
@@ -175,6 +175,71 @@ class MultiLogger:
             logger.log_scalar(context, title, series, value, iteration, max_count, iteration_offset)
 
 
+def expected_scalar_ndim(num_levels: int, key: str) -> int:
+    level = infer_level(key)
+    n_paired = 2 * (num_levels - level)
+    return n_paired + level + 1
+
+
+def compute_ref_shape(stats: dict[str, np.ndarray], num_levels: int) -> tuple[int, ...]:
+    if not stats:
+        return ()
+    k = max(stats, key=lambda k: stats[k].ndim)
+    v = stats[k]
+    ref_level = infer_level(k)
+    n_ref_pairs = num_levels - ref_level
+    return tuple(v.shape[i] for i in range(0, 2 * n_ref_pairs, 2))
+
+
+def is_scalar_stat(num_levels: int, key: str, value: np.ndarray, n_feature_dims: int) -> tuple[bool, int, int]:
+    level = infer_level(key)
+    n_paired_dims = 2 * (num_levels - level)
+    expected_ndim = n_paired_dims + level + 1
+    effective_ndim = value.ndim - n_feature_dims
+    excess = effective_ndim - expected_ndim
+    return excess <= 0, effective_ndim - (excess > 0), n_paired_dims
+
+
+def iter_stat_entries(
+    stats: dict[str, np.ndarray],
+    num_levels: int,
+    idx: tuple[int, ...],
+    n_feature_dims: int,
+) -> Iterator[tuple[str, tuple[int, ...], bool, np.ndarray]]:
+    for key, value in stats.items():
+        has_time, n_before_time, n_paired_dims = is_scalar_stat(num_levels, key, value, n_feature_dims)
+
+        actual_paired = min(n_paired_dims, n_before_time)
+        actual_paired = actual_paired - (actual_paired % 2)
+
+        batch_axes = list(range(1, actual_paired, 2)) + list(range(actual_paired, n_before_time))
+
+        n_scan = actual_paired // 2
+        scan_idx = idx[:n_scan]
+        extra_idx = idx[n_scan:]
+
+        if any(i != 0 for i in extra_idx):
+            continue
+
+        batch_shape = tuple(value.shape[ax] for ax in batch_axes)
+        for batch_idx in itertools.product(*(range(d) for d in batch_shape)):
+            suffix = "/".join(str(i) for i in batch_idx)
+            series = f"{key}/{suffix}" if suffix else key
+
+            full_idx = [None] * n_before_time
+            scan_pos = 0
+            batch_pos = 0
+            for ax in range(n_before_time):
+                if ax < actual_paired and ax % 2 == 0:
+                    full_idx[ax] = scan_idx[scan_pos]
+                    scan_pos += 1
+                else:
+                    full_idx[ax] = batch_idx[batch_pos]
+                    batch_pos += 1
+
+            yield series, tuple(full_idx), has_time, value
+
+
 def infer_level(key: str) -> int:
     """Extract level number from stat key, e.g. 'train/level0/loss' -> 0."""
     match = re.search(r"level(\d+)", key)
@@ -214,100 +279,59 @@ class ScalarLogger:
         self.global_step = 0
         self.iteration_offset = iteration_offset
 
-    def log(self, stats: dict[str, jax.Array]):
-        # Bulk transfer all JAX arrays to numpy once (single device-to-host copy)
-        stats = {k: np.asarray(v) for k, v in stats.items()}
-
-        # ref_shape from deepest level's scan dims (exclude time)
-        max_ndim = max(v.ndim for v in stats.values())
-        for k, v in stats.items():
-            if v.ndim == max_ndim:
-                ref_level = infer_level(k)
-                n_ref_pairs = self.num_levels - ref_level
-                ref_shape = tuple(v.shape[i] for i in range(0, 2 * n_ref_pairs, 2))
-                break
-
+    def _for_each_entry(
+        self,
+        stats: dict[str, np.ndarray],
+        n_feature_dims: int,
+        callback: Callable[[str, str, int, np.ndarray], None],
+    ) -> None:
+        ref_shape = compute_ref_shape(stats, self.num_levels)
         strides = compute_strides(ref_shape)
-        context = self.logger.get_context()
-
         for idx in itertools.product(*(range(d) for d in ref_shape)):
             local_step = sum(i * st for i, st in zip(idx, strides))
             iteration = self.global_step + local_step + 1
+            for series, full_idx, has_time, value in iter_stat_entries(
+                stats,
+                self.num_levels,
+                idx,
+                n_feature_dims,
+            ):
+                v = np.nanmean(value[full_idx], axis=0) if has_time else value[full_idx]
+                callback(series, iteration, v)
 
+    def log(self, stats: dict[str, jax.Array]):
+        stats = {k: np.asarray(v) for k, v in stats.items()}
+        stats = {k: v for k, v in stats.items() if is_scalar_stat(self.num_levels, k, v, 0)[0]}
+        context = self.logger.get_context()
+
+        def on_scalar(series: str, iteration: int, v: np.ndarray) -> None:
             if iteration % self.checkpoint_every != 0:
-                continue
+                return
+            fv = float(v)
+            if not np.isnan(fv):
+                self.logger.log_scalar(
+                    context,
+                    series,
+                    self.log_title,
+                    fv,
+                    iteration,
+                    self.total_iterations,
+                    self.iteration_offset,
+                )
 
-            for key, value in stats.items():
-                level = infer_level(key)
-                n_scan_vmap_pairs = self.num_levels - level
-                n_paired_dims = 2 * n_scan_vmap_pairs
-                expected_with_time = n_paired_dims + level + 1
-                has_time = value.ndim >= expected_with_time
-
-                if has_time:
-                    n_before_time = value.ndim - 1
-                else:
-                    n_before_time = value.ndim
-
-                actual_paired = min(n_paired_dims, n_before_time)
-                actual_paired = actual_paired - (actual_paired % 2)
-
-                batch_axes = list(range(1, actual_paired, 2)) + list(range(actual_paired, n_before_time))
-
-                n_scan = actual_paired // 2
-                scan_idx = idx[:n_scan]
-                extra_idx = idx[n_scan:]
-
-                if any(i != 0 for i in extra_idx):
-                    continue
-
-                batch_shape = tuple(value.shape[ax] for ax in batch_axes)
-                for batch_idx in itertools.product(*(range(d) for d in batch_shape)):
-                    suffix = "/".join(str(i) for i in batch_idx)
-                    series = f"{key}/{suffix}" if suffix else key
-
-                    full_idx = [None] * n_before_time
-                    scan_pos = 0
-                    batch_pos = 0
-                    for ax in range(n_before_time):
-                        if ax < actual_paired and ax % 2 == 0:
-                            full_idx[ax] = scan_idx[scan_pos]
-                            scan_pos += 1
-                        else:
-                            full_idx[ax] = batch_idx[batch_pos]
-                            batch_pos += 1
-
-                    if has_time:
-                        time_slice = value[tuple(full_idx)]
-                        mean_v = float(np.nanmean(time_slice))
-                        if not np.isnan(mean_v):
-                            self.logger.log_scalar(
-                                context,
-                                series,
-                                self.log_title,
-                                mean_v,
-                                iteration,
-                                self.total_iterations,
-                                self.iteration_offset,
-                            )
-                    else:
-                        v = float(value[tuple(full_idx)])
-                        if not np.isnan(v):
-                            self.logger.log_scalar(
-                                context,
-                                series,
-                                self.log_title,
-                                v,
-                                iteration,
-                                self.total_iterations,
-                                self.iteration_offset,
-                            )
-
-        self.global_step += math.prod(ref_shape)
+        self._for_each_entry(stats, 0, on_scalar)
+        self.global_step += math.prod(compute_ref_shape(stats, self.num_levels))
         self.logger.close_context(context)
 
-    def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
-        self.logger.log_image(title, series, iteration, image)
+    def log_image(self, stats: dict[str, jax.Array], title: str, n_feature_dims: int) -> None:
+        stats = {k: np.asarray(v) for k, v in stats.items()}
+
+        def on_image(series: str, iteration: int, v: np.ndarray) -> None:
+            if v.ndim == n_feature_dims and n_feature_dims >= 2:
+                v = np.transpose(v, (1, 2, 0)) if v.ndim == 3 else v
+                self.logger.log_image(title, series, iteration, v)
+
+        self._for_each_entry(stats, n_feature_dims, on_image)
 
 
 class ThreadedScalarLogger:
@@ -335,22 +359,25 @@ class ThreadedScalarLogger:
     def _process(self):
         while not self.stop_event.is_set():
             try:
-                stats = self.job_queue.get(timeout=0.1)
-                if stats is None:
+                job = self.job_queue.get(timeout=0.1)
+                if job is None:
                     self.job_queue.task_done()
                     break
-                self.scalar_logger.log(stats)
+                job()
                 self.job_queue.task_done()
             except queue.Empty:
                 continue
 
-    def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
-        self.scalar_logger.log_image(title, series, iteration, image)
-
-    def log(self, stats: dict[str, jax.Array]):
+    def _enqueue(self, job: Callable[[], None]) -> None:
         if self.stop_event.is_set():
             return
-        self.job_queue.put(stats)
+        self.job_queue.put(job)
+
+    def log_image(self, stats: dict[str, jax.Array], title: str, n_feature_dims: int) -> None:
+        self._enqueue(lambda: self.scalar_logger.log_image(stats, title, n_feature_dims))
+
+    def log(self, stats: dict[str, jax.Array]):
+        self._enqueue(lambda: self.scalar_logger.log(stats))
 
     def flush(self):
         self.job_queue.join()

@@ -64,7 +64,13 @@ class DelayAddTaskFamily:
     n_test: int  # number of examples. n_test=1 for online.
 
 
-type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily]
+@dataclass(frozen=True)
+class GaussianNoiseTaskFamily:
+    shape: tuple[int, ...]
+    n: int
+
+
+type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily, GaussianNoiseTaskFamily]
 
 
 @dataclass(frozen=True)
@@ -435,7 +441,6 @@ type SampleReporter = Union[ImageReporter]
 class SampleGeneratorConfig:
     transition_graph: dict[str, set[str]]
     readout_graph: dict[str, set[str]]
-    source_nodes: dict[str, Node]
     input_shape: tuple[int, ...]
     num_samples: int
     every_n_epochs: int
@@ -480,6 +485,7 @@ class MetaConfig:
     learner: LearnConfig
     track_logs: TrackLogs
     test_seed: int
+    collect_predictions: bool
 
 
 @dataclass(frozen=True)

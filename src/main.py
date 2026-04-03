@@ -4,6 +4,7 @@ from configs import *
 from meta_learn_lib import app
 from meta_learn_lib.config import *
 from meta_learn_lib.logger import *
+from meta_learn_lib.checkpoint import NullCheckpointManager
 # import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -13,12 +14,12 @@ from meta_learn_lib.logger import *
 
 
 def main():
-    config = OHO_RNN256
+    config = VAE_BETA_OHO
     config = copy.replace(
         config,
         logger_config=copy.replace(
             config.logger_config,
-            matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=True),
+            matplotlib=MatplotlibLoggerConfig(save_dir=config.log_dir, enabled=True),
         ),
     )
 
@@ -29,7 +30,7 @@ def main():
     if lc.matplotlib.enabled:
         loggers.append(MatplotlibLogger(lc.matplotlib.save_dir))
 
-    app.runApp(config, loggers)
+    app.runApp(config, loggers, NullCheckpointManager())
 
 
 if __name__ == "__main__":

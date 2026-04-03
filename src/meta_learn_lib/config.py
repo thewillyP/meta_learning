@@ -142,6 +142,8 @@ class AdamConfig:
     learning_rate: HP
     weight_decay: HP
     momentum: HP
+    eps: float
+    eps_root: float
 
 
 @dataclass(frozen=True)

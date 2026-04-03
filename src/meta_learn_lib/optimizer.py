@@ -100,7 +100,7 @@ def get_opt[ENV](
                 optax.add_decayed_weights(wd_forward(wd)),
                 optax.sgd(lr_forward(lr), momentum=m_forward(m)),
             )
-        case AdamConfig(learning_rate, weight_decay, momentum):
+        case AdamConfig(learning_rate, weight_decay, momentum, eps, eps_root):
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(hps[weight_decay].hyperparameter_parametrization)
             m_forward, _ = hyperparameter_reparametrization(hps[momentum].hyperparameter_parametrization)
@@ -112,6 +112,8 @@ def get_opt[ENV](
                     lr_forward(lr),
                     weight_decay=wd_forward(wd),
                     b1=m_forward(m),
+                    eps=eps,
+                    eps_root=eps_root,
                 ),
             )
         case ExponentiatedGradientConfig(learning_rate, weight_decay, momentum, use_adam):

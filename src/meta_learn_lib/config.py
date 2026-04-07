@@ -169,15 +169,20 @@ class OptimizerAssignment:
 
 
 @dataclass(frozen=True)
+class RTRLFiniteHvpConfig:
+    epsilon: float
+
+
+@dataclass(frozen=True)
 class RTRLConfig:
     start_at_step: int
     damping: float
     beta: float
+    finite_hvp: RTRLFiniteHvpConfig | None
 
 
 @dataclass(frozen=True)
-class RTRLFiniteHvpConfig:
-    epsilon: float
+class TikhonovRTRLConfig:
     rtrl_config: RTRLConfig
 
 
@@ -218,7 +223,7 @@ class ImmediateLearnerConfig: ...
 
 type GradientMethod = Union[
     RTRLConfig,
-    RTRLFiniteHvpConfig,
+    TikhonovRTRLConfig,
     BPTTConfig,
     IdentityLearnerConfig,
     RFLOConfig,

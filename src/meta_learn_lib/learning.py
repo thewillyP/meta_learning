@@ -37,7 +37,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
     readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
     learn_interface: GodInterface[ENV],
-    _config: RTRLConfig | RTRLFiniteHvpConfig,
+    config: RTRLConfig,
     grad_config: GradientConfig,
     length: int,
     vmap_this: Callable[
@@ -46,12 +46,6 @@ def rtrl[ENV, TR_DATA, VL_DATA](
     ],
     track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
-
-    match _config:
-        case RTRLConfig():
-            config = _config
-        case RTRLFiniteHvpConfig():
-            config = _config.rtrl_config
 
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
@@ -93,11 +87,11 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             new_env = eqx.combine(arr, static)
 
             hmp: JACOBIAN
-            match _config:
-                case RTRLConfig():
+            match config.finite_hvp:
+                case None:
                     _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
                     hmp = hmp_jvp - mu * influence_tensor_s.value
-                case RTRLFiniteHvpConfig(eps, ___):
+                case RTRLFiniteHvpConfig(eps):
                     f = lambda x: state_fn(env)(x)[0]
                     hmp = finite_difference_jmp(f, s, influence_tensor_s.value, eps) - mu * influence_tensor_s.value
 
@@ -105,6 +99,107 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             influence_tensor = filter_cond(
                 t >= config.start_at_step,
                 lambda _: beta * (hmp + dhdp) + (1 - beta) * influence_tensor_s.value,
+                lambda _: influence_tensor_s.value,
+                None,
+            )
+            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
+            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
+            grad: GRADIENT = credit_gr @ state_jacobian
+            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+
+            arr, _ = eqx.partition(new_env, eqx.is_array)
+            return arr, (grad, trans_stat | readout_stat)
+
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
+        env = eqx.combine(arr, static)
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
+        return env, total_grad, stats
+
+    return gradient_fn
+
+
+def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
+    learn_interface: GodInterface[ENV],
+    _config: TikhonovRTRLConfig,
+    grad_config: GradientConfig,
+    length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
+    track_logs: TrackLogs,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+
+    config = _config.rtrl_config
+
+    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+        arr_init, static = eqx.partition(env_init, eqx.is_array)
+
+        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
+            env = eqx.combine(arr, static)
+            tr_data, vl_data = data
+
+            s = learn_interface.get_state(env)
+            p = learn_interface.get_param(env)
+            t = learn_interface.get_tick(env)
+            mu = config.damping
+            beta = config.beta
+            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+
+            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
+                def fn(state: jax.Array) -> tuple[jax.Array, None]:
+                    _env = learn_interface.put_state(e, state)
+                    _env, _ = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    return state, None
+
+                return fn
+
+            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
+                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+                    _env = learn_interface.put_param(e, param)
+                    _env, stat = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    _arr, _ = eqx.partition(_env, eqx.is_array)
+                    return state, (_arr, stat)
+
+                return fn
+
+            if s.shape[0] > p.shape[0]:
+                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
+            else:
+                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
+            new_env = eqx.combine(arr, static)
+
+            # D_tau = dF/dz @ Gamma + dF/dphi (forward sensitivity)
+            match config.finite_hvp:
+                case None:
+                    _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
+                case RTRLFiniteHvpConfig(eps):
+                    f = lambda x: state_fn(env)(x)[0]
+                    hmp_jvp = finite_difference_jmp(f, s, influence_tensor_s.value, eps)
+
+            d_tau = hmp_jvp + dhdp
+            error = influence_tensor_s.value - d_tau
+
+            # (dF/dz)^T @ (Gamma - D) via vmapped VJPs (adjoint error correction)
+            _, vjp_fn = eqx.filter_vjp(lambda x: state_fn(env)(x)[0], s)
+            correction = eqx.filter_vmap(lambda col: vjp_fn(col)[0], in_axes=1, out_axes=1)(error)
+
+            # Gamma_new = (1 - beta) * Gamma + beta * (D + (dF/dz)^T(Gamma - D) - mu * Gamma)
+            target = d_tau + correction - mu * influence_tensor_s.value
+            updated = beta * target + (1 - beta) * influence_tensor_s.value
+
+            influence_tensor: JACOBIAN
+            influence_tensor = filter_cond(
+                t >= config.start_at_step,
+                lambda _: updated,
                 lambda _: influence_tensor_s.value,
                 None,
             )
@@ -515,8 +610,12 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = bptt(transition, readout_fn, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case IdentityLearnerConfig():
                 fn = identity(transition, readout_fn, interface, model_grad_config, length, lambda f: f, track_logs)
-            case RTRLConfig() | RTRLFiniteHvpConfig():
+            case RTRLConfig():
                 fn = rtrl(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
+            case TikhonovRTRLConfig():
+                fn = tikhonov_rtrl(
+                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
+                )
             case UOROConfig() | UOROFiniteDiffConfig():
                 fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
@@ -600,8 +699,19 @@ def create_meta_learner[ENV](
             return inner(env, data)
 
         match method:
-            case RTRLConfig() | RTRLFiniteHvpConfig():
+            case RTRLConfig():
                 grad_fn = rtrl(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
+            case TikhonovRTRLConfig():
+                grad_fn = tikhonov_rtrl(
                     composed_inner,
                     readout_gr,
                     nest_interface,

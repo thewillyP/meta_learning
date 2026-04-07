@@ -88,7 +88,7 @@ OHO_RNN32 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.0001,
+            value=0.001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -98,7 +98,7 @@ OHO_RNN32 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_wd": HyperparameterConfig(
-            value=0.00001,
+            value=0.0,
             kind="weight_decay",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -215,12 +215,12 @@ OHO_RNN32 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
+                    method=TikhonovRTRLConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
+                            damping=0.0,
+                            beta=1.0,
+                            finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                         ),
                     ),
                     add_clip=None,
@@ -228,7 +228,313 @@ OHO_RNN32 = GodConfig(
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
-                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        target=frozenset({"meta1_sgd1_lr"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=500,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+    ],
+    sample_generators=[],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+)
+
+
+OHO_RNN32_ADAM = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="train",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=True),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+    ),
+    epochs=100,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=25,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=32,
+                activation_fn="tanh",
+                use_bias=True,
+                layer_norm=None,
+            ),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            layer_norm=None,
+        ),
+    },
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.000001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0, 1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_adam1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=AdamConfig(
+                            learning_rate="meta1_adam1_lr",
+                            weight_decay="meta1_adam1_wd",
+                            momentum="meta1_adam1_momentum",
+                            eps=1e-8,
+                            eps_root=1e-4,
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                domain=frozenset({"mnist"}),
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=0.0,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_adam1_lr", "meta1_adam1_wd"}),
                         optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
@@ -542,13 +848,11 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -850,13 +1154,11 @@ OHO_RNN256_V2 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -1158,13 +1460,11 @@ OHO_RNN256_V3 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -1458,13 +1758,11 @@ OHO_RNN256_CIFAR10 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -2306,13 +2604,11 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -2599,13 +2895,11 @@ OHO_GRU128_CIFAR10 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -2932,18 +3226,17 @@ VAE_BETA_OHO = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     # method=RTRLConfig(
                     #     start_at_step=0,
                     #     damping=0.0,
                     #     beta=0.5,
+                    #     finite_hvp=None,
                     # ),
                     add_clip=None,
                     scale=1.0,
@@ -3299,18 +3592,17 @@ VAE_BETA_OHO_ADAM = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=0,
-                            beta=0.01,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=0,
+                        beta=0.01,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     # method=RTRLConfig(
                     #     start_at_step=0,
                     #     damping=0.0,
                     #     beta=0.5,
+                    #     finite_hvp=None,
                     # ),
                     add_clip=None,
                     scale=1.0,
@@ -3705,13 +3997,11 @@ VAE_LR_OHO = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -4029,13 +4319,11 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-5,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-5,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5574,13 +5862,11 @@ OHO_RNN32_TEST = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=RTRLFiniteHvpConfig(
-                        epsilon=1e-3,
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5670,10 +5956,12 @@ OHO_RNN32_TEST = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        ("VAE_BASELINE", VAE_BASELINE),
-        ("VAE_BETA_OHO", VAE_BETA_OHO),
-        ("VAE_LR_OHO", VAE_LR_OHO),
-        ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
+        # ("VAE_BASELINE", VAE_BASELINE),
+        # ("VAE_BETA_OHO", VAE_BETA_OHO),
+        # ("VAE_LR_OHO", VAE_LR_OHO),
+        # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
+        ("OHO_RNN32_ADAM", OHO_RNN32_ADAM),
+        ("OHO_RNN32", OHO_RNN32),
     ]:
         upload_config(name, config)
 

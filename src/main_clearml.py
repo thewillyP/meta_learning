@@ -108,7 +108,7 @@ def make_converter() -> Converter:
         converter,
         Union[
             RTRLConfig,
-            RTRLFiniteHvpConfig,
+            TikhonovRTRLConfig,
             BPTTConfig,
             IdentityLearnerConfig,
             RFLOConfig,

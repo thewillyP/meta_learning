@@ -88,7 +88,7 @@ OHO_RNN32 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.001,
+            value=0.0001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -154,8 +154,8 @@ OHO_RNN32 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
                     scale=1.0,
                 ),
                 optimizer={
@@ -215,13 +215,11 @@ OHO_RNN32 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=TikhonovRTRLConfig(
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=0.0,
-                            beta=1.0,
-                            finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
-                        ),
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.1,
+                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -460,8 +458,8 @@ OHO_RNN32_ADAM = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
                     scale=1.0,
                 ),
                 optimizer={
@@ -787,8 +785,8 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
                     scale=1.0,
                 ),
                 optimizer={
@@ -1093,8 +1091,8 @@ OHO_RNN256_V2 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
                     scale=1.0,
                 ),
                 optimizer={
@@ -5801,8 +5799,8 @@ OHO_RNN32_TEST = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
                     scale=1.0,
                 ),
                 optimizer={

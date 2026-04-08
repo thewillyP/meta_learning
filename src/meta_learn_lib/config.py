@@ -187,6 +187,11 @@ class TikhonovRTRLConfig:
 
 
 @dataclass(frozen=True)
+class PadeRTRLConfig:
+    rtrl_config: RTRLConfig
+
+
+@dataclass(frozen=True)
 class BPTTConfig:
     truncate_at: Optional[int]  # if None, then perform full bptt
 
@@ -224,6 +229,7 @@ class ImmediateLearnerConfig: ...
 type GradientMethod = Union[
     RTRLConfig,
     TikhonovRTRLConfig,
+    PadeRTRLConfig,
     BPTTConfig,
     IdentityLearnerConfig,
     RFLOConfig,

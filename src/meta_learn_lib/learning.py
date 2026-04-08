@@ -223,6 +223,101 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
     return gradient_fn
 
 
+def pade_rtrl[ENV, TR_DATA, VL_DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
+    learn_interface: GodInterface[ENV],
+    _config: PadeRTRLConfig,
+    grad_config: GradientConfig,
+    length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
+    track_logs: TrackLogs,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+
+    config = _config.rtrl_config
+
+    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+        arr_init, static = eqx.partition(env_init, eqx.is_array)
+
+        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
+            env = eqx.combine(arr, static)
+            tr_data, vl_data = data
+
+            s = learn_interface.get_state(env)
+            p = learn_interface.get_param(env)
+            t = learn_interface.get_tick(env)
+            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+
+            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
+                def fn(state: jax.Array) -> tuple[jax.Array, None]:
+                    _env = learn_interface.put_state(e, state)
+                    _env, _ = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    return state, None
+
+                return fn
+
+            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
+                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+                    _env = learn_interface.put_param(e, param)
+                    _env, stat = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    _arr, _ = eqx.partition(_env, eqx.is_array)
+                    return state, (_arr, stat)
+
+                return fn
+
+            if s.shape[0] > p.shape[0]:
+                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
+            else:
+                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
+            new_env = eqx.combine(arr, static)
+
+            # JVP 1: dF/dz @ Gamma (for D_tau)
+            # JVP 2: dF/dz @ dF/dphi (extra cost for Pade)
+            match config.finite_hvp:
+                case None:
+                    _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
+                    _primals2, dhdz_dhdp, _aux2 = jacobian_matrix_product(state_fn(env), s, dhdp)
+                case RTRLFiniteHvpConfig(eps):
+                    f = lambda x: state_fn(env)(x)[0]
+                    hmp_jvp = finite_difference_jmp(f, s, influence_tensor_s.value, eps)
+                    dhdz_dhdp = finite_difference_jmp(f, s, dhdp, eps)
+
+            # Pade [1,1]: Gamma_{t+1} = 1/2 * D_tau + 1/2 * (I + dF/dz) * dF/dphi
+            d_tau = hmp_jvp + dhdp
+            pade_update = 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp)
+
+            influence_tensor: JACOBIAN
+            influence_tensor = filter_cond(
+                t >= config.start_at_step,
+                lambda _: pade_update,
+                lambda _: influence_tensor_s.value,
+                None,
+            )
+            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
+            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
+            grad: GRADIENT = credit_gr @ state_jacobian
+            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+
+            arr, _ = eqx.partition(new_env, eqx.is_array)
+            return arr, (grad, trans_stat | readout_stat)
+
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
+        env = eqx.combine(arr, static)
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
+        return env, total_grad, stats
+
+    return gradient_fn
+
+
 def uoro[ENV, TR_DATA, VL_DATA](
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
     readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
@@ -616,6 +711,10 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = tikhonov_rtrl(
                     transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
                 )
+            case PadeRTRLConfig():
+                fn = pade_rtrl(
+                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
+                )
             case UOROConfig() | UOROFiniteDiffConfig():
                 fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
@@ -712,6 +811,17 @@ def create_meta_learner[ENV](
                 )
             case TikhonovRTRLConfig():
                 grad_fn = tikhonov_rtrl(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
+            case PadeRTRLConfig():
+                grad_fn = pade_rtrl(
                     composed_inner,
                     readout_gr,
                     nest_interface,

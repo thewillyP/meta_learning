@@ -348,7 +348,7 @@ def create_learner_states[ENV](
     prng: PRNG,
 ) -> ENV:
     match method:
-        case RTRLConfig() | TikhonovRTRLConfig() | PadeRTRLConfig() | MidpointRTRLConfig() | RFLOConfig() as gradient_method:
+        case RTRLConfig() | TikhonovRTRLConfig() | PadeRTRLConfig() | MidpointRTRLConfig() | HeunRTRLConfig() | RFLOConfig() as gradient_method:
             k1, k2, prng = jax.random.split(prng, 3)
             new_env = factory(env, k1)
             param = interface.get_param(new_env)
@@ -366,7 +366,7 @@ def create_learner_states[ENV](
                 dhdp = eqx.filter_jacrev(infl_fn)(param)
             env = interface.put_forward_mode_jacobian(new_env, State(value=dhdp, is_stateful=track_influence_in))
             match gradient_method:
-                case MidpointRTRLConfig():
+                case MidpointRTRLConfig() | HeunRTRLConfig():
                     env = interface.put_midpoint_buffer(
                         env,
                         MidpointBuffer(

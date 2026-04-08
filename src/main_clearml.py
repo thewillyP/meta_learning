@@ -111,6 +111,7 @@ def make_converter() -> Converter:
             TikhonovRTRLConfig,
             PadeRTRLConfig,
             MidpointRTRLConfig,
+            HeunRTRLConfig,
             BPTTConfig,
             IdentityLearnerConfig,
             RFLOConfig,

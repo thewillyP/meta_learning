@@ -422,6 +422,137 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
                 None,
             )
 
+            # 2-tap boxcar: average P_t and P_{t-1} for readout to kill parity mode
+            readout_tensor = 0.5 * (influence_tensor + influence_tensor_s.value)
+
+            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
+            state_jacobian = jnp.vstack([readout_tensor, jnp.eye(readout_tensor.shape[1])])
+            grad: GRADIENT = credit_gr @ state_jacobian
+            # Store raw (unfiltered) influence tensor back into the recursion
+            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
+            new_env = learn_interface.put_midpoint_buffer(
+                new_env,
+                MidpointBuffer(
+                    P_prev=midpoint_buffer_s.P_prev.set(value=new_P_prev),
+                    predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
+                ),
+            )
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(readout_tensor)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+
+            arr, _ = eqx.partition(new_env, eqx.is_array)
+            return arr, (grad, trans_stat | readout_stat)
+
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
+        env = eqx.combine(arr, static)
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
+        return env, total_grad, stats
+
+    return gradient_fn
+
+
+def heun_rtrl[ENV, TR_DATA, VL_DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
+    learn_interface: GodInterface[ENV],
+    _config: HeunRTRLConfig,
+    grad_config: GradientConfig,
+    length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
+    track_logs: TrackLogs,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+
+    config = _config.rtrl_config
+
+    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+        arr_init, static = eqx.partition(env_init, eqx.is_array)
+
+        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
+            env = eqx.combine(arr, static)
+            tr_data, vl_data = data
+
+            s = learn_interface.get_state(env)
+            p = learn_interface.get_param(env)
+            t = learn_interface.get_tick(env)
+            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+            midpoint_buffer_s = learn_interface.get_midpoint_buffer(env)
+
+            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
+                def fn(state: jax.Array) -> tuple[jax.Array, None]:
+                    _env = learn_interface.put_state(e, state)
+                    _env, _ = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    return state, None
+
+                return fn
+
+            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
+                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+                    _env = learn_interface.put_param(e, param)
+                    _env, stat = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    _arr, _ = eqx.partition(_env, eqx.is_array)
+                    return state, (_arr, stat)
+
+                return fn
+
+            if s.shape[0] > p.shape[0]:
+                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
+            else:
+                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
+            new_env = eqx.combine(arr, static)
+
+            # JVP 1: J_t @ predictor_stored (corrector slope at current tick)
+            predictor_stored = midpoint_buffer_s.predictor.value
+            match config.finite_hvp:
+                case None:
+                    _primals, corrector_jvp, _aux = jacobian_matrix_product(
+                        state_fn(env), s, predictor_stored
+                    )
+                case RTRLFiniteHvpConfig(eps):
+                    f = lambda x: state_fn(env)(x)[0]
+                    corrector_jvp = finite_difference_jmp(f, s, predictor_stored, eps)
+
+            # Heun: P_new = 0.5 * (P_prev + J_t @ predictor + B_t)
+            heun_update = 0.5 * (influence_tensor_s.value + corrector_jvp + dhdp)
+
+            # Forward Euler (bootstrap, first active step only)
+            # At bootstrap, predictor_stored == P_prev, so corrector_jvp == J_t @ P_prev
+            fe_update = corrector_jvp + dhdp
+
+            is_bootstrap = t <= config.start_at_step
+            active_update = jnp.where(is_bootstrap, fe_update, heun_update)
+
+            influence_tensor: JACOBIAN
+            influence_tensor = filter_cond(
+                t >= config.start_at_step,
+                lambda _: active_update,
+                lambda _: influence_tensor_s.value,
+                None,
+            )
+
+            # JVP 2: J_t @ P_new (for next step's predictor)
+            match config.finite_hvp:
+                case None:
+                    _primals2, pred_jvp, _aux2 = jacobian_matrix_product(
+                        state_fn(env), s, influence_tensor
+                    )
+                case RTRLFiniteHvpConfig(eps):
+                    f = lambda x: state_fn(env)(x)[0]
+                    pred_jvp = finite_difference_jmp(f, s, influence_tensor, eps)
+
+            new_predictor = filter_cond(
+                t >= config.start_at_step,
+                lambda _: pred_jvp + dhdp,
+                lambda _: midpoint_buffer_s.predictor.value,
+                None,
+            )
+
             new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
             state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
             grad: GRADIENT = credit_gr @ state_jacobian
@@ -429,7 +560,7 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
             new_env = learn_interface.put_midpoint_buffer(
                 new_env,
                 MidpointBuffer(
-                    P_prev=midpoint_buffer_s.P_prev.set(value=new_P_prev),
+                    P_prev=midpoint_buffer_s.P_prev,
                     predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
                 ),
             )
@@ -850,6 +981,10 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = midpoint_rtrl(
                     transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
                 )
+            case HeunRTRLConfig():
+                fn = heun_rtrl(
+                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
+                )
             case UOROConfig() | UOROFiniteDiffConfig():
                 fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
@@ -968,6 +1103,17 @@ def create_meta_learner[ENV](
                 )
             case MidpointRTRLConfig():
                 grad_fn = midpoint_rtrl(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
+            case HeunRTRLConfig():
+                grad_fn = heun_rtrl(
                     composed_inner,
                     readout_gr,
                     nest_interface,

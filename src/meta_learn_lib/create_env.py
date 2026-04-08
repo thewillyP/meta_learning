@@ -348,7 +348,7 @@ def create_learner_states[ENV](
     prng: PRNG,
 ) -> ENV:
     match method:
-        case RTRLConfig() | TikhonovRTRLConfig() | PadeRTRLConfig() | RFLOConfig():
+        case RTRLConfig() | TikhonovRTRLConfig() | PadeRTRLConfig() | MidpointRTRLConfig() | RFLOConfig() as gradient_method:
             k1, k2, prng = jax.random.split(prng, 3)
             new_env = factory(env, k1)
             param = interface.get_param(new_env)
@@ -365,6 +365,15 @@ def create_learner_states[ENV](
             else:
                 dhdp = eqx.filter_jacrev(infl_fn)(param)
             env = interface.put_forward_mode_jacobian(new_env, State(value=dhdp, is_stateful=track_influence_in))
+            match gradient_method:
+                case MidpointRTRLConfig():
+                    env = interface.put_midpoint_buffer(
+                        env,
+                        MidpointBuffer(
+                            P_prev=State(value=dhdp, is_stateful=track_influence_in),
+                            predictor=State(value=dhdp, is_stateful=track_influence_in),
+                        ),
+                    )
             env = interface.put_prng(env, k2)
         case UOROConfig() | UOROFiniteDiffConfig():
             k0, k1, k2, k3, prng = jax.random.split(prng, 5)
@@ -573,6 +582,7 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
                 LearningStates(
                     influence_tensors=pmap({}),
                     uoros=pmap({}),
+                    midpoint_buffers=pmap({}),
                     opt_states=pmap({}),
                 )
                 for _ in range(len(config.levels))

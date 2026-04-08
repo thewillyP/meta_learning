@@ -66,6 +66,7 @@ register_pytree(LSTMState, set())
 register_pytree(RNN, set())
 register_pytree(MLP, set())
 register_pytree(UOROState, set())
+register_pytree(MidpointBuffer, set())
 
 # Register container types
 register_pytree(Parameters, set())

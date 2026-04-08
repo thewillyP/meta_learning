@@ -271,6 +271,20 @@ def put_uoro_state(i: int, level: int):
     return put_uoro_state_fn
 
 
+def get_midpoint_buffer(i: int, level: int):
+    def get_midpoint_buffer_fn(env: GodState) -> MidpointBuffer:
+        return env.learning_states[level].midpoint_buffers.get(i)
+
+    return get_midpoint_buffer_fn
+
+
+def put_midpoint_buffer(i: int, level: int):
+    def put_midpoint_buffer_fn(env: GodState, midpoint_buffer: MidpointBuffer) -> GodState:
+        return env.transform(["learning_states", level, "midpoint_buffers", i], lambda _: midpoint_buffer)
+
+    return put_midpoint_buffer_fn
+
+
 @dataclass(frozen=True)
 class Lens:
     get: Callable[[GodState], jax.Array]
@@ -582,6 +596,25 @@ def create_learn_interfaces(
                     put_param=param_lens.put,
                     get_forward_mode_jacobian=get_forward_mode_jacobian(i, level),
                     put_forward_mode_jacobian=put_forward_mode_jacobian(i, level),
+                )
+            case MidpointRTRLConfig():
+                return copy.replace(
+                    default_god_interface(),
+                    put_logs=put_logs(level),
+                    get_logs=get_logs(level),
+                    take_prng=prng_factory(i, level),
+                    put_prng=put_prng(i, level),
+                    get_tick=get_tick(i, level),
+                    put_tick=put_tick(i, level),
+                    advance_tick=advance_tick(i, level),
+                    get_state=state_lens.get,
+                    put_state=state_lens.put,
+                    get_param=param_lens.get,
+                    put_param=param_lens.put,
+                    get_forward_mode_jacobian=get_forward_mode_jacobian(i, level),
+                    put_forward_mode_jacobian=put_forward_mode_jacobian(i, level),
+                    get_midpoint_buffer=get_midpoint_buffer(i, level),
+                    put_midpoint_buffer=put_midpoint_buffer(i, level),
                 )
             case RFLOConfig(time_constant):
                 return copy.replace(

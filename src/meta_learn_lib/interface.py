@@ -9,6 +9,7 @@ from meta_learn_lib.env import (
     RNN,
     LSTMState,
     Logs,
+    MidpointBuffer,
     Parameter,
     RecurrentState,
     State,
@@ -55,6 +56,8 @@ class GodInterface[ENV]:
     put_forward_mode_jacobian: Callable[[ENV, State[JACOBIAN]], ENV]
     get_uoro_state: Callable[[ENV], UOROState]
     put_uoro_state: Callable[[ENV, UOROState], ENV]
+    get_midpoint_buffer: Callable[[ENV], MidpointBuffer]
+    put_midpoint_buffer: Callable[[ENV, MidpointBuffer], ENV]
     get_learning_rate: Callable[[ENV], Parameter[jax.Array]]
     put_learning_rate: Callable[[ENV, Parameter[jax.Array]], ENV]
     get_weight_decay: Callable[[ENV], Parameter[jax.Array]]
@@ -102,6 +105,8 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         put_forward_mode_jacobian=lambda env, jacobian: env,
         get_uoro_state=lambda env: None,
         put_uoro_state=lambda env, uoro_state: env,
+        get_midpoint_buffer=lambda env: None,
+        put_midpoint_buffer=lambda env, midpoint_buffer: env,
         get_learning_rate=lambda env: None,
         put_learning_rate=lambda env, learning_rate: env,
         get_weight_decay=lambda env: None,

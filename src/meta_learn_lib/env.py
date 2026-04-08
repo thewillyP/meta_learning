@@ -67,6 +67,11 @@ class UOROState(PClass):
     B: State[jax.Array] = field(serializer=deep_serialize)
 
 
+class MidpointBuffer(PClass):
+    P_prev: State[JACOBIAN] = field(serializer=deep_serialize)
+    predictor: State[JACOBIAN] = field(serializer=deep_serialize)
+
+
 class Parameters(PClass):
     mlps: PMap[int, MLP] = field(serializer=deep_serialize)
     rnns: PMap[int, RNN] = field(serializer=deep_serialize)
@@ -82,6 +87,7 @@ class Parameters(PClass):
 class LearningStates(PClass):
     influence_tensors: PMap[int, State[JACOBIAN]] = field(serializer=deep_serialize)
     uoros: PMap[int, UOROState] = field(serializer=deep_serialize)
+    midpoint_buffers: PMap[int, MidpointBuffer] = field(serializer=deep_serialize)
     opt_states: PMap[int, State[optax.OptState]] = field(serializer=deep_serialize)
 
 

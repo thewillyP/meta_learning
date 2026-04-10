@@ -87,8 +87,8 @@ OHO_RNN32 = GodConfig(
             level=1,
             parametrizes_transition=True,
         ),
-        "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.000005,
+        "meta2_adam1_lr": HyperparameterConfig(
+            value=0.0001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -97,7 +97,7 @@ OHO_RNN32 = GodConfig(
             level=2,
             parametrizes_transition=True,
         ),
-        "meta2_sgd1_wd": HyperparameterConfig(
+        "meta2_adam1_wd": HyperparameterConfig(
             value=0.0,
             kind="weight_decay",
             count=1,
@@ -107,8 +107,8 @@ OHO_RNN32 = GodConfig(
             level=2,
             parametrizes_transition=True,
         ),
-        "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+        "meta2_adam1_momentum": HyperparameterConfig(
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -215,24 +215,27 @@ OHO_RNN32 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=HeunRTRLConfig(
+                    method=ImplicitEulerRTRLConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
-                            damping=1e-4,
-                            beta=0.1,
+                            damping=0.0,
+                            beta=1.0,
                             finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                         ),
+                        num_arnoldi_iters=5,
                     ),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer={
-                    "meta2_sgd1": OptimizerAssignment(
+                    "meta2_adam1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr"}),
-                        optimizer=SGDConfig(
-                            learning_rate="meta2_sgd1_lr",
-                            weight_decay="meta2_sgd1_wd",
-                            momentum="meta2_sgd1_momentum",
+                        optimizer=AdamConfig(
+                            learning_rate="meta2_adam1_lr",
+                            weight_decay="meta2_adam1_wd",
+                            momentum="meta2_adam1_momentum",
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },

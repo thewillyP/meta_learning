@@ -348,7 +348,15 @@ def create_learner_states[ENV](
     prng: PRNG,
 ) -> ENV:
     match method:
-        case RTRLConfig() | TikhonovRTRLConfig() | PadeRTRLConfig() | MidpointRTRLConfig() | HeunRTRLConfig() | RFLOConfig() as gradient_method:
+        case (
+            RTRLConfig()
+            | TikhonovRTRLConfig()
+            | PadeRTRLConfig()
+            | MidpointRTRLConfig()
+            | HeunRTRLConfig()
+            | ImplicitEulerRTRLConfig()
+            | RFLOConfig() as gradient_method
+        ):
             k1, k2, prng = jax.random.split(prng, 3)
             new_env = factory(env, k1)
             param = interface.get_param(new_env)

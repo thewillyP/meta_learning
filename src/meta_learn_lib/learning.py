@@ -4,6 +4,7 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+from matfree import decomp as matfree_decomp
 
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
@@ -16,6 +17,7 @@ from meta_learn_lib.util import (
     finite_difference_jmp,
     finite_difference_jvp,
     jacobian_matrix_product,
+    jvp,
     softclip,
 )
 
@@ -391,9 +393,8 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
             fe_update = hmp_jvp_current + dhdp
 
             # Midpoint corrector: P_new = P_prev + 2*((J_t - I) @ predictor + B_t)
-            midpoint_update = (
-                midpoint_buffer_s.P_prev.value
-                + 2 * (hmp_jvp_predictor - midpoint_buffer_s.predictor.value + dhdp)
+            midpoint_update = midpoint_buffer_s.P_prev.value + 2 * (
+                hmp_jvp_predictor - midpoint_buffer_s.predictor.value + dhdp
             )
 
             # First active step: forward Euler bootstrap. Subsequent: midpoint corrector.
@@ -511,9 +512,7 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
             predictor_stored = midpoint_buffer_s.predictor.value
             match config.finite_hvp:
                 case None:
-                    _primals, corrector_jvp, _aux = jacobian_matrix_product(
-                        state_fn(env), s, predictor_stored
-                    )
+                    _primals, corrector_jvp, _aux = jacobian_matrix_product(state_fn(env), s, predictor_stored)
                 case RTRLFiniteHvpConfig(eps):
                     f = lambda x: state_fn(env)(x)[0]
                     corrector_jvp = finite_difference_jmp(f, s, predictor_stored, eps)
@@ -539,9 +538,7 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
             # JVP 2: J_t @ P_new (for next step's predictor)
             match config.finite_hvp:
                 case None:
-                    _primals2, pred_jvp, _aux2 = jacobian_matrix_product(
-                        state_fn(env), s, influence_tensor
-                    )
+                    _primals2, pred_jvp, _aux2 = jacobian_matrix_product(state_fn(env), s, influence_tensor)
                 case RTRLFiniteHvpConfig(eps):
                     f = lambda x: state_fn(env)(x)[0]
                     pred_jvp = finite_difference_jmp(f, s, influence_tensor, eps)
@@ -564,6 +561,136 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
                     predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
                 ),
             )
+            if track_logs.influence_tensor_norm:
+                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
+                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+
+            arr, _ = eqx.partition(new_env, eqx.is_array)
+            return arr, (grad, trans_stat | readout_stat)
+
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
+        env = eqx.combine(arr, static)
+        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
+        total_grad = process_gradient(total_grad, grad_config)
+        return env, total_grad, stats
+
+    return gradient_fn
+
+
+def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
+    learn_interface: GodInterface[ENV],
+    _config: ImplicitEulerRTRLConfig,
+    grad_config: GradientConfig,
+    length: int,
+    vmap_this: Callable[
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ],
+    track_logs: TrackLogs,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+
+    config = _config.rtrl_config
+    num_arnoldi_iters = _config.num_arnoldi_iters
+
+    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+        arr_init, static = eqx.partition(env_init, eqx.is_array)
+
+        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
+            env = eqx.combine(arr, static)
+            tr_data, vl_data = data
+
+            s = learn_interface.get_state(env)
+            p = learn_interface.get_param(env)
+            t = learn_interface.get_tick(env)
+            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+
+            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
+                def fn(state: jax.Array) -> tuple[jax.Array, None]:
+                    _env = learn_interface.put_state(e, state)
+                    _env, _ = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    return state, None
+
+                return fn
+
+            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
+                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
+                    _env = learn_interface.put_param(e, param)
+                    _env, stat = transition(_env, tr_data)
+                    state = learn_interface.get_state(_env)
+                    _arr, _ = eqx.partition(_env, eqx.is_array)
+                    return state, (_arr, stat)
+
+                return fn
+
+            if s.shape[0] > p.shape[0]:
+                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
+            else:
+                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
+            new_env = eqx.combine(arr, static)
+
+            # JVP oracle: v -> J_t @ v (vector, not matrix)
+            f_eval = lambda x: state_fn(env)(x)[0]
+            match config.finite_hvp:
+                case None:
+
+                    def jvp_Jt(v: jax.Array) -> jax.Array:
+                        _primals, tangent, _aux = jvp(state_fn(env), s, v)
+                        return tangent
+                case RTRLFiniteHvpConfig(eps):
+
+                    def jvp_Jt(v: jax.Array) -> jax.Array:
+                        return finite_difference_jvp(f_eval, s, v, eps)
+
+            # Implicit Euler: solve (2I - J_t) P_t = P_{t-1} + B_t per column
+            # via GMRES = Arnoldi (matfree) + small least-squares solve.
+            # custom_vjp=False uses standard JAX backprop, supports any order of
+            # differentiation. jax.checkpoint avoids storing K * state_dim per
+            # column persistently across the scan: forward saves only the solution,
+            # backward recomputes the GMRES on demand.
+            def A_fn(v: jax.Array) -> jax.Array:
+                return 2.0 * v - jvp_Jt(v)
+
+            arnoldi = matfree_decomp.hessenberg(num_arnoldi_iters, reortho="full", custom_vjp=False)
+
+            rhs = influence_tensor_s.value + dhdp  # (state_dim, param_dim)
+
+            @jax.checkpoint
+            def solve_column(rhs_col: jax.Array, x0_col: jax.Array) -> jax.Array:
+                # Initial residual
+                r0 = rhs_col - A_fn(x0_col)
+                # Arnoldi factorization of A starting from r0
+                result = arnoldi(A_fn, r0)
+                Q = result.Q_tall  # (state_dim, k)
+                H = result.J_small  # (k, k)
+                beta = 1.0 / result.init_length_inv  # ||r0||
+                h_kp1_k = jnp.linalg.norm(result.residual)  # h_{k+1,k}
+                k = H.shape[0]
+                # Build (k+1, k) upper Hessenberg H_bar
+                H_bar = jnp.zeros((k + 1, k), dtype=H.dtype)
+                H_bar = H_bar.at[:k, :].set(H)
+                H_bar = H_bar.at[k, k - 1].set(h_kp1_k)
+                # Least-squares: min ||H_bar y - beta e_1||
+                rhs_lstsq = jnp.zeros(k + 1, dtype=H.dtype).at[0].set(beta)
+                y, _, _, _ = jnp.linalg.lstsq(H_bar, rhs_lstsq)
+                return x0_col + Q @ y
+
+            implicit_update = eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor_s.value)
+
+            influence_tensor: JACOBIAN
+            influence_tensor = filter_cond(
+                t >= config.start_at_step,
+                lambda _: implicit_update,
+                lambda _: influence_tensor_s.value,
+                None,
+            )
+
+            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
+            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
+            grad: GRADIENT = credit_gr @ state_jacobian
+            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
             if track_logs.influence_tensor_norm:
                 influence_tensor_norm = jnp.linalg.norm(influence_tensor)
                 new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
@@ -985,6 +1112,10 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                 fn = heun_rtrl(
                     transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
                 )
+            case ImplicitEulerRTRLConfig():
+                fn = implicit_euler_rtrl(
+                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
+                )
             case UOROConfig() | UOROFiniteDiffConfig():
                 fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
             case RFLOConfig():
@@ -1114,6 +1245,17 @@ def create_meta_learner[ENV](
                 )
             case HeunRTRLConfig():
                 grad_fn = heun_rtrl(
+                    composed_inner,
+                    readout_gr,
+                    nest_interface,
+                    method,
+                    grad_config,
+                    length,
+                    vmap_this,
+                    track_logs,
+                )
+            case ImplicitEulerRTRLConfig():
+                grad_fn = implicit_euler_rtrl(
                     composed_inner,
                     readout_gr,
                     nest_interface,

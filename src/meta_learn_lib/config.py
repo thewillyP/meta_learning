@@ -202,6 +202,12 @@ class HeunRTRLConfig:
 
 
 @dataclass(frozen=True)
+class ImplicitEulerRTRLConfig:
+    rtrl_config: RTRLConfig
+    num_arnoldi_iters: int
+
+
+@dataclass(frozen=True)
 class BPTTConfig:
     truncate_at: Optional[int]  # if None, then perform full bptt
 
@@ -242,6 +248,7 @@ type GradientMethod = Union[
     PadeRTRLConfig,
     MidpointRTRLConfig,
     HeunRTRLConfig,
+    ImplicitEulerRTRLConfig,
     BPTTConfig,
     IdentityLearnerConfig,
     RFLOConfig,

@@ -112,6 +112,7 @@ def make_converter() -> Converter:
             PadeRTRLConfig,
             MidpointRTRLConfig,
             HeunRTRLConfig,
+            ImplicitEulerRTRLConfig,
             BPTTConfig,
             IdentityLearnerConfig,
             RFLOConfig,

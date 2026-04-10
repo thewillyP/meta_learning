@@ -4,6 +4,7 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+import optax
 from matfree import decomp as matfree_decomp
 
 from meta_learn_lib.config import *
@@ -781,8 +782,8 @@ def uoro[ENV, TR_DATA, VL_DATA](
             scaled_immediate = beta * immediateInfluence__random_projection
             new_env = eqx.combine(arr, static)
 
-            rho0 = jnp.sqrt(jnp.linalg.norm(B_s.value) / jnp.linalg.norm(A_propagated))
-            rho1 = jnp.sqrt(jnp.linalg.norm(scaled_immediate) / jnp.linalg.norm(random_vector))
+            rho0 = jnp.sqrt(optax.safe_norm(B_s.value, 1e-12) / optax.safe_norm(A_propagated, 1e-12))
+            rho1 = jnp.sqrt(optax.safe_norm(scaled_immediate, 1e-12) / optax.safe_norm(random_vector, 1e-12))
 
             A_new: jax.Array = rho0 * A_propagated + rho1 * random_vector
             B_new: jax.Array = B_s.value / rho0 + scaled_immediate / rho1

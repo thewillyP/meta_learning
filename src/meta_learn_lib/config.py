@@ -1,6 +1,8 @@
-from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional, Union
+
+import equinox as eqx
+import jax
 
 from meta_learn_lib.lib_types import ACTIVATION_FN
 
@@ -112,15 +114,13 @@ class HyperparameterConfig:
 type HP = str
 
 
-@dataclass(frozen=True)
-class SoftClip:
-    threshold: float
-    sharpness: float
+class SoftClip(eqx.Module):
+    threshold: jax.Array
+    sharpness: jax.Array
 
 
-@dataclass(frozen=True)
-class HardClip:
-    threshold: float
+class HardClip(eqx.Module):
+    threshold: jax.Array
 
 
 @dataclass(frozen=True)
@@ -168,41 +168,34 @@ class OptimizerAssignment:
     optimizer: Optimizer
 
 
-@dataclass(frozen=True)
-class RTRLFiniteHvpConfig:
-    epsilon: float
+class RTRLFiniteHvpConfig(eqx.Module):
+    epsilon: jax.Array
 
 
-@dataclass(frozen=True)
-class RTRLConfig:
+class RTRLConfig(eqx.Module):
     start_at_step: int
-    damping: float
-    beta: float
+    damping: jax.Array
+    beta: jax.Array
     finite_hvp: RTRLFiniteHvpConfig | None
 
 
-@dataclass(frozen=True)
-class TikhonovRTRLConfig:
+class TikhonovRTRLConfig(eqx.Module):
     rtrl_config: RTRLConfig
 
 
-@dataclass(frozen=True)
-class PadeRTRLConfig:
+class PadeRTRLConfig(eqx.Module):
     rtrl_config: RTRLConfig
 
 
-@dataclass(frozen=True)
-class MidpointRTRLConfig:
+class MidpointRTRLConfig(eqx.Module):
     rtrl_config: RTRLConfig
 
 
-@dataclass(frozen=True)
-class HeunRTRLConfig:
+class HeunRTRLConfig(eqx.Module):
     rtrl_config: RTRLConfig
 
 
-@dataclass(frozen=True)
-class ImplicitEulerRTRLConfig:
+class ImplicitEulerRTRLConfig(eqx.Module):
     rtrl_config: RTRLConfig
     num_arnoldi_iters: int
 
@@ -216,25 +209,22 @@ class BPTTConfig:
 class IdentityLearnerConfig: ...
 
 
-@dataclass(frozen=True)
-class RFLOConfig:
+class RFLOConfig(eqx.Module):
     time_constant: HP
-    damping: float
-    beta: float
+    damping: jax.Array
+    beta: jax.Array
 
 
-@dataclass(frozen=True)
-class UOROConfig:
+class UOROConfig(eqx.Module):
     type Distribution = Literal["uniform", "normal"]
-    std: float
+    std: jax.Array
     distribution: Distribution
-    damping: float
-    beta: float
+    damping: jax.Array
+    beta: jax.Array
 
 
-@dataclass(frozen=True)
-class UOROFiniteDiffConfig:
-    epsilon: float
+class UOROFiniteDiffConfig(eqx.Module):
+    epsilon: jax.Array
     uoro_config: UOROConfig
 
 
@@ -258,15 +248,13 @@ type GradientMethod = Union[
 ]
 
 
-@dataclass(frozen=True)
-class GradientConfig:
+class GradientConfig(eqx.Module):
     method: GradientMethod
     add_clip: Optional[Union[HardClip, SoftClip]]  # these are placed here because vl_gr could also want to be clipped
-    scale: float
+    scale: jax.Array
 
 
-@dataclass(frozen=True)
-class LearnConfig:
+class LearnConfig(eqx.Module):
     model_learner: GradientConfig
     optimizer_learner: GradientConfig
     optimizer: dict[str, OptimizerAssignment]
@@ -422,15 +410,13 @@ class BernoulliObjective:
     reduction: Reduction
 
 
-@dataclass(frozen=True)
-class ELBOObjective:
+class ELBOObjective(eqx.Module):
     @dataclass(frozen=True)
     class GaussianPosterior: ...
 
-    @dataclass(frozen=True)
-    class GaussianPrior:
-        mu: float
-        log_var: float
+    class GaussianPrior(eqx.Module):
+        mu: jax.Array
+        log_var: jax.Array
 
     type Posterior = GaussianPosterior
     type Prior = GaussianPrior
@@ -502,8 +488,7 @@ class DatasetConfig:
     augment: bool
 
 
-@dataclass(frozen=True)
-class MetaConfig:
+class MetaConfig(eqx.Module):
     objective_fn: ObjectiveFn
     dataset_source: Task
     dataset: DatasetConfig
@@ -514,8 +499,7 @@ class MetaConfig:
     test_seed: int
 
 
-@dataclass(frozen=True)
-class GodConfig:
+class GodConfig(eqx.Module):
     seed: SeedConfig
     clearml_run: bool
     data_root_dir: str

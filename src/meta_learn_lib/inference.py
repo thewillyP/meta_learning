@@ -168,7 +168,7 @@ def get_inference[ENV](
                     last_sub_node = toposort_flatten(graph)[-1]
                     token = meta_interface[node_name].get_autoregressive_predictions(env).value
 
-                    fn = get_inference(graph, nodes, meta_interface)
+                    fn = get_inference(graph, nodes, meta_interface, pmap())
 
                     def step(
                         carry: tuple[ENV, jax.Array],

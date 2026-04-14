@@ -218,7 +218,7 @@ OHO_RNN32 = GodConfig(
                     method=ImplicitEulerRTRLConfig(
                         rtrl_config=RTRLConfig(
                             start_at_step=0,
-                            damping=0.0,
+                            damping=1e-3,
                             beta=1.0,
                             finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
                         ),

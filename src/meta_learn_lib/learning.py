@@ -605,6 +605,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
             s = learn_interface.get_state(env)
             p = learn_interface.get_param(env)
             t = learn_interface.get_tick(env)
+            mu = config.damping
             influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
 
             def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
@@ -645,14 +646,15 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
                     def jvp_Jt(v: jax.Array) -> jax.Array:
                         return finite_difference_jvp(f_eval, s, v, eps)
 
-            # Implicit Euler: solve (2I - J_t) P_t = P_{t-1} + B_t per column
+            # Implicit Euler: solve ((2+mu)I - J_t) P_t = P_{t-1} + B_t per column
             # via GMRES = Arnoldi (matfree) + small least-squares solve.
+            # mu shifts A's spectrum away from zero (regularization).
             # custom_vjp=False uses standard JAX backprop, supports any order of
             # differentiation. jax.checkpoint avoids storing K * state_dim per
             # column persistently across the scan: forward saves only the solution,
             # backward recomputes the GMRES on demand.
             def A_fn(v: jax.Array) -> jax.Array:
-                return 2.0 * v - jvp_Jt(v)
+                return (2.0 + mu) * v - jvp_Jt(v)
 
             arnoldi = matfree_decomp.hessenberg(num_arnoldi_iters, reortho="full", custom_vjp=False)
 

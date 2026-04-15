@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 from typing import Callable
 
 import jax
@@ -51,21 +52,21 @@ def compute_dhdp[ENV](
 
 
 @dataclass(frozen=True)
-class LearningArg[ENV, TR_DATA, VL_DATA]:
+class LearningArg[ENV, TR_DATA, VL_DATA, READOUT]:
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]]
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]]
+    readout: Callable[[ENV, VL_DATA], tuple[ENV, READOUT, STAT]]
     learn_interface: GodInterface[ENV]
     grad_config: GradientConfig
     length: int
     vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[READOUT, STAT]]]],
+        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[READOUT, STAT]]],
     ]
     track_logs: TrackLogs
 
 
 def get_forward_mode[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     update_influence: Callable[
         [
             Callable[[jax.Array], tuple[jax.Array, None]],
@@ -104,7 +105,7 @@ def get_forward_mode[ENV, TR_DATA, VL_DATA](
                 return fn
 
             new_env, trans_stat = update_influence(state_fn(env), param_fn(env), env)
-            new_env, credit_gr, readout_stat = args.readout_gr(new_env, vl_data)
+            new_env, credit_gr, readout_stat = args.readout(new_env, vl_data)
             grad = credit_gr_fn(credit_gr, args.learn_interface, new_env)
 
             arr, _ = eqx.partition(new_env, eqx.is_array)
@@ -120,7 +121,7 @@ def get_forward_mode[ENV, TR_DATA, VL_DATA](
 
 
 def rtrl_like[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     update_tensor: Callable[
         [
             Callable[[jax.Array], tuple[jax.Array, None]],
@@ -173,7 +174,7 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
 
 
 def rtrl[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: RTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_tensor(
@@ -201,7 +202,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
 
 
 def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: TikhonovRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_tensor(
@@ -235,7 +236,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
 
 
 def pade_rtrl[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: PadeRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_tensor(
@@ -265,7 +266,7 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
 
 
 def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: MidpointRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_influence(
@@ -356,7 +357,7 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
 
 
 def heun_rtrl[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: HeunRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     rtrl_config = config.rtrl_config
@@ -442,7 +443,7 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
 
 
 def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: ImplicitEulerRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     rtrl_config = config.rtrl_config
@@ -510,7 +511,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
 
 
 def uoro[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: UOROConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
@@ -575,7 +576,7 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
 
 def rflo[ENV, TR_DATA, VL_DATA](
-    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: RFLOConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_tensor(
@@ -594,81 +595,55 @@ def rflo[ENV, TR_DATA, VL_DATA](
     return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
 
 
-def bptt[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
-    learn_interface: GodInterface[ENV],
-    config: BPTTConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
-    ],
-    track_logs: TrackLogs,
+def immediate[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
-    def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        param = learn_interface.get_param(env_init)
+    def update_influence(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        param_fn: Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]],
+        env: ENV,
+    ) -> tuple[ENV, STAT]:
+        _, static = eqx.partition(env, eqx.is_array)
+        p = args.learn_interface.get_param(env)
+        _state, (arr, trans_stat) = param_fn(p)
+        new_env = eqx.combine(arr, static)
+        return new_env, trans_stat
 
-        def loss_fn(param: jax.Array, ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
-            env = learn_interface.put_param(env_init, param)
-            arr_init, static = eqx.partition(env, eqx.is_array)
+    def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
+        n_s = learn_interface.get_state(env).shape[0]
+        return GRADIENT(credit_gr[..., n_s:])
 
-            def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[LOSS, STAT]]:
-                _env = eqx.combine(arr, static)
-                tr_data, vl_data = data
-
-                if config.truncate_at is not None:
-                    t = learn_interface.get_tick(_env)
-                    s = filter_cond(
-                        t % config.truncate_at == 0,
-                        lambda _: jax.lax.stop_gradient(learn_interface.get_state(_env)),
-                        lambda _: learn_interface.get_state(_env),
-                        None,
-                    )
-                    _env = learn_interface.put_state(_env, s)
-
-                _env, trans_stat = transition(_env, tr_data)
-                _env, loss, readout_stat = readout(_env, vl_data)
-                arr, _ = eqx.partition(_env, eqx.is_array)
-                return arr, (loss, trans_stat | readout_stat)
-
-            arr, (losses, stats) = jax.lax.scan(lambda x, y: vmap_this(inference_fn)(x, y), arr_init, ds, length=length)
-            env = eqx.combine(arr, static)
-            env = learn_interface.put_param(env, param)
-            return jnp.sum(losses), (env, stats)
-
-        grad, (env, stats) = eqx.filter_grad(loss_fn, has_aux=True)(param, ds_init)
-        env = learn_interface.put_param(env, param)
-        return env, process_gradient(GRADIENT(grad), grad_config), stats
-
-    return gradient_fn
+    return get_forward_mode(args, update_influence, credit_gr_fn)
 
 
-def identity_loss[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
-    ],
-    track_logs: TrackLogs,
+def get_backward_mode[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+    truncate_at: Optional[int],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]:
-
     def loss_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, LOSS, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
-        def inference_fn(arr, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[LOSS, STAT]]:
+        def inference_fn(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[LOSS, STAT]]:
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
-            env, trans_stat = transition(env, tr_data)
-            env, loss, readout_stat = readout(env, vl_data)
+
+            if truncate_at is not None:
+                t = args.learn_interface.get_tick(env)
+                s = filter_cond(
+                    t % truncate_at == 0,
+                    lambda _: jax.lax.stop_gradient(args.learn_interface.get_state(env)),
+                    lambda _: args.learn_interface.get_state(env),
+                    None,
+                )
+                env = args.learn_interface.put_state(env, s)
+
+            env, trans_stat = args.transition(env, tr_data)
+            env, loss, readout_stat = args.readout(env, vl_data)
             arr, _ = eqx.partition(env, eqx.is_array)
             return arr, (loss, trans_stat | readout_stat)
 
         arr, (losses, stats) = jax.lax.scan(
-            lambda x, y: vmap_this(inference_fn)(x, y), arr_init, ds_init, length=length
+            lambda x, y: args.vmap_this(inference_fn)(x, y), arr_init, ds_init, length=args.length
         )
         env = eqx.combine(arr, static)
         return env, jnp.sum(losses), stats
@@ -676,62 +651,85 @@ def identity_loss[ENV, TR_DATA, VL_DATA](
     return loss_fn
 
 
-def identity[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout: Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]],
-    learn_interface: GodInterface[ENV],
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[LOSS, STAT]]],
+def get_backward_mode_with_grad[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+    truncate_at: Optional[int],
+    loss_to_grad: Callable[
+        [
+            Callable[[jax.Array, tuple[TR_DATA, VL_DATA]], tuple[LOSS, tuple[ENV, STAT]]],
+            jax.Array,
+            tuple[TR_DATA, VL_DATA],
+        ],
+        tuple[jax.Array, tuple[ENV, STAT]],
     ],
-    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
-
-    _loss_fn = identity_loss(transition, readout, length, vmap_this, track_logs)
+    _loss_fn = get_backward_mode(args, truncate_at)
 
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        env, loss, stats = _loss_fn(env_init, ds_init)
-        param = learn_interface.get_param(env)
-        grad = jnp.zeros_like(param)
-        return env, process_gradient(GRADIENT(grad), grad_config), stats
+        param = args.learn_interface.get_param(env_init)
+
+        def loss_fn(p: jax.Array, ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
+            env_with_p = args.learn_interface.put_param(env_init, p)
+            env, loss, stats = _loss_fn(env_with_p, ds)
+            env = args.learn_interface.put_param(env, p)
+            return loss, (env, stats)
+
+        grad, (env, stats) = loss_to_grad(loss_fn, param, ds_init)
+        env = args.learn_interface.put_param(env, param)
+        return env, process_gradient(GRADIENT(grad), args.grad_config), stats
 
     return gradient_fn
 
 
-def immediate[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
+def bptt[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+    config: BPTTConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
+    def loss_to_grad(loss_fn, param, ds):
+        return eqx.filter_grad(loss_fn, has_aux=True)(param, ds)
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
-            env, trans_stat = transition(env, tr_data)
-            env, credit_gr, readout_stat = readout_gr(env, vl_data)
-            n_s = learn_interface.get_state(env).shape[0]
-            grad = GRADIENT(credit_gr[..., n_s:])
-            arr, _ = eqx.partition(env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
+    return get_backward_mode_with_grad(args, config.truncate_at, loss_to_grad)
 
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
 
-    return gradient_fn
+def identity[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+    config: IdentityLearnerConfig,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    def loss_to_grad(loss_fn, param, ds):
+        _loss, (env, stats) = loss_fn(param, ds)
+        return jnp.zeros_like(param), (env, stats)
+
+    return get_backward_mode_with_grad(args, config.bptt_config.truncate_at, loss_to_grad)
+
+
+def dispatch_learner[ENV, TR_DATA, VL_DATA](
+    method: GradientMethod,
+    args_gr: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
+    args_loss: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    match method:
+        case RTRLConfig():
+            return rtrl(args_gr, method)
+        case TikhonovRTRLConfig():
+            return tikhonov_rtrl(args_gr, method)
+        case PadeRTRLConfig():
+            return pade_rtrl(args_gr, method)
+        case MidpointRTRLConfig():
+            return midpoint_rtrl(args_gr, method)
+        case HeunRTRLConfig():
+            return heun_rtrl(args_gr, method)
+        case ImplicitEulerRTRLConfig():
+            return implicit_euler_rtrl(args_gr, method)
+        case UOROConfig():
+            return uoro(args_gr, method)
+        case RFLOConfig():
+            return rflo(args_gr, method)
+        case ImmediateLearnerConfig():
+            return immediate(args_gr)
+        case BPTTConfig():
+            return bptt(args_loss, method)
+        case IdentityLearnerConfig():
+            return identity(args_loss, method)
 
 
 def create_validation_learners[ENV, TR_DATA, VL_DATA](
@@ -760,9 +758,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
 
     def make_readout_interface(interface: GodInterface[ENV]) -> GodInterface[ENV]:
         def get_param(env: ENV) -> jax.Array:
-            state = interface.get_state(env)
-            p = interface.get_param(env)
-            return jnp.concatenate([state, p])
+            return jnp.concatenate([interface.get_state(env), interface.get_param(env)])
 
         def put_param(env: ENV, param: jax.Array) -> ENV:
             state_size = interface.get_state(env).shape[0]
@@ -794,55 +790,32 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         readout_interface = make_readout_interface(interface)
         readout_gr = shim_expand_time(
             bptt(
-                identity_transition,
-                readout_fn,
-                readout_interface,
+                LearningArg(
+                    transition=identity_transition,
+                    readout=readout_fn,
+                    learn_interface=readout_interface,
+                    grad_config=GradientConfig(method=BPTTConfig(truncate_at=None), add_clip=None, scale=1.0),
+                    length=1,
+                    vmap_this=lambda f: f,
+                    track_logs=track_logs,
+                ),
                 BPTTConfig(truncate_at=None),
-                GradientConfig(method=BPTTConfig(truncate_at=None), add_clip=None, scale=1.0),
-                1,
-                lambda f: f,
-                track_logs,
             )
         )
 
-        readout_loss = identity_loss(transition, readout_fn, length, lambda f: f, track_logs)
+        args_loss = LearningArg(
+            transition=transition,
+            readout=readout_fn,
+            learn_interface=interface,
+            grad_config=model_grad_config,
+            length=length,
+            vmap_this=lambda f: f,
+            track_logs=track_logs,
+        )
+        args_gr = dataclasses.replace(args_loss, readout=readout_gr)
 
-        match method:
-            case BPTTConfig():
-                fn = bptt(transition, readout_fn, interface, method, model_grad_config, length, lambda f: f, track_logs)
-            case IdentityLearnerConfig():
-                fn = identity(transition, readout_fn, interface, model_grad_config, length, lambda f: f, track_logs)
-            case RTRLConfig():
-                fn = rtrl(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
-            case TikhonovRTRLConfig():
-                fn = tikhonov_rtrl(
-                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
-                )
-            case PadeRTRLConfig():
-                fn = pade_rtrl(
-                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
-                )
-            case MidpointRTRLConfig():
-                fn = midpoint_rtrl(
-                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
-                )
-            case HeunRTRLConfig():
-                fn = heun_rtrl(
-                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
-                )
-            case ImplicitEulerRTRLConfig():
-                fn = implicit_euler_rtrl(
-                    transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs
-                )
-            case UOROConfig() | UOROFiniteDiffConfig():
-                fn = uoro(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
-            case RFLOConfig():
-                fn = rflo(transition, readout_gr, interface, method, model_grad_config, length, lambda f: f, track_logs)
-            case ImmediateLearnerConfig():
-                fn = immediate(transition, readout_gr, interface, model_grad_config, length, lambda f: f, track_logs)
-
-        gradient_fns.append(fn)
-        loss_fns.append(readout_loss)
+        gradient_fns.append(dispatch_learner(method, args_gr, args_loss))
+        loss_fns.append(get_backward_mode(args_loss, truncate_at=None))
 
     return gradient_fns, loss_fns
 
@@ -916,126 +889,17 @@ def create_meta_learner[ENV](
             env = advance(env)
             return inner(env, data)
 
-        match method:
-            case RTRLConfig():
-                grad_fn = rtrl(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case TikhonovRTRLConfig():
-                grad_fn = tikhonov_rtrl(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case PadeRTRLConfig():
-                grad_fn = pade_rtrl(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case MidpointRTRLConfig():
-                grad_fn = midpoint_rtrl(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case HeunRTRLConfig():
-                grad_fn = heun_rtrl(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case ImplicitEulerRTRLConfig():
-                grad_fn = implicit_euler_rtrl(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case BPTTConfig():
-                grad_fn = bptt(
-                    composed_inner,
-                    readout,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case IdentityLearnerConfig():
-                grad_fn = identity(
-                    composed_inner,
-                    readout,
-                    nest_interface,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case UOROConfig() | UOROFiniteDiffConfig():
-                grad_fn = uoro(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case RFLOConfig():
-                grad_fn = rflo(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    method,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
-            case ImmediateLearnerConfig():
-                grad_fn = immediate(
-                    composed_inner,
-                    readout_gr,
-                    nest_interface,
-                    grad_config,
-                    length,
-                    vmap_this,
-                    track_logs,
-                )
+        args_loss = LearningArg(
+            transition=composed_inner,
+            readout=readout,
+            learn_interface=nest_interface,
+            grad_config=grad_config,
+            length=length,
+            vmap_this=vmap_this,
+            track_logs=track_logs,
+        )
+        args_gr = dataclasses.replace(args_loss, readout=readout_gr)
+        grad_fn = dispatch_learner(method, args_gr, args_loss)
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)

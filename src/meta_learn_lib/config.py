@@ -192,7 +192,8 @@ class BPTTConfig:
 
 
 @dataclass(frozen=True)
-class IdentityLearnerConfig: ...
+class IdentityLearnerConfig:
+    bptt_config: BPTTConfig
 
 
 class RFLOConfig(eqx.Module):

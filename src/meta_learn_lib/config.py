@@ -69,34 +69,26 @@ class DelayAddTaskFamily:
 type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily]
 
 
-@dataclass(frozen=True)
-class HyperparameterConfig:
-    @dataclass(frozen=True)
-    class identity: ...
+class HyperparameterConfig(eqx.Module):
+    class identity(eqx.Module): ...
 
-    @dataclass(frozen=True)
-    class softplus: ...
+    class softplus(eqx.Module): ...
 
-    @dataclass(frozen=True)
-    class relu: ...
+    class relu(eqx.Module): ...
 
-    @dataclass(frozen=True)
-    class softrelu:
-        clip: float
+    class softrelu(eqx.Module):
+        clip: jax.Array
 
-    @dataclass(frozen=True)
-    class silu_positive:
-        scale: float
+    class silu_positive(eqx.Module):
+        scale: jax.Array
 
-    @dataclass(frozen=True)
-    class squared:
-        scale: float
+    class squared(eqx.Module):
+        scale: jax.Array
 
-    @dataclass(frozen=True)
-    class softclip:
-        a: Optional[float]
-        b: Optional[float]
-        clip: float
+    class softclip(eqx.Module):
+        a: Optional[jax.Array]
+        b: Optional[jax.Array]
+        clip: jax.Array
 
     type Parametrization = Union[identity, softplus, relu, softrelu, silu_positive, squared, softclip]
     type Kind = Literal["learning_rate", "weight_decay", "momentum", "time_constant", "kl_regularizer_beta"]
@@ -105,8 +97,8 @@ class HyperparameterConfig:
     kind: Kind
     count: int  # how many unique parameters of this kind
     hyperparameter_parametrization: Parametrization
-    min_value: float  # used for mandatory gradient projection
-    max_value: float  # used for mandatory gradient projection
+    min_value: jax.Array  # used for mandatory gradient projection
+    max_value: jax.Array  # used for mandatory gradient projection
     level: int  # which meta level this hyperparameter belongs to. used for tracking how to optimize
     parametrizes_transition: bool  # whether this hp influences transitional dynamics vs readout
 
@@ -137,13 +129,12 @@ class SGDNormalizedConfig:
     momentum: HP
 
 
-@dataclass(frozen=True)
-class AdamConfig:
+class AdamConfig(eqx.Module):
     learning_rate: HP
     weight_decay: HP
     momentum: HP
-    eps: float
-    eps_root: float
+    eps: jax.Array
+    eps_root: jax.Array
 
 
 @dataclass(frozen=True)
@@ -162,21 +153,16 @@ type Optimizer = Union[
 ]
 
 
-@dataclass(frozen=True)
-class OptimizerAssignment:
+class OptimizerAssignment(eqx.Module):
     target: frozenset[str]
     optimizer: Optimizer
-
-
-class RTRLFiniteHvpConfig(eqx.Module):
-    epsilon: jax.Array
 
 
 class RTRLConfig(eqx.Module):
     start_at_step: int
     damping: jax.Array
     beta: jax.Array
-    finite_hvp: RTRLFiniteHvpConfig | None
+    use_finite_hvp: jax.Array | None
 
 
 class TikhonovRTRLConfig(eqx.Module):
@@ -211,21 +197,14 @@ class IdentityLearnerConfig: ...
 
 class RFLOConfig(eqx.Module):
     time_constant: HP
-    damping: jax.Array
-    beta: jax.Array
+    rtrl_config: RTRLConfig
 
 
 class UOROConfig(eqx.Module):
     type Distribution = Literal["uniform", "normal"]
     std: jax.Array
     distribution: Distribution
-    damping: jax.Array
-    beta: jax.Array
-
-
-class UOROFiniteDiffConfig(eqx.Module):
-    epsilon: jax.Array
-    uoro_config: UOROConfig
+    rtrl_config: RTRLConfig
 
 
 @dataclass(frozen=True)
@@ -243,7 +222,6 @@ type GradientMethod = Union[
     IdentityLearnerConfig,
     RFLOConfig,
     UOROConfig,
-    UOROFiniteDiffConfig,
     ImmediateLearnerConfig,
 ]
 
@@ -260,23 +238,20 @@ class LearnConfig(eqx.Module):
     optimizer: dict[str, OptimizerAssignment]
 
 
-@dataclass(frozen=True)
-class LayerNorm:
-    epsilon: float
+class LayerNorm(eqx.Module):
+    epsilon: jax.Array
     use_weight: bool
     use_bias: bool
 
 
-@dataclass(frozen=True)
-class NNLayer:
+class NNLayer(eqx.Module):
     n: int
     activation_fn: ACTIVATION_FN
     use_bias: bool
     layer_norm: Optional[LayerNorm]
 
 
-@dataclass(frozen=True)
-class VanillaRNNLayer:
+class VanillaRNNLayer(eqx.Module):
     nn_layer: NNLayer
     use_random_init: bool
     time_constant: HP
@@ -519,7 +494,7 @@ class GodConfig(eqx.Module):
 
     sample_generators: list[SampleGeneratorConfig]
 
-    label_mask_value: float
-    unlabeled_mask_value: float
+    label_mask_value: jax.Array
+    unlabeled_mask_value: jax.Array
     num_tasks: int
     prefetch_buffer_size: int

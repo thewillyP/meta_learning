@@ -19,8 +19,8 @@ from meta_learn_lib.util import deep_serialize
 class Parameter[T](PClass):
     value: T = field(serializer=deep_serialize)
     is_learnable: bool = field()
-    min_value: float = field()
-    max_value: float = field()
+    min_value: jax.Array = field()
+    max_value: jax.Array = field()
     parametrizes_transition: bool = field()
 
 

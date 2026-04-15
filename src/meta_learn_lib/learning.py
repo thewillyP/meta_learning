@@ -36,18 +36,45 @@ def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
     return GRADIENT(g)
 
 
-def rtrl[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    config: RTRLConfig,
-    grad_config: GradientConfig,
-    length: int,
+def compute_dhdp[ENV](
+    param_fn: Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]],
+    s: jax.Array,
+    p: jax.Array,
+    static: ENV,
+) -> tuple[JACOBIAN, ENV, STAT]:
+    if s.shape[0] > p.shape[0]:
+        dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn, has_aux=True)(p)
+    else:
+        dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn, has_aux=True)(p)
+    new_env = eqx.combine(arr, static)
+    return dhdp, new_env, trans_stat
+
+
+@dataclass(frozen=True)
+class LearningArg[ENV, TR_DATA, VL_DATA]:
+    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]]
+    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]]
+    learn_interface: GodInterface[ENV]
+    grad_config: GradientConfig
+    length: int
     vmap_this: Callable[
         [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
+    ]
+    track_logs: TrackLogs
+
+
+def get_forward_mode[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    update_influence: Callable[
+        [
+            Callable[[jax.Array], tuple[jax.Array, None]],
+            Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]],
+            ENV,
+        ],
+        tuple[ENV, STAT],
     ],
-    track_logs: TrackLogs,
+    credit_gr_fn: Callable[[GRADIENT, GodInterface[ENV], ENV], GRADIENT],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
@@ -57,826 +84,514 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
 
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            t = learn_interface.get_tick(env)
-            mu = config.damping
-            beta = config.beta
-            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
-
             def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
                 def fn(state: jax.Array) -> tuple[jax.Array, None]:
-                    _env = learn_interface.put_state(e, state)
-                    _env, _ = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
+                    _env = args.learn_interface.put_state(e, state)
+                    _env, _ = args.transition(_env, tr_data)
+                    state = args.learn_interface.get_state(_env)
                     return state, None
 
                 return fn
 
             def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
                 def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
+                    _env = args.learn_interface.put_param(e, param)
+                    _env, stat = args.transition(_env, tr_data)
+                    state = args.learn_interface.get_state(_env)
                     _arr, _ = eqx.partition(_env, eqx.is_array)
                     return state, (_arr, stat)
 
                 return fn
 
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
-            else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
-            new_env = eqx.combine(arr, static)
-
-            hmp: JACOBIAN
-            match config.finite_hvp:
-                case None:
-                    _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
-                    hmp = hmp_jvp - mu * influence_tensor_s.value
-                case RTRLFiniteHvpConfig(eps):
-                    f = lambda x: state_fn(env)(x)[0]
-                    hmp = finite_difference_jmp(f, s, influence_tensor_s.value, eps) - mu * influence_tensor_s.value
-
-            influence_tensor: JACOBIAN
-            influence_tensor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: beta * (hmp + dhdp) + (1 - beta) * influence_tensor_s.value,
-                lambda _: influence_tensor_s.value,
-                None,
-            )
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            grad: GRADIENT = credit_gr @ state_jacobian
-            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env, trans_stat = update_influence(state_fn(env), param_fn(env), env)
+            new_env, credit_gr, readout_stat = args.readout_gr(new_env, vl_data)
+            grad = credit_gr_fn(credit_gr, args.learn_interface, new_env)
 
             arr, _ = eqx.partition(new_env, eqx.is_array)
             return arr, (grad, trans_stat | readout_stat)
 
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
+        arr, (grads, stats) = jax.lax.scan(lambda x, y: args.vmap_this(step)(x, y), arr_init, ds, length=args.length)
         env = eqx.combine(arr, static)
         total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
+        total_grad = process_gradient(total_grad, args.grad_config)
         return env, total_grad, stats
 
     return gradient_fn
+
+
+def rtrl_like[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    update_tensor: Callable[
+        [
+            Callable[[jax.Array], tuple[jax.Array, None]],
+            jax.Array,
+            JACOBIAN,
+            JACOBIAN,
+            ENV,
+        ],
+        JACOBIAN,
+    ],
+    start_at_step: int,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    def update_influence(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        param_fn: Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]],
+        env: ENV,
+    ) -> tuple[ENV, STAT]:
+        _, static = eqx.partition(env, eqx.is_array)
+        s = args.learn_interface.get_state(env)
+        p = args.learn_interface.get_param(env)
+        influence_tensor_s = args.learn_interface.get_forward_mode_jacobian(env)
+
+        dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
+
+        new_influence_tensor = update_tensor(state_fn, s, dhdp, influence_tensor_s.value, env)
+
+        new_influence_tensor = filter_cond(
+            args.learn_interface.get_tick(env) >= start_at_step,
+            lambda _: new_influence_tensor,
+            lambda _: influence_tensor_s.value,
+            None,
+        )
+
+        new_env = args.learn_interface.put_forward_mode_jacobian(
+            new_env,
+            influence_tensor_s.set(value=new_influence_tensor),
+        )
+        if args.track_logs.influence_tensor_norm:
+            influence_tensor_norm: jax.Array = jnp.linalg.norm(new_influence_tensor)
+            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+        return new_env, trans_stat
+
+    def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
+        influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+        state_jacobian = jnp.vstack([influence_tensor_s.value, jnp.eye(influence_tensor_s.value.shape[1])])
+        grad = credit_gr @ state_jacobian
+        return grad
+
+    return get_forward_mode(args, update_influence, credit_gr_fn)
+
+
+def rtrl[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    config: RTRLConfig,
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    def update_tensor(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        s: jax.Array,
+        dhdp: jax.Array,
+        influence_tensor: jax.Array,
+        _env: ENV,
+    ) -> jax.Array:
+        mu = config.damping
+        beta = config.beta
+
+        hmp: JACOBIAN
+        match config.use_finite_hvp:
+            case None:
+                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor)
+                hmp = hmp_jvp - mu * influence_tensor
+            case eps:
+                hmp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor, eps) - mu * influence_tensor
+
+        updated = beta * (hmp + dhdp) + (1 - beta) * influence_tensor
+        return updated
+
+    return rtrl_like(args, update_tensor, config.start_at_step)
 
 
 def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    _config: TikhonovRTRLConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    config: TikhonovRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    def update_tensor(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        s: jax.Array,
+        dhdp: jax.Array,
+        influence_tensor: jax.Array,
+        _env: ENV,
+    ) -> jax.Array:
+        mu = config.rtrl_config.damping
+        beta = config.rtrl_config.beta
 
-    config = _config.rtrl_config
+        hmp_jvp: JACOBIAN
+        match config.rtrl_config.use_finite_hvp:
+            case None:
+                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor)
+            case eps:
+                hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor, eps)
 
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
+        d_tau = hmp_jvp + dhdp
+        error = influence_tensor - d_tau
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
+        _, vjp_fn = eqx.filter_vjp(lambda x: state_fn(x)[0], s)
+        correction = eqx.filter_vmap(lambda col: vjp_fn(col)[0], in_axes=1, out_axes=1)(error)
 
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            t = learn_interface.get_tick(env)
-            mu = config.damping
-            beta = config.beta
-            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+        target = d_tau + correction - mu * influence_tensor
+        updated = beta * target + (1 - beta) * influence_tensor
+        return updated
 
-            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
-                def fn(state: jax.Array) -> tuple[jax.Array, None]:
-                    _env = learn_interface.put_state(e, state)
-                    _env, _ = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    return state, None
-
-                return fn
-
-            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
-                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    _arr, _ = eqx.partition(_env, eqx.is_array)
-                    return state, (_arr, stat)
-
-                return fn
-
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
-            else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
-            new_env = eqx.combine(arr, static)
-
-            # D_tau = dF/dz @ Gamma + dF/dphi (forward sensitivity)
-            match config.finite_hvp:
-                case None:
-                    _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
-                case RTRLFiniteHvpConfig(eps):
-                    f = lambda x: state_fn(env)(x)[0]
-                    hmp_jvp = finite_difference_jmp(f, s, influence_tensor_s.value, eps)
-
-            d_tau = hmp_jvp + dhdp
-            error = influence_tensor_s.value - d_tau
-
-            # (dF/dz)^T @ (Gamma - D) via vmapped VJPs (adjoint error correction)
-            _, vjp_fn = eqx.filter_vjp(lambda x: state_fn(env)(x)[0], s)
-            correction = eqx.filter_vmap(lambda col: vjp_fn(col)[0], in_axes=1, out_axes=1)(error)
-
-            # Gamma_new = (1 - beta) * Gamma + beta * (D + (dF/dz)^T(Gamma - D) - mu * Gamma)
-            target = d_tau + correction - mu * influence_tensor_s.value
-            updated = beta * target + (1 - beta) * influence_tensor_s.value
-
-            influence_tensor: JACOBIAN
-            influence_tensor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: updated,
-                lambda _: influence_tensor_s.value,
-                None,
-            )
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            grad: GRADIENT = credit_gr @ state_jacobian
-            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
-
-            arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
-
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
-
-    return gradient_fn
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
 
 
 def pade_rtrl[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    _config: PadeRTRLConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    config: PadeRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    def update_tensor(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        s: jax.Array,
+        dhdp: jax.Array,
+        influence_tensor: jax.Array,
+        _env: ENV,
+    ) -> jax.Array:
+        # JVP 1: dF/dz @ Gamma (for D_tau)
+        # JVP 2: dF/dz @ dF/dphi (extra cost for Pade)
+        hmp_jvp: JACOBIAN
+        dhdz_dhdp: JACOBIAN
+        match config.rtrl_config.use_finite_hvp:
+            case None:
+                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor)
+                _primals2, dhdz_dhdp, _aux2 = jacobian_matrix_product(state_fn, s, dhdp)
+            case eps:
+                hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor, eps)
+                dhdz_dhdp = finite_difference_jmp(lambda x: state_fn(x)[0], s, dhdp, eps)
 
-    config = _config.rtrl_config
+        # Pade [1,1]: Gamma_{t+1} = 1/2 * D_tau + 1/2 * (I + dF/dz) * dF/dphi
+        d_tau = hmp_jvp + dhdp
+        return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp)
 
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
-
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
-
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            t = learn_interface.get_tick(env)
-            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
-
-            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
-                def fn(state: jax.Array) -> tuple[jax.Array, None]:
-                    _env = learn_interface.put_state(e, state)
-                    _env, _ = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    return state, None
-
-                return fn
-
-            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
-                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    _arr, _ = eqx.partition(_env, eqx.is_array)
-                    return state, (_arr, stat)
-
-                return fn
-
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
-            else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
-            new_env = eqx.combine(arr, static)
-
-            # JVP 1: dF/dz @ Gamma (for D_tau)
-            # JVP 2: dF/dz @ dF/dphi (extra cost for Pade)
-            match config.finite_hvp:
-                case None:
-                    _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn(env), s, influence_tensor_s.value)
-                    _primals2, dhdz_dhdp, _aux2 = jacobian_matrix_product(state_fn(env), s, dhdp)
-                case RTRLFiniteHvpConfig(eps):
-                    f = lambda x: state_fn(env)(x)[0]
-                    hmp_jvp = finite_difference_jmp(f, s, influence_tensor_s.value, eps)
-                    dhdz_dhdp = finite_difference_jmp(f, s, dhdp, eps)
-
-            # Pade [1,1]: Gamma_{t+1} = 1/2 * D_tau + 1/2 * (I + dF/dz) * dF/dphi
-            d_tau = hmp_jvp + dhdp
-            pade_update = 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp)
-
-            influence_tensor: JACOBIAN
-            influence_tensor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: pade_update,
-                lambda _: influence_tensor_s.value,
-                None,
-            )
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            grad: GRADIENT = credit_gr @ state_jacobian
-            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
-
-            arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
-
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
-
-    return gradient_fn
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
 
 
 def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    _config: MidpointRTRLConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    config: MidpointRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    def update_influence(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        param_fn: Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]],
+        env: ENV,
+    ) -> tuple[ENV, STAT]:
+        _, static = eqx.partition(env, eqx.is_array)
+        s = args.learn_interface.get_state(env)
+        p = args.learn_interface.get_param(env)
+        influence_tensor_s = args.learn_interface.get_forward_mode_jacobian(env)
+        midpoint_buffer_s = args.learn_interface.get_midpoint_buffer(env)
 
-    config = _config.rtrl_config
+        dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
+        # JVP 1: J_t @ P_t (for next step's predictor)
+        # JVP 2: J_t @ predictor (for corrector of interval ending at t+1)
+        match config.rtrl_config.use_finite_hvp:
+            case None:
+                _primals, hmp_jvp_current, _aux = jacobian_matrix_product(state_fn, s, influence_tensor_s.value)
+                _primals2, hmp_jvp_predictor, _aux2 = jacobian_matrix_product(
+                    state_fn, s, midpoint_buffer_s.predictor.value
+                )
+            case eps:
+                hmp_jvp_current = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor_s.value, eps)
+                hmp_jvp_predictor = finite_difference_jmp(
+                    lambda x: state_fn(x)[0], s, midpoint_buffer_s.predictor.value, eps
+                )
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
+        # Forward Euler from P_t (used as bootstrap and as next step's predictor)
+        fe_update = hmp_jvp_current + dhdp
+        # Midpoint corrector: P_new = P_prev + 2*((J_t - I) @ predictor + B_t)
+        midpoint_update = midpoint_buffer_s.P_prev.value + 2 * (
+            hmp_jvp_predictor - midpoint_buffer_s.predictor.value + dhdp
+        )
+        # First active step: forward Euler bootstrap. Subsequent: midpoint corrector.
+        is_bootstrap = args.learn_interface.get_tick(env) <= config.rtrl_config.start_at_step
+        active_update = jnp.where(is_bootstrap, fe_update, midpoint_update)
+        influence_tensor: JACOBIAN = filter_cond(
+            args.learn_interface.get_tick(env) >= config.rtrl_config.start_at_step,
+            lambda _: active_update,
+            lambda _: influence_tensor_s.value,
+            None,
+        )
 
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            t = learn_interface.get_tick(env)
-            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
-            midpoint_buffer_s = learn_interface.get_midpoint_buffer(env)
+        # Buffer update: P_prev = current P_t, predictor = forward Euler from P_t
+        new_P_prev = filter_cond(
+            args.learn_interface.get_tick(env) >= config.rtrl_config.start_at_step,
+            lambda _: influence_tensor_s.value,
+            lambda _: midpoint_buffer_s.P_prev.value,
+            None,
+        )
 
-            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
-                def fn(state: jax.Array) -> tuple[jax.Array, None]:
-                    _env = learn_interface.put_state(e, state)
-                    _env, _ = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    return state, None
+        new_predictor = filter_cond(
+            args.learn_interface.get_tick(env) >= config.rtrl_config.start_at_step,
+            lambda _: fe_update,
+            lambda _: midpoint_buffer_s.predictor.value,
+            None,
+        )
 
-                return fn
+        new_env = args.learn_interface.put_forward_mode_jacobian(
+            new_env, influence_tensor_s.set(value=influence_tensor)
+        )
+        new_env = args.learn_interface.put_midpoint_buffer(
+            new_env,
+            MidpointBuffer(
+                P_prev=midpoint_buffer_s.P_prev.set(value=new_P_prev),
+                predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
+            ),
+        )
 
-            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
-                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    _arr, _ = eqx.partition(_env, eqx.is_array)
-                    return state, (_arr, stat)
-
-                return fn
-
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
-            else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
-            new_env = eqx.combine(arr, static)
-
-            # JVP 1: J_t @ P_t (for next step's predictor)
-            # JVP 2: J_t @ predictor (for corrector of interval ending at t+1)
-            match config.finite_hvp:
-                case None:
-                    _primals, hmp_jvp_current, _aux = jacobian_matrix_product(
-                        state_fn(env), s, influence_tensor_s.value
-                    )
-                    _primals2, hmp_jvp_predictor, _aux2 = jacobian_matrix_product(
-                        state_fn(env), s, midpoint_buffer_s.predictor.value
-                    )
-                case RTRLFiniteHvpConfig(eps):
-                    f = lambda x: state_fn(env)(x)[0]
-                    hmp_jvp_current = finite_difference_jmp(f, s, influence_tensor_s.value, eps)
-                    hmp_jvp_predictor = finite_difference_jmp(f, s, midpoint_buffer_s.predictor.value, eps)
-
-            # Forward Euler from P_t (used as bootstrap and as next step's predictor)
-            fe_update = hmp_jvp_current + dhdp
-
-            # Midpoint corrector: P_new = P_prev + 2*((J_t - I) @ predictor + B_t)
-            midpoint_update = midpoint_buffer_s.P_prev.value + 2 * (
-                hmp_jvp_predictor - midpoint_buffer_s.predictor.value + dhdp
-            )
-
-            # First active step: forward Euler bootstrap. Subsequent: midpoint corrector.
-            is_bootstrap = t <= config.start_at_step
-            active_update = jnp.where(is_bootstrap, fe_update, midpoint_update)
-
-            influence_tensor: JACOBIAN
-            influence_tensor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: active_update,
-                lambda _: influence_tensor_s.value,
-                None,
-            )
-
-            # Buffer update: P_prev = current P_t, predictor = forward Euler from P_t
-            new_P_prev = filter_cond(
-                t >= config.start_at_step,
-                lambda _: influence_tensor_s.value,
-                lambda _: midpoint_buffer_s.P_prev.value,
-                None,
-            )
-            new_predictor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: fe_update,
-                lambda _: midpoint_buffer_s.predictor.value,
-                None,
-            )
-
-            # 2-tap boxcar: average P_t and P_{t-1} for readout to kill parity mode
+        if args.track_logs.influence_tensor_norm:
             readout_tensor = 0.5 * (influence_tensor + influence_tensor_s.value)
+            influence_tensor_norm = jnp.linalg.norm(readout_tensor)
+            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
 
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            state_jacobian = jnp.vstack([readout_tensor, jnp.eye(readout_tensor.shape[1])])
-            grad: GRADIENT = credit_gr @ state_jacobian
-            # Store raw (unfiltered) influence tensor back into the recursion
-            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
-            new_env = learn_interface.put_midpoint_buffer(
-                new_env,
-                MidpointBuffer(
-                    P_prev=midpoint_buffer_s.P_prev.set(value=new_P_prev),
-                    predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
-                ),
-            )
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(readout_tensor)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+        return new_env, trans_stat
 
-            arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
+    def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
+        influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+        # 2-tap boxcar: average P_t and P_{t-1} for readout to kill parity mode
+        readout_tensor = 0.5 * (influence_tensor_s.value + learn_interface.get_midpoint_buffer(env).P_prev.value)
+        state_jacobian = jnp.vstack([readout_tensor, jnp.eye(readout_tensor.shape[1])])
+        grad = credit_gr @ state_jacobian
+        return grad
 
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
-
-    return gradient_fn
+    return get_forward_mode(args, update_influence, credit_gr_fn)
 
 
 def heun_rtrl[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    _config: HeunRTRLConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    config: HeunRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    rtrl_config = config.rtrl_config
 
-    config = _config.rtrl_config
+    def update_influence(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        param_fn: Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]],
+        env: ENV,
+    ) -> tuple[ENV, STAT]:
+        _, static = eqx.partition(env, eqx.is_array)
+        s = args.learn_interface.get_state(env)
+        p = args.learn_interface.get_param(env)
+        t = args.learn_interface.get_tick(env)
+        influence_tensor_s = args.learn_interface.get_forward_mode_jacobian(env)
+        midpoint_buffer_s = args.learn_interface.get_midpoint_buffer(env)
 
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
+        dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
+        # JVP 1: J_t @ predictor_stored (corrector slope at current tick)
+        predictor_stored = midpoint_buffer_s.predictor.value
+        match config.rtrl_config.use_finite_hvp:
+            case None:
+                _primals, corrector_jvp, _aux = jacobian_matrix_product(state_fn, s, predictor_stored)
+            case eps:
+                f = lambda x: state_fn(x)[0]
+                corrector_jvp = finite_difference_jmp(f, s, predictor_stored, eps)
 
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            t = learn_interface.get_tick(env)
-            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
-            midpoint_buffer_s = learn_interface.get_midpoint_buffer(env)
+        # Heun: P_new = 0.5 * (P_prev + J_t @ predictor + B_t)
+        heun_update = 0.5 * (influence_tensor_s.value + corrector_jvp + dhdp)
 
-            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
-                def fn(state: jax.Array) -> tuple[jax.Array, None]:
-                    _env = learn_interface.put_state(e, state)
-                    _env, _ = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    return state, None
+        # Forward Euler (bootstrap, first active step only)
+        # At bootstrap, predictor_stored == P_prev, so corrector_jvp == J_t @ P_prev
+        fe_update = corrector_jvp + dhdp
 
-                return fn
+        is_bootstrap = t <= rtrl_config.start_at_step
+        active_update = jnp.where(is_bootstrap, fe_update, heun_update)
 
-            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
-                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    _arr, _ = eqx.partition(_env, eqx.is_array)
-                    return state, (_arr, stat)
+        influence_tensor: JACOBIAN
+        influence_tensor = filter_cond(
+            t >= rtrl_config.start_at_step,
+            lambda _: active_update,
+            lambda _: influence_tensor_s.value,
+            None,
+        )
 
-                return fn
+        # JVP 2: J_t @ P_new (for next step's predictor)
+        match config.rtrl_config.use_finite_hvp:
+            case None:
+                _primals2, pred_jvp, _aux2 = jacobian_matrix_product(state_fn, s, influence_tensor)
+            case eps:
+                f = lambda x: state_fn(x)[0]
+                pred_jvp = finite_difference_jmp(f, s, influence_tensor, eps)
 
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
-            else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
-            new_env = eqx.combine(arr, static)
+        new_predictor = filter_cond(
+            t >= rtrl_config.start_at_step,
+            lambda _: pred_jvp + dhdp,
+            lambda _: midpoint_buffer_s.predictor.value,
+            None,
+        )
 
-            # JVP 1: J_t @ predictor_stored (corrector slope at current tick)
-            predictor_stored = midpoint_buffer_s.predictor.value
-            match config.finite_hvp:
-                case None:
-                    _primals, corrector_jvp, _aux = jacobian_matrix_product(state_fn(env), s, predictor_stored)
-                case RTRLFiniteHvpConfig(eps):
-                    f = lambda x: state_fn(env)(x)[0]
-                    corrector_jvp = finite_difference_jmp(f, s, predictor_stored, eps)
+        new_env = args.learn_interface.put_forward_mode_jacobian(
+            new_env, influence_tensor_s.set(value=influence_tensor)
+        )
+        new_env = args.learn_interface.put_midpoint_buffer(
+            new_env,
+            MidpointBuffer(
+                P_prev=midpoint_buffer_s.P_prev,
+                predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
+            ),
+        )
+        if args.track_logs.influence_tensor_norm:
+            influence_tensor_norm = jnp.linalg.norm(influence_tensor)
+            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+        return new_env, trans_stat
 
-            # Heun: P_new = 0.5 * (P_prev + J_t @ predictor + B_t)
-            heun_update = 0.5 * (influence_tensor_s.value + corrector_jvp + dhdp)
+    def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
+        influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+        state_jacobian = jnp.vstack([influence_tensor_s.value, jnp.eye(influence_tensor_s.value.shape[1])])
+        grad = credit_gr @ state_jacobian
+        return grad
 
-            # Forward Euler (bootstrap, first active step only)
-            # At bootstrap, predictor_stored == P_prev, so corrector_jvp == J_t @ P_prev
-            fe_update = corrector_jvp + dhdp
-
-            is_bootstrap = t <= config.start_at_step
-            active_update = jnp.where(is_bootstrap, fe_update, heun_update)
-
-            influence_tensor: JACOBIAN
-            influence_tensor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: active_update,
-                lambda _: influence_tensor_s.value,
-                None,
-            )
-
-            # JVP 2: J_t @ P_new (for next step's predictor)
-            match config.finite_hvp:
-                case None:
-                    _primals2, pred_jvp, _aux2 = jacobian_matrix_product(state_fn(env), s, influence_tensor)
-                case RTRLFiniteHvpConfig(eps):
-                    f = lambda x: state_fn(env)(x)[0]
-                    pred_jvp = finite_difference_jmp(f, s, influence_tensor, eps)
-
-            new_predictor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: pred_jvp + dhdp,
-                lambda _: midpoint_buffer_s.predictor.value,
-                None,
-            )
-
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            grad: GRADIENT = credit_gr @ state_jacobian
-            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
-            new_env = learn_interface.put_midpoint_buffer(
-                new_env,
-                MidpointBuffer(
-                    P_prev=midpoint_buffer_s.P_prev,
-                    predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
-                ),
-            )
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
-
-            arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
-
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
-
-    return gradient_fn
+    return get_forward_mode(args, update_influence, credit_gr_fn)
 
 
 def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    _config: ImplicitEulerRTRLConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    config: ImplicitEulerRTRLConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    rtrl_config = config.rtrl_config
+    num_arnoldi_iters = config.num_arnoldi_iters
 
-    config = _config.rtrl_config
-    num_arnoldi_iters = _config.num_arnoldi_iters
+    def update_tensor(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        s: jax.Array,
+        dhdp: jax.Array,
+        influence_tensor: jax.Array,
+        _env: ENV,
+    ) -> jax.Array:
+        mu = rtrl_config.damping
 
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
+        # JVP oracle: v -> J_t @ v (vector, not matrix)
+        f_eval = lambda x: state_fn(x)[0]
+        match rtrl_config.use_finite_hvp:
+            case None:
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
+                def jvp_Jt(v: jax.Array) -> jax.Array:
+                    _primals, tangent, _aux = jvp(f_eval, s, v)
+                    return tangent
+            case eps:
 
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            t = learn_interface.get_tick(env)
-            mu = config.damping
-            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+                def jvp_Jt(v: jax.Array) -> jax.Array:
+                    return finite_difference_jvp(f_eval, s, v, eps)
 
-            def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
-                def fn(state: jax.Array) -> tuple[jax.Array, None]:
-                    _env = learn_interface.put_state(e, state)
-                    _env, _ = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    return state, None
+        # Implicit Euler: solve ((2+mu)I - J_t) P_t = P_{t-1} + B_t per column
+        # via GMRES = Arnoldi (matfree) + small least-squares solve.
+        # mu shifts A's spectrum away from zero (regularization).
+        # custom_vjp=False uses standard JAX backprop, supports any order of
+        # differentiation. jax.checkpoint avoids storing K * state_dim per
+        # column persistently across the scan: forward saves only the solution,
+        # backward recomputes the GMRES on demand.
+        def A_fn(v: jax.Array) -> jax.Array:
+            return (2.0 + mu) * v - jvp_Jt(v)
 
-                return fn
+        arnoldi = matfree_decomp.hessenberg(num_arnoldi_iters, reortho="full", custom_vjp=False)
 
-            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
-                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    _arr, _ = eqx.partition(_env, eqx.is_array)
-                    return state, (_arr, stat)
+        rhs = influence_tensor + dhdp  # (state_dim, param_dim)
 
-                return fn
+        @jax.checkpoint
+        def solve_column(rhs_col: jax.Array, x0_col: jax.Array) -> jax.Array:
+            # Initial residual
+            r0 = rhs_col - A_fn(x0_col)
+            # Arnoldi factorization of A starting from r0
+            result = arnoldi(A_fn, r0)
+            Q = result.Q_tall  # (state_dim, k)
+            H = result.J_small  # (k, k)
+            beta = 1.0 / result.init_length_inv  # ||r0||
+            h_kp1_k = jnp.linalg.norm(result.residual)  # h_{k+1,k}
+            k = H.shape[0]
+            # Build (k+1, k) upper Hessenberg H_bar
+            H_bar = jnp.zeros((k + 1, k), dtype=H.dtype)
+            H_bar = H_bar.at[:k, :].set(H)
+            H_bar = H_bar.at[k, k - 1].set(h_kp1_k)
+            # Least-squares: min ||H_bar y - beta e_1||
+            rhs_lstsq = jnp.zeros(k + 1, dtype=H.dtype).at[0].set(beta)
+            y, _, _, _ = jnp.linalg.lstsq(H_bar, rhs_lstsq)
+            return x0_col + Q @ y
 
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
-            else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
-            new_env = eqx.combine(arr, static)
+        return eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor)
 
-            # JVP oracle: v -> J_t @ v (vector, not matrix)
-            f_eval = lambda x: state_fn(env)(x)[0]
-            match config.finite_hvp:
-                case None:
-
-                    def jvp_Jt(v: jax.Array) -> jax.Array:
-                        _primals, tangent, _aux = jvp(state_fn(env), s, v)
-                        return tangent
-                case RTRLFiniteHvpConfig(eps):
-
-                    def jvp_Jt(v: jax.Array) -> jax.Array:
-                        return finite_difference_jvp(f_eval, s, v, eps)
-
-            # Implicit Euler: solve ((2+mu)I - J_t) P_t = P_{t-1} + B_t per column
-            # via GMRES = Arnoldi (matfree) + small least-squares solve.
-            # mu shifts A's spectrum away from zero (regularization).
-            # custom_vjp=False uses standard JAX backprop, supports any order of
-            # differentiation. jax.checkpoint avoids storing K * state_dim per
-            # column persistently across the scan: forward saves only the solution,
-            # backward recomputes the GMRES on demand.
-            def A_fn(v: jax.Array) -> jax.Array:
-                return (2.0 + mu) * v - jvp_Jt(v)
-
-            arnoldi = matfree_decomp.hessenberg(num_arnoldi_iters, reortho="full", custom_vjp=False)
-
-            rhs = influence_tensor_s.value + dhdp  # (state_dim, param_dim)
-
-            @jax.checkpoint
-            def solve_column(rhs_col: jax.Array, x0_col: jax.Array) -> jax.Array:
-                # Initial residual
-                r0 = rhs_col - A_fn(x0_col)
-                # Arnoldi factorization of A starting from r0
-                result = arnoldi(A_fn, r0)
-                Q = result.Q_tall  # (state_dim, k)
-                H = result.J_small  # (k, k)
-                beta = 1.0 / result.init_length_inv  # ||r0||
-                h_kp1_k = jnp.linalg.norm(result.residual)  # h_{k+1,k}
-                k = H.shape[0]
-                # Build (k+1, k) upper Hessenberg H_bar
-                H_bar = jnp.zeros((k + 1, k), dtype=H.dtype)
-                H_bar = H_bar.at[:k, :].set(H)
-                H_bar = H_bar.at[k, k - 1].set(h_kp1_k)
-                # Least-squares: min ||H_bar y - beta e_1||
-                rhs_lstsq = jnp.zeros(k + 1, dtype=H.dtype).at[0].set(beta)
-                y, _, _, _ = jnp.linalg.lstsq(H_bar, rhs_lstsq)
-                return x0_col + Q @ y
-
-            implicit_update = eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor_s.value)
-
-            influence_tensor: JACOBIAN
-            influence_tensor = filter_cond(
-                t >= config.start_at_step,
-                lambda _: implicit_update,
-                lambda _: influence_tensor_s.value,
-                None,
-            )
-
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            grad: GRADIENT = credit_gr @ state_jacobian
-            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
-
-            arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
-
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
-
-    return gradient_fn
+    return rtrl_like(args, update_tensor, rtrl_config.start_at_step)
 
 
 def uoro[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
-    _config: UOROConfig | UOROFiniteDiffConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
+    config: UOROConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
 
-    match _config:
-        case UOROConfig():
-            config = _config
-        case UOROFiniteDiffConfig():
-            config = _config.uoro_config
+    std = config.std
+    match config.distribution:
+        case "uniform":
+            distribution = lambda key, shape: jax.random.uniform(key, shape, minval=-std, maxval=std)
+        case "normal":
+            distribution = lambda key, shape: jax.random.normal(key, shape) * std
 
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
+    def update_influence(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        param_fn: Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]],
+        env: ENV,
+    ) -> tuple[ENV, STAT]:
+        _, static = eqx.partition(env, eqx.is_array)
+        key, env = args.learn_interface.take_prng(env)
+        mu = config.damping
+        beta = config.beta
+        uoro_state = args.learn_interface.get_uoro_state(env)
+        A_s = uoro_state.A
+        B_s = uoro_state.B
+        s = args.learn_interface.get_state(env)
+        p = args.learn_interface.get_param(env)
+        random_vector = distribution(key, s.shape)
 
-        std = config.std
-        match config.distribution:
-            case "uniform":
-                distribution = lambda key, shape: jax.random.uniform(key, shape, minval=-std, maxval=std)
-            case "normal":
-                distribution = lambda key, shape: jax.random.normal(key, shape) * std
+        # state_fn from get_forward_mode returns (state, None); UORO wants just state for JVP
+        state_only = lambda x: state_fn(x)[0]
+        match config.rtrl_config.use_finite_hvp:
+            case None:
+                damped_jvp = eqx.filter_jvp(state_only, (s,), (A_s.value,))[1] - mu * A_s.value
+            case eps:
+                damped_jvp = finite_difference_jvp(state_only, s, A_s.value, eps) - mu * A_s.value
+        A_propagated = beta * damped_jvp + (1 - beta) * A_s.value
+        _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn, p, has_aux=True)
+        (immediateInfluence__random_projection,) = vjp_func(random_vector)
+        scaled_immediate = beta * immediateInfluence__random_projection
+        new_env = eqx.combine(arr, static)
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
-            key, env = learn_interface.take_prng(env)
-            mu = config.damping
-            beta = config.beta
-            uoro_state = learn_interface.get_uoro_state(env)
-            A_s = uoro_state.A
-            B_s = uoro_state.B
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            state_shape = s.shape
-            random_vector = distribution(key, state_shape)
+        rho0 = jnp.sqrt(optax.safe_norm(B_s.value, 1e-12) / optax.safe_norm(A_propagated, 1e-12))
+        rho1 = jnp.sqrt(optax.safe_norm(scaled_immediate, 1e-12) / optax.safe_norm(random_vector, 1e-12))
 
-            def state_fn(e: ENV) -> Callable[[jax.Array], jax.Array]:
-                def fn(state: jax.Array) -> jax.Array:
-                    _env = learn_interface.put_state(e, state)
-                    _env, _ = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    return state
+        A_new: jax.Array = rho0 * A_propagated + rho1 * random_vector
+        B_new: jax.Array = B_s.value / rho0 + scaled_immediate / rho1
 
-                return fn
+        new_env = args.learn_interface.put_uoro_state(
+            new_env,
+            UOROState(A=A_s.set(value=A_new), B=B_s.set(value=B_new)),
+        )
+        if args.track_logs.influence_tensor_norm:
+            influence_tensor_norm = jnp.linalg.norm(A_new) * jnp.linalg.norm(B_new)
+            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+        return new_env, trans_stat
 
-            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
-                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    _arr, _ = eqx.partition(_env, eqx.is_array)
-                    return state, (_arr, stat)
+    def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
+        uoro_state = learn_interface.get_uoro_state(env)
+        A = uoro_state.A.value
+        B = uoro_state.B.value
+        return (credit_gr[..., : A.shape[0]] @ A) * B + credit_gr[..., A.shape[0] :]
 
-                return fn
-
-            match _config:
-                case UOROConfig():
-                    damped_jvp = eqx.filter_jvp(state_fn(env), (s,), (A_s.value,))[1] - mu * A_s.value
-                case UOROFiniteDiffConfig(eps, _):
-                    damped_jvp = finite_difference_jvp(state_fn(env), s, A_s.value, eps) - mu * A_s.value
-            A_propagated = beta * damped_jvp + (1 - beta) * A_s.value
-            _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn(env), p, has_aux=True)
-            (immediateInfluence__random_projection,) = vjp_func(random_vector)
-            scaled_immediate = beta * immediateInfluence__random_projection
-            new_env = eqx.combine(arr, static)
-
-            rho0 = jnp.sqrt(optax.safe_norm(B_s.value, 1e-12) / optax.safe_norm(A_propagated, 1e-12))
-            rho1 = jnp.sqrt(optax.safe_norm(scaled_immediate, 1e-12) / optax.safe_norm(random_vector, 1e-12))
-
-            A_new: jax.Array = rho0 * A_propagated + rho1 * random_vector
-            B_new: jax.Array = B_s.value / rho0 + scaled_immediate / rho1
-
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            grad = (credit_gr[..., : A_new.shape[0]] @ A_new) * B_new + credit_gr[..., A_new.shape[0] :]
-
-            new_env = learn_interface.put_uoro_state(
-                new_env,
-                UOROState(A=A_s.set(value=A_new), B=B_s.set(value=B_new)),
-            )
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(A_new) * jnp.linalg.norm(B_new)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
-
-            arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
-
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
-
-    return gradient_fn
+    return get_forward_mode(args, update_influence, credit_gr_fn)
 
 
 def rflo[ENV, TR_DATA, VL_DATA](
-    transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]],
-    readout_gr: Callable[[ENV, VL_DATA], tuple[ENV, GRADIENT, STAT]],
-    learn_interface: GodInterface[ENV],
+    args: LearningArg[ENV, TR_DATA, VL_DATA],
     config: RFLOConfig,
-    grad_config: GradientConfig,
-    length: int,
-    vmap_this: Callable[
-        [Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]]],
-        Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[GRADIENT, STAT]]],
-    ],
-    track_logs: TrackLogs,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
-    def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        arr_init, static = eqx.partition(env_init, eqx.is_array)
+    def update_tensor(
+        state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+        s: jax.Array,
+        dhdp: jax.Array,
+        influence_tensor: jax.Array,
+        env: ENV,
+    ) -> jax.Array:
+        mu = config.damping
+        beta = config.beta
+        alpha = args.learn_interface.get_time_constant(env).value
+        naive = (1 - alpha) * influence_tensor + dhdp - mu * influence_tensor
+        return beta * naive + (1 - beta) * influence_tensor
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
-            env = eqx.combine(arr, static)
-            tr_data, vl_data = data
-            s = learn_interface.get_state(env)
-            p = learn_interface.get_param(env)
-            mu = config.damping
-            beta = config.beta
-            alpha = learn_interface.get_time_constant(env).value
-            influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
-
-            def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
-                def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = learn_interface.put_param(e, param)
-                    _env, stat = transition(_env, tr_data)
-                    state = learn_interface.get_state(_env)
-                    _arr, _ = eqx.partition(_env, eqx.is_array)
-                    return state, (_arr, stat)
-
-                return fn
-
-            if s.shape[0] > p.shape[0]:
-                dhdp, (arr, trans_stat) = eqx.filter_jacfwd(param_fn(env), has_aux=True)(p)
-            else:
-                dhdp, (arr, trans_stat) = eqx.filter_jacrev(param_fn(env), has_aux=True)(p)
-            new_env = eqx.combine(arr, static)
-
-            influence_tensor: JACOBIAN
-            naive = (1 - alpha) * influence_tensor_s.value + dhdp - mu * influence_tensor_s.value
-            influence_tensor = beta * naive + (1 - beta) * influence_tensor_s.value
-
-            new_env, credit_gr, readout_stat = readout_gr(new_env, vl_data)
-            state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
-            grad: GRADIENT = credit_gr @ state_jacobian
-            new_env = learn_interface.put_forward_mode_jacobian(new_env, influence_tensor_s.set(value=influence_tensor))
-            if track_logs.influence_tensor_norm:
-                influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-                new_env = learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
-
-            arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
-
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: vmap_this(step)(x, y), arr_init, ds, length=length)
-        env = eqx.combine(arr, static)
-        total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, grad_config)
-        return env, total_grad, stats
-
-    return gradient_fn
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
 
 
 def bptt[ENV, TR_DATA, VL_DATA](

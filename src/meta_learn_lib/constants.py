@@ -13,3 +13,8 @@ CIFAR10_MEAN: tuple[float, float, float] = (0.4914, 0.4822, 0.4465)
 CIFAR10_STD: tuple[float, float, float] = (0.2023, 0.1994, 0.2010)
 CIFAR100_MEAN: tuple[float, float, float] = (0.5071, 0.4865, 0.4409)
 CIFAR100_STD: tuple[float, float, float] = (0.2673, 0.2564, 0.2762)
+
+
+MODEL_LEARNER = "model_learner"
+OPTIMIZER_LEARNER = "optimizer_learner"
+TASK = "task"

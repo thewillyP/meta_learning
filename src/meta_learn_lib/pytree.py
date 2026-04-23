@@ -57,14 +57,10 @@ def register_pytree(cls, static_fields):
 # ============================================================================
 
 # Register leaf types first
-register_pytree(Parameter, {"is_learnable", "parametrizes_transition"})
-register_pytree(State, {"is_stateful"})
 register_pytree(Logs, set())
-register_pytree(RecurrentState, set())
 register_pytree(VanillaRecurrentState, {"activation_fn"})
 register_pytree(LSTMState, set())
 register_pytree(RNN, set())
-register_pytree(MLP, set())
 register_pytree(UOROState, set())
 register_pytree(MidpointBuffer, set())
 

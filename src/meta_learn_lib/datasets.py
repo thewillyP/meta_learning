@@ -219,7 +219,7 @@ def image_transforms(
 
     def make_targets(y):
         y_val = torch.tensor(y)
-        fill = y_val if not label_last_only else torch.tensor(y_mask, dtype=y_val.dtype)
+        fill = y_val if not label_last_only else torch.tensor(float(y_mask), dtype=y_val.dtype)
         arr = torch.full((seq_len,), fill)
         arr[-1] = y_val
         return arr

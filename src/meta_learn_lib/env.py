@@ -10,25 +10,6 @@ from meta_learn_lib.lib_types import *
 from meta_learn_lib.util import deep_serialize
 
 
-# ============================================================================
-# CORE DATA STRUCTURES
-# ============================================================================
-
-
-# My parameter and states are always batched per virtue of opt setup.
-class Parameter[T](PClass):
-    value: T = field(serializer=deep_serialize)
-    is_learnable: bool = field()
-    min_value: jax.Array = field()
-    max_value: jax.Array = field()
-    parametrizes_transition: bool = field()
-
-
-class State[T](PClass):
-    value: T = field(serializer=deep_serialize)
-    is_stateful: frozenset[int] = field()
-
-
 class Logs(PClass):
     gradient: Optional[jax.Array] = field(initial=None)
     hessian_contains_nans: Optional[bool] = field(initial=None)
@@ -39,69 +20,62 @@ class Logs(PClass):
     jacobian: Optional[jax.Array] = field(initial=None)
 
 
-class MLP(PClass):
-    model: Parameter[eqx.nn.Sequential] = field(serializer=deep_serialize)
-
-
 class RNN(PClass):
-    w_rec: Parameter[jax.Array] = field(serializer=deep_serialize)
-    b_rec: Parameter[jax.Array] = field(serializer=deep_serialize)
-    layer_norm: Parameter[eqx.Module] = field(serializer=deep_serialize)
+    w_rec: jax.Array = field(serializer=deep_serialize)
+    b_rec: jax.Array = field(serializer=deep_serialize)
+    layer_norm: eqx.Module = field(serializer=deep_serialize)
 
 
-class RecurrentState(PClass):
-    activation: State[jax.Array] = field(serializer=deep_serialize)
-
-
-class VanillaRecurrentState(RecurrentState):
+class VanillaRecurrentState(PClass):
+    activation: jax.Array = field(serializer=deep_serialize)
     activation_fn: ACTIVATION_FN = field(serializer=deep_serialize)
 
 
 class LSTMState(PClass):
-    h: State[jax.Array] = field(serializer=deep_serialize)
-    c: State[jax.Array] = field(serializer=deep_serialize)
+    h: jax.Array = field(serializer=deep_serialize)
+    c: jax.Array = field(serializer=deep_serialize)
 
 
 class UOROState(PClass):
-    A: State[jax.Array] = field(serializer=deep_serialize)
-    B: State[jax.Array] = field(serializer=deep_serialize)
+    A: jax.Array = field(serializer=deep_serialize)
+    B: jax.Array = field(serializer=deep_serialize)
 
 
 class MidpointBuffer(PClass):
-    P_prev: State[JACOBIAN] = field(serializer=deep_serialize)
-    predictor: State[JACOBIAN] = field(serializer=deep_serialize)
+    P_prev: JACOBIAN = field(serializer=deep_serialize)
+    predictor: JACOBIAN = field(serializer=deep_serialize)
 
 
 class Parameters(PClass):
-    mlps: PMap[int, MLP] = field(serializer=deep_serialize)
+    mlps: PMap[int, eqx.nn.Sequential] = field(serializer=deep_serialize)
     rnns: PMap[int, RNN] = field(serializer=deep_serialize)
-    grus: PMap[int, Parameter[eqx.nn.GRUCell]] = field(serializer=deep_serialize)
-    lstms: PMap[int, Parameter[eqx.nn.LSTMCell]] = field(serializer=deep_serialize)
-    learning_rates: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
-    weight_decays: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
-    time_constants: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
-    momentums: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
-    kl_regularizer_betas: PMap[int, Parameter[jax.Array]] = field(serializer=deep_serialize)
+    grus: PMap[int, eqx.nn.GRUCell] = field(serializer=deep_serialize)
+    lstms: PMap[int, eqx.nn.LSTMCell] = field(serializer=deep_serialize)
+    learning_rates: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    weight_decays: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    time_constants: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    momentums: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    kl_regularizer_betas: PMap[int, jax.Array] = field(serializer=deep_serialize)
 
 
 class LearningStates(PClass):
-    influence_tensors: PMap[int, State[JACOBIAN]] = field(serializer=deep_serialize)
+    influence_tensors: PMap[int, JACOBIAN] = field(serializer=deep_serialize)
     uoros: PMap[int, UOROState] = field(serializer=deep_serialize)
     midpoint_buffers: PMap[int, MidpointBuffer] = field(serializer=deep_serialize)
-    opt_states: PMap[int, State[optax.OptState]] = field(serializer=deep_serialize)
+    opt_states: PMap[int, optax.OptState] = field(serializer=deep_serialize)
 
 
 class ModelStates(PClass):
-    recurrent_states: PMap[int, RecurrentState] = field(serializer=deep_serialize)
+    recurrent_states: PMap[int, jax.Array] = field(serializer=deep_serialize)
     vanilla_recurrent_states: PMap[int, VanillaRecurrentState] = field(serializer=deep_serialize)
     lstm_states: PMap[int, LSTMState] = field(serializer=deep_serialize)
-    autoregressive_predictions: PMap[int, State[jax.Array]] = field(serializer=deep_serialize)
+    autoregressive_predictions: PMap[int, jax.Array] = field(serializer=deep_serialize)
 
 
 class LevelMeta(PClass):
-    log: State[Logs] = field(serializer=deep_serialize)
-    prngs: PMap[int, State[PRNG]] = field(serializer=deep_serialize)
-    ticks: PMap[int, State[jax.Array]] = field(serializer=deep_serialize)  # batched
+    log: Logs = field(serializer=deep_serialize)
+    prngs: PMap[int, PRNG] = field(serializer=deep_serialize)
+    ticks: PMap[int, jax.Array] = field(serializer=deep_serialize)
 
 
 class GodState(PClass):

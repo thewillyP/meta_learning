@@ -3,7 +3,7 @@ import itertools
 import jax
 import jax.numpy as jnp
 from typing import Callable, Iterator, NamedTuple
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, random_split
 import torch
 import torchvision
 from toolz import mapcat

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable
 
 import jax
 import math

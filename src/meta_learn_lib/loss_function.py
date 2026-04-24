@@ -6,7 +6,8 @@ from typing import Callable
 from meta_learn_lib.config import *
 from meta_learn_lib.env import Logs, Outputs
 from meta_learn_lib.interface import GodInterface
-from meta_learn_lib.lib_types import LOSS, STAT
+from meta_learn_lib.lib_types import LOSS, STAT, S_ID
+from meta_learn_lib.constants import TASK
 from meta_learn_lib.util import accuracy, hyperparameter_reparametrization
 
 
@@ -38,39 +39,35 @@ def nan_if_masked(value: jax.Array, has_label: jax.Array) -> jax.Array:
 def get_env_stats[ENV](
     config: GodConfig,
     env: ENV,
-    meta_interfaces: dict[str, GodInterface[ENV]],
-    task_interface: GodInterface[ENV],
+    interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
 ) -> STAT:
     stat: STAT = {}
-
-    def get_hp_value(interface: GodInterface[ENV], kind: HyperparameterConfig.Kind) -> jax.Array:
-        match kind:
-            case "learning_rate":
-                p = interface.get_learning_rate(env)
-            case "weight_decay":
-                p = interface.get_weight_decay(env)
-            case "momentum":
-                p = interface.get_momentum(env)
-            case "time_constant":
-                p = interface.get_time_constant(env)
-            case "kl_regularizer_beta":
-                p = interface.get_kl_regularizer_beta(env)
-        return p.value
+    task_interface = interfaces[(TASK, level)]
 
     for hp_name, hp_config in config.hyperparameters.items():
         if hp_config.level != level:
             continue
-        iface = meta_interfaces.get(hp_name)
-        if iface is None:
+        if (hp_name, hp_config.level) not in interfaces:
             continue
-        raw = get_hp_value(iface, hp_config.kind)
+        iface = interfaces[(hp_name, hp_config.level)]
+        match hp_config.kind:
+            case "learning_rate":
+                raw = iface.learning_rate.get(env)
+            case "weight_decay":
+                raw = iface.weight_decay.get(env)
+            case "momentum":
+                raw = iface.momentum.get(env)
+            case "time_constant":
+                raw = iface.time_constant.get(env)
+            case "kl_regularizer_beta":
+                raw = iface.kl_regularizer_beta.get(env)
         forward, _ = hyperparameter_reparametrization(hp_config.hyperparameter_parametrization)
         values = forward(raw)
         for i in range(hp_config.count):
             stat[f"level{level}/{hp_config.kind}/{hp_name}/{i}"] = jax.lax.stop_gradient(values[i])
 
-    logs: Logs = task_interface.get_logs(env)
+    logs: Logs = task_interface.logs.get(env)
     if logs.gradient is not None:
         stat[f"level{level}/gradient_norm"] = jax.lax.stop_gradient(jnp.linalg.norm(logs.gradient))
     if logs.largest_eigenvalue is not None:
@@ -157,7 +154,7 @@ def create_loss_fn[ENV](
                 x, target = data
                 recon_loss, stats = inner_loss_fn(env, outputs, (x, x))
 
-                beta = task_interface.get_kl_regularizer_beta(env).value
+                beta = task_interface.kl_regularizer_beta.get(env)
                 mask = target != label_mask_value
                 kl_value = kl(posterior, prior, outputs, mask)
 
@@ -171,23 +168,20 @@ def create_loss_fn[ENV](
 
 def create_readout_loss_fns[ENV](
     config: GodConfig,
-    task_interfaces: list[GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
     readouts: list[Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]],
-    meta_interfaces: list[dict[str, GodInterface[ENV]]],
 ) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]]:
 
     def compose(
         loss_fn: Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]],
         readout: Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs],
         level: int,
-        interfaces: dict[str, GodInterface[ENV]],
-        task_interface: GodInterface[ENV],
     ) -> Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]:
         def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, LOSS, STAT]:
             outputs = readout(env, data)
             loss, stat = loss_fn(env, outputs, data)
             stat = {f"level{level}/{k}": v for k, v in stat.items()}
-            stat |= get_env_stats(config, env, interfaces, task_interface, level)
+            stat |= get_env_stats(config, env, interfaces, level)
             return env, loss, stat
 
         return fn
@@ -198,14 +192,10 @@ def create_readout_loss_fns[ENV](
                 meta_config.objective_fn,
                 config.label_mask_value,
                 config.unlabeled_mask_value,
-                task_interface,
+                interfaces[(TASK, level)],
             ),
             readout,
             level,
-            interfaces,
-            task_interface,
         )
-        for level, (meta_config, task_interface, readout, interfaces) in enumerate(
-            zip(config.levels, task_interfaces, readouts, meta_interfaces)
-        )
+        for level, (meta_config, readout) in enumerate(zip(config.levels, readouts))
     ]

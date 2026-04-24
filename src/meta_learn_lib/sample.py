@@ -16,7 +16,7 @@ from meta_learn_lib.env import Outputs
 from meta_learn_lib.inference import ReadoutFn, TransitionFn, create_raw_inference
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.logger import Logger
-from meta_learn_lib.lib_types import PRNG
+from meta_learn_lib.lib_types import PRNG, S_ID
 
 
 type SampleRunner[ENV] = Callable[[ENV, Logger, PRNG, int], None]
@@ -62,12 +62,11 @@ def validate_sample_generators(config: GodConfig) -> list[str]:
 
 def build_sample_runner[ENV](
     config: GodConfig,
-    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
     data_sources: list[list[PrematerializedTask]],
     sample_prng: PRNG,
     iterations_per_epoch: int,
 ) -> SampleRunner[ENV]:
-    meta_interface = meta_interfaces[0]
 
     def make_sample_fn(t: TransitionFn[ENV], r: ReadoutFn[ENV]) -> Callable[[ENV, jax.Array], jax.Array]:
         def sample_fn(env: ENV, z: jax.Array) -> jax.Array:
@@ -84,7 +83,8 @@ def build_sample_runner[ENV](
             sg.transition_graph,
             sg.readout_graph,
             merged_nodes,
-            meta_interface,
+            interfaces,
+            0,
         )
         sample_fns.append((sg, make_sample_fn(transition_fn, readout_fn)))
 

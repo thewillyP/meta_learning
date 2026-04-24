@@ -3,7 +3,6 @@ from typing import Iterable
 import equinox as eqx
 import jax
 
-from meta_learn_lib.env import *
 from meta_learn_lib.interface import Accessor
 
 

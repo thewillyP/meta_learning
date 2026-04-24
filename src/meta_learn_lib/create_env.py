@@ -3,7 +3,6 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from pyrsistent import pmap
 import functools
 from pyrsistent import pmap, pvector
 from toposort import toposort_flatten

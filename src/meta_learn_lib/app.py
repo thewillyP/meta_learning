@@ -16,14 +16,14 @@ import queue
 from meta_learn_lib.checkpoint import CheckpointManager, CheckpointMetadata, NullCheckpointManager
 from meta_learn_lib.config import *
 from meta_learn_lib.create_env import create_env, create_inference_axes, create_transition_fns
-from meta_learn_lib.create_interface import create_learn_interfaces, create_meta_interfaces, create_task_interfaces
+from meta_learn_lib.create_interface import build_id_map, build_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.learning import create_meta_learner
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, get_seq_len, validate_dataloader_config
-from meta_learn_lib.logger import MatplotlibLogger, ThreadedScalarLogger, create_logger
+from meta_learn_lib.logger import MatplotlibLogger, create_logger
 from meta_learn_lib.loss_function import create_readout_loss_fns
 from meta_learn_lib.sample import build_sample_runner, validate_sample_generators
 
@@ -123,8 +123,7 @@ def run(
         [
             GodConfig,
             list[tuple[tuple[int, ...], tuple[int, ...]]],
-            list[dict[str, GodInterface[GodState]]],
-            list[tuple[GodInterface[GodState], GodInterface[GodState]]],
+            dict[S_ID, GodInterface[GodState]],
         ],
         GodState,
     ],
@@ -144,40 +143,12 @@ def run(
     dataloader = create_dataloader(config, data_sources, loader_prng, task_prng)
     x, dataloader = toolz.peek(dataloader)
 
-    meta_interfaces, count = create_meta_interfaces(config, 0)
-    learn_interfaces, count = create_learn_interfaces(config, count)
-    task_interfaces, count = create_task_interfaces(config, count)
+    id_map = build_id_map(config)
+    interfaces = build_interfaces(config, id_map)
 
-    env = env_factory(config, shapes, meta_interfaces, learn_interfaces)
-
-    val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
-
-    inference_axes = [
-        create_inference_axes(env, config, meta_interface, shape, meta_config)
-        for shape, meta_interface, meta_config in zip(shapes, meta_interfaces, config.levels)
-    ]
-
-    transitions, readouts = zip(
-        *map(lambda i, a: create_inference_and_readout(config, i, a), meta_interfaces, inference_axes)
-    )
-
-    transition_fns = create_transition_fns(config, shapes, meta_interfaces, val_learn_interfaces, transitions)
-    loss_fns = create_readout_loss_fns(config, task_interfaces, readouts, meta_interfaces)
-
-    meta_learner = create_meta_learner(
-        config,
-        shapes,
-        transition_fns,
-        loss_fns,
-        list(val_learn_interfaces),
-        list(nest_learn_interfaces),
-        meta_interfaces,
-        env,
-    )
-
+    env = env_factory(config, shapes, interfaces)
     arr, static = eqx.partition(env, eqx.is_array)
 
-    # Load checkpoint if available — fresh arr serves as structure template
     start_step = 0
     loaded = checkpoint_manager.load(arr)
     if loaded is not None:
@@ -195,29 +166,51 @@ def run(
         start_step * consumption,
     )
 
-    # Advance dataloader to resume point
     if start_step > 0:
         print(f"Skipping {start_step} dataloader iterations...")
         dataloader = toolz.drop(start_step, dataloader)
     remaining = total_iterations - start_step
     dataloader = prefetch(toolz.take(remaining, dataloader), buffer_size=config.prefetch_buffer_size)
 
-    def update_fn(data: tuple, arr: GodState) -> tuple[GodState, STAT]:
-        e = eqx.combine(arr, static)
-        e, stat = meta_learner(e, data)
-        a, _ = eqx.partition(e, eqx.is_array)
-        return a, stat
+    def step(config: GodConfig, data: tuple, arr: GodState) -> tuple[GodState, STAT]:
+        env = eqx.combine(arr, static)
+        local_id_map = build_id_map(config)
+        local_interfaces = build_interfaces(config, local_id_map)
 
-    compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
+        local_inference_axes = [
+            create_inference_axes(env, config, local_interfaces, shape, level) for level, shape in enumerate(shapes)
+        ]
+        transitions, readouts = zip(
+            *[
+                create_inference_and_readout(config, local_interfaces, level, axes)
+                for level, axes in enumerate(local_inference_axes)
+            ]
+        )
+        transition_fns = create_transition_fns(config, shapes, local_interfaces, list(transitions))
+        loss_fns = create_readout_loss_fns(config, local_interfaces, list(readouts))
+        meta_learner = create_meta_learner(
+            config,
+            shapes,
+            transition_fns,
+            loss_fns,
+            local_interfaces,
+            env,
+        )
+
+        new_env, stat = meta_learner(env, data)
+        new_arr, _ = eqx.partition(new_env, eqx.is_array)
+        return new_arr, stat
+
+    compiled = eqx.filter_jit(step, donate="all-except-first").lower(config, x, arr).compile()
 
     checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
-    sample_runner = build_sample_runner(config, meta_interfaces, data_sources, sample_prng, iterations_per_epoch)
+    sample_runner = build_sample_runner(config, interfaces, data_sources, sample_prng, iterations_per_epoch)
 
     print("Starting main loop...")
 
     collected: tuple[STAT, ...] = ()
     for k, data in enumerate(dataloader):
-        arr, stats = compiled(data, arr)
+        arr, stats = compiled(config, data, arr)
         jax.block_until_ready(arr)
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
@@ -281,7 +274,7 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
 
     trained_env, _ = run(
         config,
-        lambda cfg, shapes, mi, li: create_env(cfg, shapes, mi, li, env_prng),
+        lambda cfg, shapes, interfaces: create_env(cfg, shapes, interfaces, env_prng),
         dataset_gen_prng,
         task_prng,
         sample_prng,

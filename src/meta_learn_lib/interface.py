@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
 
 import jax
+import math
 import optax
 import equinox as eqx
 
@@ -18,8 +19,8 @@ from meta_learn_lib.lib_types import JACOBIAN, PRNG, Category
 @dataclass(frozen=True)
 class ParamMeta:
     learnable: bool
-    min_value: Optional[jax.Array]
-    max_value: Optional[jax.Array]
+    min_value: float
+    max_value: float
     parametrizes_transition: bool
 
 
@@ -91,8 +92,8 @@ class GodInterface[ENV]:
 def noop_meta() -> ParamMeta:
     return ParamMeta(
         learnable=False,
-        min_value=None,
-        max_value=None,
+        min_value=-math.inf,
+        max_value=math.inf,
         parametrizes_transition=False,
     )
 

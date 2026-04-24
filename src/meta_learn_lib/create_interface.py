@@ -1,7 +1,7 @@
 import copy
 import jax
 import equinox as eqx
-from jaxtyping import PyTree
+import math
 
 from meta_learn_lib.config import *
 from meta_learn_lib.env import GodState
@@ -396,8 +396,8 @@ def param_accessor[ENV, T](
     get: Callable[[ENV], T],
     put: Callable[[ENV, T], ENV],
     learnable: bool,
-    min_value: Optional[jax.Array],
-    max_value: Optional[jax.Array],
+    min_value: float,
+    max_value: float,
     parametrizes_transition: bool,
     category: Category,
 ) -> Accessor[ENV, T]:
@@ -511,8 +511,8 @@ def build_interfaces(
                             g,
                             p,
                             learnable=is_learnable,
-                            min_value=None,
-                            max_value=None,
+                            min_value=-math.inf,
+                            max_value=math.inf,
                             parametrizes_transition=is_transition,
                             category="param",
                         ),
@@ -537,8 +537,8 @@ def build_interfaces(
                             g_wr,
                             p_wr,
                             learnable=is_learnable,
-                            min_value=None,
-                            max_value=None,
+                            min_value=-math.inf,
+                            max_value=math.inf,
                             parametrizes_transition=is_transition,
                             category="param",
                         ),
@@ -546,8 +546,8 @@ def build_interfaces(
                             g_br,
                             p_br,
                             learnable=is_learnable and nn_layer.use_bias,
-                            min_value=None,
-                            max_value=None,
+                            min_value=-math.inf,
+                            max_value=math.inf,
                             parametrizes_transition=is_transition,
                             category="param",
                         ),
@@ -555,8 +555,8 @@ def build_interfaces(
                             g_ln,
                             p_ln,
                             learnable=is_learnable and nn_layer.layer_norm is not None,
-                            min_value=None,
-                            max_value=None,
+                            min_value=-math.inf,
+                            max_value=math.inf,
                             parametrizes_transition=is_transition,
                             category="param",
                         ),
@@ -589,8 +589,8 @@ def build_interfaces(
                             g_cell,
                             p_cell,
                             learnable=is_learnable,
-                            min_value=None,
-                            max_value=None,
+                            min_value=-math.inf,
+                            max_value=math.inf,
                             parametrizes_transition=is_transition,
                             category="param",
                         ),
@@ -623,8 +623,8 @@ def build_interfaces(
                             g_cell,
                             p_cell,
                             learnable=is_learnable,
-                            min_value=None,
-                            max_value=None,
+                            min_value=-math.inf,
+                            max_value=math.inf,
                             parametrizes_transition=is_transition,
                             category="param",
                         ),

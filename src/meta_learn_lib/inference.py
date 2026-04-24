@@ -9,29 +9,31 @@ from toposort import toposort_flatten
 from meta_learn_lib.config import *
 from meta_learn_lib.env import *
 from meta_learn_lib.interface import *
+from meta_learn_lib.lib_types import *
+from meta_learn_lib.constants import *
 from meta_learn_lib.util import get_activation_fn, to_vector
 
 
 def make_vanilla_rnn_reader[ENV](interface: GodInterface[ENV]) -> Callable[[ENV], Outputs]:
     def read(env: ENV) -> Outputs:
-        rnn_state = interface.get_vanilla_rnn_state(env)
-        return Outputs(prediction=rnn_state.activation.value)
+        rnn_state = interface.vanilla_rnn_state.get(env)
+        return Outputs(prediction=rnn_state.activation)
 
     return read
 
 
 def make_gru_reader[ENV](interface: GodInterface[ENV]) -> Callable[[ENV], Outputs]:
     def read(env: ENV) -> Outputs:
-        gru_state = interface.get_gru_state(env)
-        return Outputs(prediction=gru_state.activation.value)
+        a = interface.gru_activation.get(env)
+        return Outputs(prediction=a)
 
     return read
 
 
 def make_lstm_reader[ENV](interface: GodInterface[ENV]) -> Callable[[ENV], Outputs]:
     def read(env: ENV) -> Outputs:
-        lstm_state = interface.get_lstm_state(env)
-        return Outputs(prediction=lstm_state.h.value)
+        lstm_state = interface.lstm_state.get(env)
+        return Outputs(prediction=lstm_state.h)
 
     return read
 
@@ -47,7 +49,8 @@ def make_scan_reader[ENV](sub_from_env: PMap[str, Callable[[ENV], Outputs]]) -> 
 def get_reader[ENV](
     node_graph: dict[str, set[str]],
     nodes: dict[str, Node],
-    meta_interface: dict[str, GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
 ) -> PMap[str, Callable[[ENV], Outputs]]:
     from_env: PMap[str, Callable[[ENV], Outputs]] = pmap()
     for node_name in toposort_flatten(node_graph):
@@ -55,13 +58,13 @@ def get_reader[ENV](
             case NNLayer():
                 from_env = from_env.set(node_name, lambda env: Outputs())
             case VanillaRNNLayer():
-                from_env = from_env.set(node_name, make_vanilla_rnn_reader(meta_interface[node_name]))
+                from_env = from_env.set(node_name, make_vanilla_rnn_reader(interfaces[(node_name, level)]))
             case GRULayer():
-                from_env = from_env.set(node_name, make_gru_reader(meta_interface[node_name]))
+                from_env = from_env.set(node_name, make_gru_reader(interfaces[(node_name, level)]))
             case LSTMLayer():
-                from_env = from_env.set(node_name, make_lstm_reader(meta_interface[node_name]))
+                from_env = from_env.set(node_name, make_lstm_reader(interfaces[(node_name, level)]))
             case Scan(graph, autoregressive_mask, pred_source, _start_token):
-                sub_from_env = get_reader(graph, nodes, meta_interface)
+                sub_from_env = get_reader(graph, nodes, interfaces, level)
                 from_env = from_env.set(node_name, make_scan_reader(sub_from_env))
             case (
                 Repeat()
@@ -83,13 +86,15 @@ def get_reader[ENV](
 def get_inference[ENV](
     node_graph: dict[str, set[str]],
     nodes: dict[str, Node],
-    meta_interface: dict[str, GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
     from_env: PMap[str, Callable[[ENV], Outputs]],
 ) -> Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, PMap[str, Outputs]]]:
     def infer(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, PMap[str, Outputs]]:
         outputs: PMap[str, Outputs] = pmap()
         x_data, y_data = data
         for node_name in (n for n in toposort_flatten(node_graph) if n in node_graph):
+            interface = interfaces[(node_name, level)]
             match nodes[node_name]:
                 case NNLayer():
                     deps = [
@@ -97,7 +102,7 @@ def get_inference[ENV](
                         *[outputs[n] for n in node_graph[node_name] if n in outputs],
                     ]
                     x = to_vector(deps).vector
-                    mlp = meta_interface[node_name].get_mlp_param(env).model.value
+                    mlp = interface.mlp_model.get(env)
                     y = mlp(x)
                     outputs = outputs.set(node_name, Outputs(prediction=y))
                 case VanillaRNNLayer():
@@ -106,20 +111,20 @@ def get_inference[ENV](
                         *[outputs[n] for n in node_graph[node_name] if n in outputs],
                     ]
                     x = to_vector(deps).vector
-                    w_rec = meta_interface[node_name].get_vanilla_rnn_param(env).w_rec.value
-                    b_rec = meta_interface[node_name].get_vanilla_rnn_param(env).b_rec.value
-                    rnn_state = meta_interface[node_name].get_vanilla_rnn_state(env)
-                    a = rnn_state.activation.value
+                    w_rec = interface.rnn_w_rec.get(env)
+                    b_rec = interface.rnn_b_rec.get(env)
+                    layer_norm = interface.rnn_layer_norm.get(env)
+                    rnn_state = interface.vanilla_rnn_state.get(env)
+                    a = rnn_state.activation
                     activation_fn = rnn_state.activation_fn
-                    alpha = meta_interface[node_name].get_time_constant(env).value
-                    layer_norm = meta_interface[node_name].get_vanilla_rnn_param(env).layer_norm.value
+                    alpha = interface.time_constant.get(env)
 
                     a_rec = w_rec @ jnp.concat((a, x)) + b_rec
                     a_rec = layer_norm(a_rec)
                     a_new = (1 - alpha) * a + alpha * get_activation_fn(activation_fn)(a_rec)
-                    env = meta_interface[node_name].put_vanilla_rnn_state(
+                    env = interface.vanilla_rnn_state.put(
                         env,
-                        rnn_state.set(activation=rnn_state.activation.set(value=a_new)),
+                        rnn_state.set(activation=a_new),
                     )
                     outputs = outputs.set(node_name, Outputs(prediction=a_new))
                 case GRULayer():
@@ -128,17 +133,13 @@ def get_inference[ENV](
                         *[outputs[n] for n in node_graph[node_name] if n in outputs],
                     ]
                     x = to_vector(deps).vector
-                    gru = meta_interface[node_name].get_gru_param(env).value
-                    gru_state = meta_interface[node_name].get_gru_state(env)
-                    alpha = meta_interface[node_name].get_time_constant(env).value
-                    a = gru_state.activation.value
+                    gru = interface.gru_cell.get(env)
+                    alpha = interface.time_constant.get(env)
+                    a = interface.gru_activation.get(env)
 
                     a_rec = gru(x, a)
                     a_new = (1 - alpha) * a + alpha * a_rec
-                    env = meta_interface[node_name].put_gru_state(
-                        env,
-                        gru_state.set(activation=gru_state.activation.set(value=a_new)),
-                    )
+                    env = interface.gru_activation.put(env, a_new)
                     outputs = outputs.set(node_name, Outputs(prediction=a_new))
                 case LSTMLayer():
                     deps = [
@@ -146,16 +147,16 @@ def get_inference[ENV](
                         *[outputs[n] for n in node_graph[node_name] if n in outputs],
                     ]
                     x = to_vector(deps).vector
-                    lstm = meta_interface[node_name].get_lstm_param(env).value
-                    lstm_state = meta_interface[node_name].get_lstm_state(env)
-                    alpha = meta_interface[node_name].get_time_constant(env).value
-                    h, c = lstm_state.h.value, lstm_state.c.value
+                    lstm = interface.lstm_cell.get(env)
+                    alpha = interface.time_constant.get(env)
+                    lstm_st = interface.lstm_state.get(env)
+                    h, c = lstm_st.h, lstm_st.c
                     h_rec, c_rec = lstm(x, (h, c))
                     h_new = (1 - alpha) * h + alpha * h_rec
                     c_new = (1 - alpha) * c + alpha * c_rec
-                    env = meta_interface[node_name].put_lstm_state(
+                    env = interface.lstm_state.put(
                         env,
-                        lstm_state.set(h=lstm_state.h.set(value=h_new), c=lstm_state.c.set(value=c_new)),
+                        lstm_st.set(h=h_new, c=c_new),
                     )
                     outputs = outputs.set(node_name, Outputs(prediction=h_new))
                 case Scan(graph, autoregressive_mask, pred_source, _start_token):
@@ -166,9 +167,9 @@ def get_inference[ENV](
                     x = to_vector(deps).vector
                     y = from_env[pred_source](env) if pred_source in from_env else outputs[pred_source].prediction
                     last_sub_node = toposort_flatten(graph)[-1]
-                    token = meta_interface[node_name].get_autoregressive_predictions(env).value
+                    token = interface.autoregressive_predictions.get(env)
 
-                    fn = get_inference(graph, nodes, meta_interface, pmap())
+                    fn = get_inference(graph, nodes, interfaces, level, pmap())
 
                     def step(
                         carry: tuple[ENV, jax.Array],
@@ -189,10 +190,7 @@ def get_inference[ENV](
                         return (env, new_autoregress), out
 
                     (env, new_token), predictions = jax.lax.scan(step, (env, token), (x, y))
-                    env = meta_interface[node_name].put_autoregressive_predictions(
-                        env,
-                        meta_interface[node_name].get_autoregressive_predictions(env).set(value=new_token),
-                    )
+                    env = interface.autoregressive_predictions.put(env, new_token)
                     outputs = outputs.set(node_name, Outputs(prediction=predictions))
 
                 case Repeat(i):
@@ -223,7 +221,7 @@ def get_inference[ENV](
                     x = to_vector(deps).vector
                     n = x.shape[0] // 2
                     mu, log_var = x[:n], x[n:]
-                    key, env = meta_interface[node_name].take_prng(env)
+                    key, env = interface.take_prng(env)
                     std = jnp.exp(0.5 * log_var)
                     z = mu + std * jax.random.normal(key, mu.shape)
                     outputs = outputs.set(node_name, Outputs(mu=mu, log_var=log_var, z=z))
@@ -256,11 +254,12 @@ def create_raw_inference[ENV](
     transition_graph: dict[str, set[str]],
     readout_graph: dict[str, set[str]],
     nodes: dict[str, Node],
-    meta_interface: dict[str, GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
 ) -> tuple[TransitionFn[ENV], ReadoutFn[ENV]]:
-    env_readout = get_reader(transition_graph, nodes, meta_interface)
-    raw_transition = get_inference(transition_graph, nodes, meta_interface, pmap())
-    raw_readout = get_inference(readout_graph, nodes, meta_interface, env_readout)
+    env_readout = get_reader(transition_graph, nodes, interfaces, level)
+    raw_transition = get_inference(transition_graph, nodes, interfaces, level, pmap())
+    raw_readout = get_inference(readout_graph, nodes, interfaces, level, env_readout)
     last_node = toposort_flatten(readout_graph)[-1]
 
     def transition_fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> ENV:
@@ -276,14 +275,16 @@ def create_raw_inference[ENV](
 
 def create_inference_and_readout[ENV](
     config: GodConfig,
-    meta_interface: dict[str, GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
     axes: ENV,
 ) -> tuple[TransitionFn[ENV], ReadoutFn[ENV]]:
     transition_fn, readout_fn = create_raw_inference(
         config.transition_graph,
         config.readout_graph,
         config.nodes,
-        meta_interface,
+        interfaces,
+        level,
     )
 
     transition_inference: TransitionFn[ENV] = eqx.filter_vmap(

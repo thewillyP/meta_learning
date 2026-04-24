@@ -13,6 +13,7 @@ from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.create_env import env_resetters, env_validation_resetters, make_reset_checker, make_tick_advancer
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
+from meta_learn_lib.constants import *
 from meta_learn_lib.optimizer import get_opt_step
 from meta_learn_lib.util import (
     filter_cond,
@@ -87,18 +88,18 @@ def get_forward_mode[ENV, TR_DATA, VL_DATA](
 
             def state_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, None]]:
                 def fn(state: jax.Array) -> tuple[jax.Array, None]:
-                    _env = args.learn_interface.put_state(e, state)
+                    _env = args.learn_interface.state.put(e, state)
                     _env, _ = args.transition(_env, tr_data)
-                    state = args.learn_interface.get_state(_env)
+                    state = args.learn_interface.state.get(_env)
                     return state, None
 
                 return fn
 
             def param_fn(e: ENV) -> Callable[[jax.Array], tuple[jax.Array, tuple[ENV, STAT]]]:
                 def fn(param: jax.Array) -> tuple[jax.Array, tuple[ENV, STAT]]:
-                    _env = args.learn_interface.put_param(e, param)
+                    _env = args.learn_interface.param.put(e, param)
                     _env, stat = args.transition(_env, tr_data)
-                    state = args.learn_interface.get_state(_env)
+                    state = args.learn_interface.state.get(_env)
                     _arr, _ = eqx.partition(_env, eqx.is_array)
                     return state, (_arr, stat)
 
@@ -140,33 +141,30 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         env: ENV,
     ) -> tuple[ENV, STAT]:
         _, static = eqx.partition(env, eqx.is_array)
-        s = args.learn_interface.get_state(env)
-        p = args.learn_interface.get_param(env)
-        influence_tensor_s = args.learn_interface.get_forward_mode_jacobian(env)
+        s = args.learn_interface.state.get(env)
+        p = args.learn_interface.param.get(env)
+        influence_tensor = args.learn_interface.forward_mode_jacobian.get(env)
 
         dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
-        new_influence_tensor = update_tensor(state_fn, s, dhdp, influence_tensor_s.value, env)
+        new_influence_tensor = update_tensor(state_fn, s, dhdp, influence_tensor, env)
 
         new_influence_tensor = filter_cond(
-            args.learn_interface.get_tick(env) >= start_at_step,
+            args.learn_interface.tick.get(env) >= start_at_step,
             lambda _: new_influence_tensor,
-            lambda _: influence_tensor_s.value,
+            lambda _: influence_tensor,
             None,
         )
 
-        new_env = args.learn_interface.put_forward_mode_jacobian(
-            new_env,
-            influence_tensor_s.set(value=new_influence_tensor),
-        )
+        new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
         if args.track_logs.influence_tensor_norm:
             influence_tensor_norm: jax.Array = jnp.linalg.norm(new_influence_tensor)
-            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
-        influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
-        state_jacobian = jnp.vstack([influence_tensor_s.value, jnp.eye(influence_tensor_s.value.shape[1])])
+        influence_tensor = learn_interface.forward_mode_jacobian.get(env)
+        state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
         grad = credit_gr @ state_jacobian
         return grad
 
@@ -275,10 +273,10 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
         env: ENV,
     ) -> tuple[ENV, STAT]:
         _, static = eqx.partition(env, eqx.is_array)
-        s = args.learn_interface.get_state(env)
-        p = args.learn_interface.get_param(env)
-        influence_tensor_s = args.learn_interface.get_forward_mode_jacobian(env)
-        midpoint_buffer_s = args.learn_interface.get_midpoint_buffer(env)
+        s = args.learn_interface.state.get(env)
+        p = args.learn_interface.param.get(env)
+        influence_tensor = args.learn_interface.forward_mode_jacobian.get(env)
+        mb = args.learn_interface.midpoint_buffer.get(env)
 
         dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
@@ -286,69 +284,56 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
         # JVP 2: J_t @ predictor (for corrector of interval ending at t+1)
         match config.rtrl_config.use_finite_hvp:
             case None:
-                _primals, hmp_jvp_current, _aux = jacobian_matrix_product(state_fn, s, influence_tensor_s.value)
-                _primals2, hmp_jvp_predictor, _aux2 = jacobian_matrix_product(
-                    state_fn, s, midpoint_buffer_s.predictor.value
-                )
+                _primals, hmp_jvp_current, _aux = jacobian_matrix_product(state_fn, s, influence_tensor)
+                _primals2, hmp_jvp_predictor, _aux2 = jacobian_matrix_product(state_fn, s, mb.predictor)
             case eps:
-                hmp_jvp_current = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor_s.value, eps)
-                hmp_jvp_predictor = finite_difference_jmp(
-                    lambda x: state_fn(x)[0], s, midpoint_buffer_s.predictor.value, eps
-                )
-
+                hmp_jvp_current = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor, eps)
+                hmp_jvp_predictor = finite_difference_jmp(lambda x: state_fn(x)[0], s, mb.predictor, eps)
         # Forward Euler from P_t (used as bootstrap and as next step's predictor)
         fe_update = hmp_jvp_current + dhdp
         # Midpoint corrector: P_new = P_prev + 2*((J_t - I) @ predictor + B_t)
-        midpoint_update = midpoint_buffer_s.P_prev.value + 2 * (
-            hmp_jvp_predictor - midpoint_buffer_s.predictor.value + dhdp
-        )
+        midpoint_update = mb.P_prev + 2 * (hmp_jvp_predictor - mb.predictor + dhdp)
         # First active step: forward Euler bootstrap. Subsequent: midpoint corrector.
-        is_bootstrap = args.learn_interface.get_tick(env) <= config.rtrl_config.start_at_step
+        is_bootstrap = args.learn_interface.tick.get(env) <= config.rtrl_config.start_at_step
         active_update = jnp.where(is_bootstrap, fe_update, midpoint_update)
-        influence_tensor: JACOBIAN = filter_cond(
-            args.learn_interface.get_tick(env) >= config.rtrl_config.start_at_step,
+        new_influence_tensor: JACOBIAN = filter_cond(
+            args.learn_interface.tick.get(env) >= config.rtrl_config.start_at_step,
             lambda _: active_update,
-            lambda _: influence_tensor_s.value,
+            lambda _: influence_tensor,
             None,
         )
 
-        # Buffer update: P_prev = current P_t, predictor = forward Euler from P_t
         new_P_prev = filter_cond(
-            args.learn_interface.get_tick(env) >= config.rtrl_config.start_at_step,
-            lambda _: influence_tensor_s.value,
-            lambda _: midpoint_buffer_s.P_prev.value,
+            args.learn_interface.tick.get(env) >= config.rtrl_config.start_at_step,
+            lambda _: influence_tensor,
+            lambda _: mb.P_prev,
             None,
         )
 
         new_predictor = filter_cond(
-            args.learn_interface.get_tick(env) >= config.rtrl_config.start_at_step,
+            args.learn_interface.tick.get(env) >= config.rtrl_config.start_at_step,
             lambda _: fe_update,
-            lambda _: midpoint_buffer_s.predictor.value,
+            lambda _: mb.predictor,
             None,
         )
 
-        new_env = args.learn_interface.put_forward_mode_jacobian(
-            new_env, influence_tensor_s.set(value=influence_tensor)
-        )
-        new_env = args.learn_interface.put_midpoint_buffer(
+        new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
+        new_env = args.learn_interface.midpoint_buffer.put(
             new_env,
-            MidpointBuffer(
-                P_prev=midpoint_buffer_s.P_prev.set(value=new_P_prev),
-                predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
-            ),
+            MidpointBuffer(P_prev=new_P_prev, predictor=new_predictor),
         )
 
         if args.track_logs.influence_tensor_norm:
-            readout_tensor = 0.5 * (influence_tensor + influence_tensor_s.value)
+            readout_tensor = 0.5 * (new_influence_tensor + influence_tensor)
             influence_tensor_norm = jnp.linalg.norm(readout_tensor)
-            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
 
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
-        influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
+        influence_tensor = learn_interface.forward_mode_jacobian.get(env)
         # 2-tap boxcar: average P_t and P_{t-1} for readout to kill parity mode
-        readout_tensor = 0.5 * (influence_tensor_s.value + learn_interface.get_midpoint_buffer(env).P_prev.value)
+        readout_tensor = 0.5 * (influence_tensor + learn_interface.midpoint_buffer.get(env).P_prev)
         state_jacobian = jnp.vstack([readout_tensor, jnp.eye(readout_tensor.shape[1])])
         grad = credit_gr @ state_jacobian
         return grad
@@ -368,16 +353,16 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
         env: ENV,
     ) -> tuple[ENV, STAT]:
         _, static = eqx.partition(env, eqx.is_array)
-        s = args.learn_interface.get_state(env)
-        p = args.learn_interface.get_param(env)
-        t = args.learn_interface.get_tick(env)
-        influence_tensor_s = args.learn_interface.get_forward_mode_jacobian(env)
-        midpoint_buffer_s = args.learn_interface.get_midpoint_buffer(env)
+        s = args.learn_interface.state.get(env)
+        p = args.learn_interface.param.get(env)
+        t = args.learn_interface.tick.get(env)
+        influence_tensor = args.learn_interface.forward_mode_jacobian.get(env)
+        mb = args.learn_interface.midpoint_buffer.get(env)
 
         dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
         # JVP 1: J_t @ predictor_stored (corrector slope at current tick)
-        predictor_stored = midpoint_buffer_s.predictor.value
+        predictor_stored = mb.predictor
         match config.rtrl_config.use_finite_hvp:
             case None:
                 _primals, corrector_jvp, _aux = jacobian_matrix_product(state_fn, s, predictor_stored)
@@ -386,7 +371,7 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
                 corrector_jvp = finite_difference_jmp(f, s, predictor_stored, eps)
 
         # Heun: P_new = 0.5 * (P_prev + J_t @ predictor + B_t)
-        heun_update = 0.5 * (influence_tensor_s.value + corrector_jvp + dhdp)
+        heun_update = 0.5 * (influence_tensor + corrector_jvp + dhdp)
 
         # Forward Euler (bootstrap, first active step only)
         # At bootstrap, predictor_stored == P_prev, so corrector_jvp == J_t @ P_prev
@@ -395,47 +380,41 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
         is_bootstrap = t <= rtrl_config.start_at_step
         active_update = jnp.where(is_bootstrap, fe_update, heun_update)
 
-        influence_tensor: JACOBIAN
-        influence_tensor = filter_cond(
+        new_influence_tensor: JACOBIAN
+        new_influence_tensor = filter_cond(
             t >= rtrl_config.start_at_step,
             lambda _: active_update,
-            lambda _: influence_tensor_s.value,
+            lambda _: influence_tensor,
             None,
         )
 
-        # JVP 2: J_t @ P_new (for next step's predictor)
         match config.rtrl_config.use_finite_hvp:
             case None:
-                _primals2, pred_jvp, _aux2 = jacobian_matrix_product(state_fn, s, influence_tensor)
+                _primals2, pred_jvp, _aux2 = jacobian_matrix_product(state_fn, s, new_influence_tensor)
             case eps:
                 f = lambda x: state_fn(x)[0]
-                pred_jvp = finite_difference_jmp(f, s, influence_tensor, eps)
+                pred_jvp = finite_difference_jmp(f, s, new_influence_tensor, eps)
 
         new_predictor = filter_cond(
             t >= rtrl_config.start_at_step,
             lambda _: pred_jvp + dhdp,
-            lambda _: midpoint_buffer_s.predictor.value,
+            lambda _: mb.predictor,
             None,
         )
 
-        new_env = args.learn_interface.put_forward_mode_jacobian(
-            new_env, influence_tensor_s.set(value=influence_tensor)
-        )
-        new_env = args.learn_interface.put_midpoint_buffer(
+        new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
+        new_env = args.learn_interface.midpoint_buffer.put(
             new_env,
-            MidpointBuffer(
-                P_prev=midpoint_buffer_s.P_prev,
-                predictor=midpoint_buffer_s.predictor.set(value=new_predictor),
-            ),
+            MidpointBuffer(P_prev=mb.P_prev, predictor=new_predictor),
         )
         if args.track_logs.influence_tensor_norm:
-            influence_tensor_norm = jnp.linalg.norm(influence_tensor)
-            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            influence_tensor_norm = jnp.linalg.norm(new_influence_tensor)
+            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
-        influence_tensor_s = learn_interface.get_forward_mode_jacobian(env)
-        state_jacobian = jnp.vstack([influence_tensor_s.value, jnp.eye(influence_tensor_s.value.shape[1])])
+        influence_tensor = learn_interface.forward_mode_jacobian.get(env)
+        state_jacobian = jnp.vstack([influence_tensor, jnp.eye(influence_tensor.shape[1])])
         grad = credit_gr @ state_jacobian
         return grad
 
@@ -531,45 +510,41 @@ def uoro[ENV, TR_DATA, VL_DATA](
         key, env = args.learn_interface.take_prng(env)
         mu = config.damping
         beta = config.beta
-        uoro_state = args.learn_interface.get_uoro_state(env)
-        A_s = uoro_state.A
-        B_s = uoro_state.B
-        s = args.learn_interface.get_state(env)
-        p = args.learn_interface.get_param(env)
+        uoro_st = args.learn_interface.uoro_state.get(env)
+        A = uoro_st.A
+        B = uoro_st.B
+        s = args.learn_interface.state.get(env)
+        p = args.learn_interface.param.get(env)
         random_vector = distribution(key, s.shape)
 
-        # state_fn from get_forward_mode returns (state, None); UORO wants just state for JVP
         state_only = lambda x: state_fn(x)[0]
         match config.rtrl_config.use_finite_hvp:
             case None:
-                damped_jvp = eqx.filter_jvp(state_only, (s,), (A_s.value,))[1] - mu * A_s.value
+                damped_jvp = eqx.filter_jvp(state_only, (s,), (A,))[1] - mu * A
             case eps:
-                damped_jvp = finite_difference_jvp(state_only, s, A_s.value, eps) - mu * A_s.value
-        A_propagated = beta * damped_jvp + (1 - beta) * A_s.value
+                damped_jvp = finite_difference_jvp(state_only, s, A, eps) - mu * A
+        A_propagated = beta * damped_jvp + (1 - beta) * A
         _, vjp_func, (arr, trans_stat) = eqx.filter_vjp(param_fn, p, has_aux=True)
         (immediateInfluence__random_projection,) = vjp_func(random_vector)
         scaled_immediate = beta * immediateInfluence__random_projection
         new_env = eqx.combine(arr, static)
 
-        rho0 = jnp.sqrt(optax.safe_norm(B_s.value, 1e-12) / optax.safe_norm(A_propagated, 1e-12))
+        rho0 = jnp.sqrt(optax.safe_norm(B, 1e-12) / optax.safe_norm(A_propagated, 1e-12))
         rho1 = jnp.sqrt(optax.safe_norm(scaled_immediate, 1e-12) / optax.safe_norm(random_vector, 1e-12))
 
         A_new: jax.Array = rho0 * A_propagated + rho1 * random_vector
-        B_new: jax.Array = B_s.value / rho0 + scaled_immediate / rho1
+        B_new: jax.Array = B / rho0 + scaled_immediate / rho1
 
-        new_env = args.learn_interface.put_uoro_state(
-            new_env,
-            UOROState(A=A_s.set(value=A_new), B=B_s.set(value=B_new)),
-        )
+        new_env = args.learn_interface.uoro_state.put(new_env, UOROState(A=A_new, B=B_new))
         if args.track_logs.influence_tensor_norm:
             influence_tensor_norm = jnp.linalg.norm(A_new) * jnp.linalg.norm(B_new)
-            new_env = args.learn_interface.put_logs(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
-        uoro_state = learn_interface.get_uoro_state(env)
-        A = uoro_state.A.value
-        B = uoro_state.B.value
+        uoro_st = learn_interface.uoro_state.get(env)
+        A = uoro_st.A
+        B = uoro_st.B
         return (credit_gr[..., : A.shape[0]] @ A) * B + credit_gr[..., A.shape[0] :]
 
     return get_forward_mode(args, update_influence, credit_gr_fn)
@@ -588,7 +563,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
     ) -> jax.Array:
         mu = config.damping
         beta = config.beta
-        alpha = args.learn_interface.get_time_constant(env).value
+        alpha = args.learn_interface.time_constant.get(env)
         naive = (1 - alpha) * influence_tensor + dhdp - mu * influence_tensor
         return beta * naive + (1 - beta) * influence_tensor
 
@@ -604,13 +579,13 @@ def immediate[ENV, TR_DATA, VL_DATA](
         env: ENV,
     ) -> tuple[ENV, STAT]:
         _, static = eqx.partition(env, eqx.is_array)
-        p = args.learn_interface.get_param(env)
+        p = args.learn_interface.param.get(env)
         _state, (arr, trans_stat) = param_fn(p)
         new_env = eqx.combine(arr, static)
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
-        n_s = learn_interface.get_state(env).shape[0]
+        n_s = learn_interface.state.get(env).shape[0]
         return GRADIENT(credit_gr[..., n_s:])
 
     return get_forward_mode(args, update_influence, credit_gr_fn)
@@ -628,14 +603,14 @@ def get_backward_mode[ENV, TR_DATA, VL_DATA](
             tr_data, vl_data = data
 
             if truncate_at is not None:
-                t = args.learn_interface.get_tick(env)
+                t = args.learn_interface.tick.get(env)
                 s = filter_cond(
                     t % truncate_at == 0,
-                    lambda _: jax.lax.stop_gradient(args.learn_interface.get_state(env)),
-                    lambda _: args.learn_interface.get_state(env),
+                    lambda _: jax.lax.stop_gradient(args.learn_interface.state.get(env)),
+                    lambda _: args.learn_interface.state.get(env),
                     None,
                 )
-                env = args.learn_interface.put_state(env, s)
+                env = args.learn_interface.state.put(env, s)
 
             env, trans_stat = args.transition(env, tr_data)
             env, loss, readout_stat = args.readout(env, vl_data)
@@ -666,16 +641,16 @@ def get_backward_mode_with_grad[ENV, TR_DATA, VL_DATA](
     _loss_fn = get_backward_mode(args, truncate_at)
 
     def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
-        param = args.learn_interface.get_param(env_init)
+        param = args.learn_interface.param.get(env_init)
 
         def loss_fn(p: jax.Array, ds: tuple[TR_DATA, VL_DATA]) -> tuple[LOSS, tuple[ENV, STAT]]:
-            env_with_p = args.learn_interface.put_param(env_init, p)
+            env_with_p = args.learn_interface.param.put(env_init, p)
             env, loss, stats = _loss_fn(env_with_p, ds)
-            env = args.learn_interface.put_param(env, p)
+            env = args.learn_interface.param.put(env, p)
             return loss, (env, stats)
 
         grad, (env, stats) = loss_to_grad(loss_fn, param, ds_init)
-        env = args.learn_interface.put_param(env, param)
+        env = args.learn_interface.param.put(env, param)
         return env, process_gradient(GRADIENT(grad), args.grad_config), stats
 
     return gradient_fn
@@ -735,7 +710,7 @@ def dispatch_learner[ENV, TR_DATA, VL_DATA](
 def create_validation_learners[ENV, TR_DATA, VL_DATA](
     transition_fns: list[Callable[[ENV, TR_DATA], tuple[ENV, STAT]]],
     readout_fns: list[Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]]],
-    val_learn_interfaces: list[GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
     config: GodConfig,
 ) -> tuple[
     list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]],
@@ -757,32 +732,35 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         return wrapper
 
     def make_readout_interface(interface: GodInterface[ENV]) -> GodInterface[ENV]:
+        state_acc = interface.state
+        param_acc = interface.param
+
         def get_param(env: ENV) -> jax.Array:
-            return jnp.concatenate([interface.get_state(env), interface.get_param(env)])
+            return jnp.concatenate([state_acc.get(env), param_acc.get(env)])
 
         def put_param(env: ENV, param: jax.Array) -> ENV:
-            state_size = interface.get_state(env).shape[0]
-            env = interface.put_state(env, param[:state_size])
-            env = interface.put_param(env, param[state_size:])
+            state_size = state_acc.get(env).shape[0]
+            env = state_acc.put(env, param[:state_size])
+            env = param_acc.put(env, param[state_size:])
             return env
 
         return copy.replace(
             interface,
-            get_param=get_param,
-            put_param=put_param,
-            get_state=lambda env: jnp.empty(0),
-            put_state=lambda env, s: env,
+            state=Accessor(get=lambda env: jnp.empty(0), put=lambda env, s: env, meta=noop_meta(), category=None),
+            param=Accessor(get=get_param, put=put_param, meta=noop_meta(), category=None),
         )
 
     gradient_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]] = []
     loss_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]] = []
 
-    for transition, readout_fn, interface, meta_config in zip(
-        transition_fns,
-        readout_fns,
-        val_learn_interfaces,
-        config.levels,
+    for level, (transition, readout_fn, meta_config) in enumerate(
+        zip(
+            transition_fns,
+            readout_fns,
+            config.levels,
+        )
     ):
+        interface = interfaces[(MODEL_LEARNER, level)]
         method = meta_config.learner.model_learner.method
         model_grad_config = meta_config.learner.model_learner
         length = meta_config.validation.num_steps
@@ -845,21 +823,19 @@ def create_meta_learner[ENV](
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
     transition_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, STAT]]],
     readout_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]],
-    val_learn_interfaces: list[GodInterface[ENV]],
-    nest_learn_interfaces: list[GodInterface[ENV]],
-    meta_interfaces: list[dict[str, GodInterface[ENV]]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
     env: ENV,
 ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
-    validation_learners, validation_losses = create_validation_learners(
-        transition_fns, readout_fns, val_learn_interfaces, config
-    )
-    learn_interface_pairs = list(zip(val_learn_interfaces, nest_learn_interfaces))
-    resetters = env_resetters(config, shapes, meta_interfaces, learn_interface_pairs, [False] * len(config.levels))
+    all_accessors = [
+        acc for iface in interfaces.values() for acc in interface_to_accessors(iface) if acc.category is not None
+    ]
 
-    # Per-level validation axes: marks only that level's validation states with 0
-    val_resetters = env_validation_resetters(config, shapes, meta_interfaces, val_learn_interfaces)
-    per_level_val_axes = [diff_axes(env, vr(env, jax.random.key(0))) for vr in val_resetters]
+    validation_learners, validation_losses = create_validation_learners(transition_fns, readout_fns, interfaces, config)
+    resetters = env_resetters(config, shapes, interfaces, [False] * len(config.levels))
+
+    val_resetters = env_validation_resetters(config, shapes, interfaces)
+    per_level_val_axes = [diff_axes(env, vr(env, jax.random.key(0)), all_accessors) for vr in val_resetters]
 
     def make_optimized_transition[X](
         inner: Callable[[ENV, tuple], tuple[ENV, STAT]],
@@ -869,7 +845,6 @@ def create_meta_learner[ENV](
         reset_t: int | None,
         nest_interface: GodInterface[ENV],
         assignments: dict[str, OptimizerAssignment],
-        interfaces: dict[str, GodInterface[ENV]],
         method: GradientMethod,
         grad_config: GradientConfig,
         level: int,
@@ -903,32 +878,26 @@ def create_meta_learner[ENV](
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)
-            gr_env = nest_interface.put_param(env, gradient)
-            env = get_opt_step(assignments, interfaces, env, gr_env, config.hyperparameters)
+            gr_env = nest_interface.param.put(env, gradient)
+            env = get_opt_step(assignments, interfaces, level, env, gr_env, config.hyperparameters)
             stat[f"level{level}/meta_gradient_norm"] = jax.lax.stop_gradient(jnp.linalg.norm(gradient))
             return env, stat
 
         return optimized_transition
 
-    # Collect axes for all levels
-    all_axes: list[ENV] = []
     current_transition: Callable[[ENV, tuple], tuple[ENV, STAT]] = lambda env, data: (env, {})
     current_resetter: Callable[[ENV, PRNG], ENV] = lambda env, prng: env
 
     for level in range(len(config.levels)):
         meta_config = config.levels[level]
-        nest_interface = nest_learn_interfaces[level]
+        nest_interface = interfaces[(OPTIMIZER_LEARNER, level)]
         inner_resetter, full_resetter = resetters[level]
         vl_learner = validation_learners[level]
         vl_loss = validation_losses[level]
-        interfaces = meta_interfaces[level]
 
-        axes = diff_axes(env, inner_resetter(env, jax.random.key(0)))
-        all_axes.append(axes)
+        axes = diff_axes(env, inner_resetter(env, jax.random.key(0)), all_accessors)
 
-        # N extra vmaps on readout for LOWER levels' nested dims
-        # Combine each lower level's axes with current level's validation axes
-        for ax in all_axes[:level]:
+        for ax in [diff_axes(env, resetters[l][0](env, jax.random.key(0)), all_accessors) for l in range(level)]:
             combined = eqx.combine(ax, per_level_val_axes[level])
             vl_learner = restore_broadcast(vl_learner, combined)
             vl_loss = restore_broadcast(vl_loss, combined)
@@ -946,7 +915,6 @@ def create_meta_learner[ENV](
             meta_config.nested.reset_t,
             nest_interface,
             meta_config.learner.optimizer,
-            interfaces,
             meta_config.learner.optimizer_learner.method,
             meta_config.learner.optimizer_learner,
             level,

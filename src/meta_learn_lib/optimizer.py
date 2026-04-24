@@ -5,42 +5,41 @@ import equinox as eqx
 from meta_learn_lib.config import *
 from meta_learn_lib.env import *
 from meta_learn_lib.interface import *
+from meta_learn_lib.lib_types import *
+from meta_learn_lib.constants import *
 from meta_learn_lib.util import Vector, hyperparameter_reparametrization, to_vector
 
 
-def project_parameters[ENV](env: ENV) -> ENV:
-    is_leaf = lambda x: x is None or isinstance(x, Parameter)
-
-    def clamp(x):
-        if isinstance(x, Parameter) and x.is_learnable:
-            return jax.tree.map(lambda v: jnp.clip(v, x.min_value, x.max_value), x)
-        return x
-
-    return jax.tree.map(clamp, env, is_leaf=is_leaf)
+def project_parameters[ENV](
+    env: ENV,
+    interfaces: dict[S_ID, GodInterface[ENV]],
+) -> ENV:
+    all_accs = [
+        acc
+        for iface in interfaces.values()
+        for acc in interface_to_accessors(iface)
+        if acc.category is not None and isinstance(acc.meta, ParamMeta) and acc.meta.learnable
+    ]
+    for acc in all_accs:
+        val = acc.get(env)
+        if val is not None:
+            env = acc.put(env, jax.tree.map(lambda v: jnp.clip(v, acc.meta.min_value, acc.meta.max_value), val))
+    return env
 
 
 def get_parameters[ENV](
     assignment: OptimizerAssignment,
-    meta_interfaces: dict[str, GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
     env: ENV,
 ) -> Vector[ENV]:
     mask = jax.tree.map(lambda _: False, env)
 
     for name in assignment.target:
-        interface = meta_interfaces[name]
-        for get_fn, put_fn in [
-            (interface.get_mlp_param, interface.put_mlp_param),
-            (interface.get_vanilla_rnn_param, interface.put_vanilla_rnn_param),
-            (interface.get_gru_param, interface.put_gru_param),
-            (interface.get_lstm_param, interface.put_lstm_param),
-            (interface.get_learning_rate, interface.put_learning_rate),
-            (interface.get_weight_decay, interface.put_weight_decay),
-            (interface.get_momentum, interface.put_momentum),
-            (interface.get_time_constant, interface.put_time_constant),
-            (interface.get_kl_regularizer_beta, interface.put_kl_regularizer_beta),
-        ]:
-            if get_fn(env) is not None:
-                mask = put_fn(mask, True)
+        interface = interfaces[(name, level)]
+        for acc in interface_to_accessors(interface):
+            if acc.category == "param" and acc.get(env) is not None:
+                mask = acc.put(mask, True)
 
     params, _ = eqx.partition(env, mask, is_leaf=lambda x: x is None)
     return to_vector(params)
@@ -81,9 +80,9 @@ def get_opt[ENV](
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(hps[weight_decay].hyperparameter_parametrization)
             m_forward, _ = hyperparameter_reparametrization(hps[momentum].hyperparameter_parametrization)
-            lr = interface.get_learning_rate(env).value
-            wd = interface.get_weight_decay(env).value
-            m = interface.get_momentum(env).value
+            lr = interface.learning_rate.get(env)
+            wd = interface.weight_decay.get(env)
+            m = interface.momentum.get(env)
             return optax.chain(
                 optax.add_decayed_weights(wd_forward(wd)),
                 optax.sgd(lr_forward(lr), momentum=m_forward(m)),
@@ -92,9 +91,9 @@ def get_opt[ENV](
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(hps[weight_decay].hyperparameter_parametrization)
             m_forward, _ = hyperparameter_reparametrization(hps[momentum].hyperparameter_parametrization)
-            lr = interface.get_learning_rate(env).value
-            wd = interface.get_weight_decay(env).value
-            m = interface.get_momentum(env).value
+            lr = interface.learning_rate.get(env)
+            wd = interface.weight_decay.get(env)
+            m = interface.momentum.get(env)
             return optax.chain(
                 optax.normalize_by_update_norm(scale_factor=1.0),
                 optax.add_decayed_weights(wd_forward(wd)),
@@ -104,9 +103,9 @@ def get_opt[ENV](
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(hps[weight_decay].hyperparameter_parametrization)
             m_forward, _ = hyperparameter_reparametrization(hps[momentum].hyperparameter_parametrization)
-            lr = interface.get_learning_rate(env).value
-            wd = interface.get_weight_decay(env).value
-            m = interface.get_momentum(env).value
+            lr = interface.learning_rate.get(env)
+            wd = interface.weight_decay.get(env)
+            m = interface.momentum.get(env)
             return optax.chain(
                 optax.adamw(
                     lr_forward(lr),
@@ -120,9 +119,9 @@ def get_opt[ENV](
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(hps[weight_decay].hyperparameter_parametrization)
             m_forward, _ = hyperparameter_reparametrization(hps[momentum].hyperparameter_parametrization)
-            lr = interface.get_learning_rate(env).value
-            wd = interface.get_weight_decay(env).value
-            m = interface.get_momentum(env).value
+            lr = interface.learning_rate.get(env)
+            wd = interface.weight_decay.get(env)
+            m = interface.momentum.get(env)
             return optax.chain(
                 scale_by_sign_of_param(),
                 add_scalar_wd(wd_forward(wd)),
@@ -139,38 +138,36 @@ def get_batched_env_and_axes[ENV](
     match assignment.optimizer:
         case SGDConfig() | SGDNormalizedConfig() | AdamConfig() | ExponentiatedGradientConfig():
             hp_values = [
-                jnp.atleast_1d(interface.get_learning_rate(env).value),
-                jnp.atleast_1d(interface.get_weight_decay(env).value),
-                jnp.atleast_1d(interface.get_momentum(env).value),
+                jnp.atleast_1d(interface.learning_rate.get(env)),
+                jnp.atleast_1d(interface.weight_decay.get(env)),
+                jnp.atleast_1d(interface.momentum.get(env)),
             ]
             K = min(v.shape[0] for v in hp_values)
-            batched_env = interface.put_learning_rate(env, interface.get_learning_rate(env).set(value=hp_values[0][:K]))
-            batched_env = interface.put_weight_decay(
-                batched_env, interface.get_weight_decay(env).set(value=hp_values[1][:K])
-            )
-            batched_env = interface.put_momentum(batched_env, interface.get_momentum(env).set(value=hp_values[2][:K]))
+            batched_env = interface.learning_rate.put(env, hp_values[0][:K])
+            batched_env = interface.weight_decay.put(batched_env, hp_values[1][:K])
+            batched_env = interface.momentum.put(batched_env, hp_values[2][:K])
 
             env_axes = jax.tree.map(lambda _: None, batched_env)
-            env_axes = interface.put_learning_rate(env_axes, 0)
-            env_axes = interface.put_weight_decay(env_axes, 0)
-            env_axes = interface.put_momentum(env_axes, 0)
+            env_axes = interface.learning_rate.put(env_axes, 0)
+            env_axes = interface.weight_decay.put(env_axes, 0)
+            env_axes = interface.momentum.put(env_axes, 0)
 
     return K, batched_env, env_axes
 
 
 def get_opt_state[ENV](
     assignments: dict[str, OptimizerAssignment],
-    meta_interfaces: dict[str, GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
     env: ENV,
     hps: dict[HP, HyperparameterConfig],
-    track_influence_in: frozenset[int],
 ) -> ENV:
 
     for assignment_name, assignment in assignments.items():
-        interface = meta_interfaces[assignment_name]
+        interface = interfaces[(assignment_name, level)]
 
-        param_vec: Vector = get_parameters(assignment, meta_interfaces, env)
-        flat_params = param_vec.vector  # (N,)
+        param_vec: Vector = get_parameters(assignment, interfaces, level, env)
+        flat_params = param_vec.vector
 
         K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
 
@@ -182,32 +179,33 @@ def get_opt_state[ENV](
 
         batched_opt_state = jax.vmap(init_one, in_axes=(env_axes, 0))(batched_env, param_chunks)
 
-        env = interface.put_opt_state(env, State(value=batched_opt_state, is_stateful=track_influence_in))
+        env = interface.opt_state.put(env, batched_opt_state)
 
     return env
 
 
 def get_opt_step[ENV](
     assignments: dict[str, OptimizerAssignment],
-    meta_interfaces: dict[str, GodInterface[ENV]],
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
     env: ENV,
     gr_env: ENV,
     hps: dict[HP, HyperparameterConfig],
 ) -> ENV:
     for assignment_name, assignment in assignments.items():
-        interface = meta_interfaces[assignment_name]
+        interface = interfaces[(assignment_name, level)]
 
-        param_vec: Vector = get_parameters(assignment, meta_interfaces, env)
-        gr_vec: Vector = get_parameters(assignment, meta_interfaces, gr_env)
-        flat_params = param_vec.vector  # (N,)
-        flat_gr = gr_vec.vector  # (N,)
+        param_vec: Vector = get_parameters(assignment, interfaces, level, env)
+        gr_vec: Vector = get_parameters(assignment, interfaces, level, gr_env)
+        flat_params = param_vec.vector
+        flat_gr = gr_vec.vector
 
         K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
 
         chunk_size = flat_params.shape[0] // K
         param_chunks = flat_params[: K * chunk_size].reshape(K, chunk_size)
         gr_chunks = flat_gr[: K * chunk_size].reshape(K, chunk_size)
-        batched_opt_state = interface.get_opt_state(env).value
+        batched_opt_state = interface.opt_state.get(env)
 
         def update_one(
             env_slice: ENV, gr_chunk: jax.Array, param_chunk: jax.Array, opt_state
@@ -227,7 +225,7 @@ def get_opt_step[ENV](
         )
 
         new_params = new_param_chunks.reshape(-1)
-        env = interface.put_opt_state(env, interface.get_opt_state(env).set(value=new_opt_state))
+        env = interface.opt_state.put(env, new_opt_state)
         env = put_parameters(env, param_vec.to_param(new_params))
 
-    return project_parameters(env)
+    return project_parameters(env, interfaces)

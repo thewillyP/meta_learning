@@ -159,7 +159,9 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
         if args.track_logs.influence_tensor_norm:
             influence_tensor_norm: jax.Array = jnp.linalg.norm(new_influence_tensor)
-            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env = args.learn_interface.logs.put(
+                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            )
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
@@ -326,7 +328,9 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
         if args.track_logs.influence_tensor_norm:
             readout_tensor = 0.5 * (new_influence_tensor + influence_tensor)
             influence_tensor_norm = jnp.linalg.norm(readout_tensor)
-            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env = args.learn_interface.logs.put(
+                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            )
 
         return new_env, trans_stat
 
@@ -409,7 +413,9 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
         )
         if args.track_logs.influence_tensor_norm:
             influence_tensor_norm = jnp.linalg.norm(new_influence_tensor)
-            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env = args.learn_interface.logs.put(
+                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            )
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
@@ -538,7 +544,9 @@ def uoro[ENV, TR_DATA, VL_DATA](
         new_env = args.learn_interface.uoro_state.put(new_env, UOROState(A=A_new, B=B_new))
         if args.track_logs.influence_tensor_norm:
             influence_tensor_norm = jnp.linalg.norm(A_new) * jnp.linalg.norm(B_new)
-            new_env = args.learn_interface.logs.put(new_env, Logs(influence_tensor_norm=influence_tensor_norm))
+            new_env = args.learn_interface.logs.put(
+                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            )
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:

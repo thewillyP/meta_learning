@@ -69,10 +69,7 @@ def get_logs(level: int):
 
 def put_logs(level: int):
     def fn(env: GodState, logs: Logs) -> GodState:
-        return env.transform(
-            ["level_meta", level, "log"],
-            lambda old: old.set(**{k: v for k, v in logs.serialize().items() if v is not None}),
-        )
+        return env.transform(["level_meta", level, "log"], lambda _: logs)
 
     return fn
 

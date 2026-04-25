@@ -31,6 +31,21 @@ def put_prng(key: int, level: int):
     return fn
 
 
+def prng_fns(
+    key: int, level: int
+) -> tuple[
+    Callable[[GodState], PRNG],
+    Callable[[GodState, PRNG], GodState],
+]:
+    def get(env: GodState) -> PRNG:
+        return env.level_meta[level].prngs.get(key)
+
+    def put(env: GodState, val: PRNG) -> GodState:
+        return env.transform(["level_meta", level, "prngs", key], lambda _: val)
+
+    return get, put
+
+
 def get_tick(i: int, level: int):
     def fn(env: GodState) -> jax.Array:
         return env.level_meta[level].ticks.get(i)
@@ -414,6 +429,11 @@ def param_accessor[ENV, T](
     )
 
 
+def prng_accessor(key: int, level: int) -> Accessor[GodState, PRNG]:
+    g, p = prng_fns(key, level)
+    return Accessor(get=g, put=p, meta=noop_meta(), category=None)
+
+
 def state_accessor[ENV, T](
     get: Callable[[ENV], T],
     put: Callable[[ENV, T], ENV],
@@ -506,6 +526,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(si, level),
                         put_prng=put_prng(si, level),
+                        prng=prng_accessor(si, level),
                         logs=logs_acc,
                         mlp_model=param_accessor(
                             g,
@@ -532,6 +553,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(si, level),
                         put_prng=put_prng(si, level),
+                        prng=prng_accessor(si, level),
                         logs=logs_acc,
                         rnn_w_rec=param_accessor(
                             g_wr,
@@ -584,6 +606,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(si, level),
                         put_prng=put_prng(si, level),
+                        prng=prng_accessor(si, level),
                         logs=logs_acc,
                         gru_cell=param_accessor(
                             g_cell,
@@ -618,6 +641,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(si, level),
                         put_prng=put_prng(si, level),
+                        prng=prng_accessor(si, level),
                         logs=logs_acc,
                         lstm_cell=param_accessor(
                             g_cell,
@@ -646,6 +670,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(si, level),
                         put_prng=put_prng(si, level),
+                        prng=prng_accessor(si, level),
                         logs=logs_acc,
                         autoregressive_predictions=state_accessor(g_ap, p_ap, is_stateful=val_track, category="state"),
                     )
@@ -655,6 +680,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(si, level),
                         put_prng=put_prng(si, level),
+                        prng=prng_accessor(si, level),
                         logs=logs_acc,
                     )
 
@@ -681,6 +707,7 @@ def build_interfaces(
                     default,
                     take_prng=take_prng(hi, hp.level),
                     put_prng=put_prng(hi, hp.level),
+                    prng=prng_accessor(hi, hp.level),
                     logs=logs_acc,
                     learning_rate=param_accessor(g, p, **hp_meta_kw),
                 )
@@ -690,6 +717,7 @@ def build_interfaces(
                     default,
                     take_prng=take_prng(hi, hp.level),
                     put_prng=put_prng(hi, hp.level),
+                    prng=prng_accessor(hi, hp.level),
                     logs=logs_acc,
                     weight_decay=param_accessor(g, p, **hp_meta_kw),
                 )
@@ -699,6 +727,7 @@ def build_interfaces(
                     default,
                     take_prng=take_prng(hi, hp.level),
                     put_prng=put_prng(hi, hp.level),
+                    prng=prng_accessor(hi, hp.level),
                     logs=logs_acc,
                     momentum=param_accessor(g, p, **hp_meta_kw),
                 )
@@ -708,6 +737,7 @@ def build_interfaces(
                     default,
                     take_prng=take_prng(hi, hp.level),
                     put_prng=put_prng(hi, hp.level),
+                    prng=prng_accessor(hi, hp.level),
                     logs=logs_acc,
                     time_constant=param_accessor(g, p, **hp_meta_kw),
                 )
@@ -717,6 +747,7 @@ def build_interfaces(
                     default,
                     take_prng=take_prng(hi, hp.level),
                     put_prng=put_prng(hi, hp.level),
+                    prng=prng_accessor(hi, hp.level),
                     logs=logs_acc,
                     kl_regularizer_beta=param_accessor(g, p, **hp_meta_kw),
                 )
@@ -745,6 +776,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(oi, level),
                         put_prng=put_prng(oi, level),
+                        prng=prng_accessor(oi, level),
                         logs=logs_acc,
                         opt_state=state_accessor(g_os, p_os, is_stateful=nested_track, category="learning_state"),
                         learning_rate=param_accessor(
@@ -793,6 +825,7 @@ def build_interfaces(
                     default,
                     take_prng=take_prng(ti, level),
                     put_prng=put_prng(ti, level),
+                    prng=prng_accessor(ti, level),
                     logs=logs_acc,
                     kl_regularizer_beta=param_accessor(
                         g_kl,
@@ -809,6 +842,7 @@ def build_interfaces(
                     default,
                     take_prng=take_prng(ti, level),
                     put_prng=put_prng(ti, level),
+                    prng=prng_accessor(ti, level),
                     logs=logs_acc,
                 )
 
@@ -831,6 +865,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(li, level),
                         put_prng=put_prng(li, level),
+                        prng=prng_accessor(li, level),
                         tick=tick_acc,
                         logs=logs_acc,
                         forward_mode_jacobian=state_accessor(
@@ -848,6 +883,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(li, level),
                         put_prng=put_prng(li, level),
+                        prng=prng_accessor(li, level),
                         tick=tick_acc,
                         logs=logs_acc,
                         forward_mode_jacobian=state_accessor(
@@ -868,6 +904,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(li, level),
                         put_prng=put_prng(li, level),
+                        prng=prng_accessor(li, level),
                         tick=tick_acc,
                         logs=logs_acc,
                         forward_mode_jacobian=state_accessor(
@@ -893,6 +930,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(li, level),
                         put_prng=put_prng(li, level),
+                        prng=prng_accessor(li, level),
                         tick=tick_acc,
                         logs=logs_acc,
                         uoro_state=state_accessor(g_uo, p_uo, is_stateful=nested_track, category="learning_state"),
@@ -903,6 +941,7 @@ def build_interfaces(
                         default,
                         take_prng=take_prng(li, level),
                         put_prng=put_prng(li, level),
+                        prng=prng_accessor(li, level),
                         tick=tick_acc,
                         logs=logs_acc,
                     )

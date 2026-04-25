@@ -14,14 +14,21 @@ def create_axes[ENV](env: ENV, accessors: Iterable[Accessor[ENV, int | None]]) -
 
 
 def diff_axes[ENV](old_env: ENV, new_env: ENV, accessors: Iterable[Accessor[ENV, object]]) -> ENV:
-    axes = jax.tree.map(lambda _: None, new_env)
+    old_leaf_ids: set[int] = set()
     for acc in accessors:
         old_val = acc.get(old_env)
-        new_val = acc.get(new_env)
-        if old_val is None or new_val is None:
+        if old_val is None:
             continue
-        old_ids = {id(a) for a in jax.tree.leaves(old_val) if eqx.is_array(a)}
+        for a in jax.tree.leaves(old_val):
+            if eqx.is_array(a):
+                old_leaf_ids.add(id(a))
+
+    axes = jax.tree.map(lambda _: None, new_env)
+    for acc in accessors:
+        new_val = acc.get(new_env)
+        if new_val is None:
+            continue
         new_arrays = [a for a in jax.tree.leaves(new_val) if eqx.is_array(a)]
-        if new_arrays and not all(id(a) in old_ids for a in new_arrays):
+        if new_arrays and not all(id(a) in old_leaf_ids for a in new_arrays):
             axes = acc.put(axes, 0)
     return axes

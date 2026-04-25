@@ -334,9 +334,7 @@ def vmap_factory[ENV](
     interfaces: dict[S_ID, GodInterface[ENV]],
 ) -> Callable[[ENV, PRNG], ENV]:
 
-    all_accessors = [
-        acc for iface in interfaces.values() for acc in interface_to_accessors(iface) if acc.category is not None
-    ]
+    all_accessors = [acc for iface in interfaces.values() for acc in interface_to_accessors(iface)]
 
     def vmap_env(env: ENV, prng: PRNG) -> ENV:
         k1, k2, prng = jax.random.split(prng, 3)
@@ -757,7 +755,5 @@ def create_inference_axes[ENV](
     node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
     f = lambda e, k: create_inference_state(config.nodes, interfaces, level, node_features, False, e, k)
 
-    all_accessors = [
-        acc for iface in interfaces.values() for acc in interface_to_accessors(iface) if acc.category is not None
-    ]
+    all_accessors = [acc for iface in interfaces.values() for acc in interface_to_accessors(iface)]
     return diff_axes(env, f(env, jax.random.key(0)), all_accessors)

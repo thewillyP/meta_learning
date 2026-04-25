@@ -13,6 +13,7 @@ Tests:
 
 import random
 import os
+from typing import Callable, Iterator, NamedTuple
 import numpy as np
 import torch
 import toolz
@@ -21,24 +22,36 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from meta_learn_lib.config import *
+from meta_learn_lib.constants import MODEL_LEARNER
+from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.create_env import (
     create_env,
     create_inference_axes,
     create_transition_fns,
+    env_resetters,
     env_validation_resetters,
     make_tick_advancer,
 )
-from meta_learn_lib.create_interface import (
-    create_learn_interfaces,
-    create_meta_interfaces,
-    create_task_interfaces,
-)
+from meta_learn_lib.create_interface import build_id_map, build_interfaces
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
+from meta_learn_lib.interface import GodInterface, interface_to_accessors
 from meta_learn_lib.learning import create_meta_learner, create_validation_learners
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.loss_function import create_readout_loss_fns
+
+
+class Setup(NamedTuple):
+    env: GodState
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]]
+    interfaces: dict[S_ID, GodInterface[GodState]]
+    transition_fns: list[Callable[[GodState, tuple[jax.Array, jax.Array]], tuple[GodState, STAT]]]
+    loss_fns: list[Callable[[GodState, tuple[jax.Array, jax.Array]], tuple[GodState, LOSS, STAT]]]
+    inference_axes: list[GodState]
+    data_sample: tuple
+    dataloader: Iterator
+    meta_learner: Callable[[GodState, tuple], tuple[GodState, STAT]]
 
 
 # ============================================================================
@@ -52,12 +65,17 @@ NUM_CLASSES = 10
 def make_single_level_config(method: GradientMethod) -> GodConfig:
     """Single-level config. `method` is the model_learner method at level 0."""
     return GodConfig(
-        seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1),
+        seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
         clearml_run=True,
         data_root_dir="/scratch/wlp9800/datasets",
         log_dir="/tmp",
         log_title="test",
-        logger_config=[],
+        logger_config=LoggersConfig(
+            clearml=ClearMLLoggerConfig(enabled=False),
+            hdf5=HDF5LoggerConfig(enabled=False),
+            console=ConsoleLoggerConfig(enabled=False),
+            matplotlib=MatplotlibLoggerConfig(save_dir="/tmp", enabled=False),
+        ),
         epochs=1,
         checkpoint_every_n_minibatches=1,
         checkpoint_every_n_epochs=0,
@@ -167,7 +185,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                         scale=1.0,
                     ),
                     optimizer_learner=GradientConfig(
-                        method=RTRLConfig(start_at_step=0, damping=0.0, beta=1.0),
+                        method=RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None),
                         add_clip=None,
                         scale=1.0,
                     ),
@@ -194,9 +212,11 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                 test_seed=0,
             ),
         ],
+        sample_generators=[],
         label_mask_value=-1.0,
         unlabeled_mask_value=-100.0,
         num_tasks=1,
+        prefetch_buffer_size=1,
     )
 
 
@@ -228,54 +248,36 @@ def setup_env_and_fns(config: GodConfig):
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    meta_interfaces, count = create_meta_interfaces(config, 0)
-    learn_interfaces, count = create_learn_interfaces(config, count)
-    task_interfaces, count = create_task_interfaces(config, count)
+    id_map = build_id_map(config)
+    interfaces = build_interfaces(config, id_map)
 
-    env = create_env(config, shapes, meta_interfaces, learn_interfaces, env_prng)
-
-    val_learn_interfaces, nest_learn_interfaces = zip(*learn_interfaces)
+    env = create_env(config, shapes, interfaces, env_prng)
 
     inference_axes = [
-        create_inference_axes(env, config, mi, s, mc) for s, mi, mc in zip(shapes, meta_interfaces, config.levels)
+        create_inference_axes(env, config, interfaces, s, lvl) for lvl, s in enumerate(shapes)
     ]
 
     transitions, readouts = zip(
-        *[create_inference_and_readout(config, mi, ax) for mi, ax in zip(meta_interfaces, inference_axes)]
+        *[create_inference_and_readout(config, interfaces, lvl, ax) for lvl, ax in enumerate(inference_axes)]
     )
 
-    transition_fns = create_transition_fns(
-        config, shapes, meta_interfaces, list(val_learn_interfaces), list(transitions)
-    )
-    loss_fns = create_readout_loss_fns(config, list(task_interfaces), list(readouts), meta_interfaces)
+    transition_fns = create_transition_fns(config, shapes, interfaces, list(transitions))
+    loss_fns = create_readout_loss_fns(config, interfaces, list(readouts))
 
-    meta_learner = create_meta_learner(
-        config,
-        shapes,
-        transition_fns,
-        loss_fns,
-        list(val_learn_interfaces),
-        list(nest_learn_interfaces),
-        meta_interfaces,
-        env,
-    )
+    meta_learner = create_meta_learner(config, shapes, transition_fns, loss_fns, interfaces, env)
 
     data_sample, dataloader = toolz.peek(dataloader)
 
-    return (
-        env,  # 0
-        shapes,  # 1
-        meta_interfaces,  # 2
-        learn_interfaces,  # 3
-        task_interfaces,  # 4
-        transition_fns,  # 5
-        loss_fns,  # 6
-        val_learn_interfaces,  # 7
-        nest_learn_interfaces,  # 8
-        inference_axes,  # 9
-        data_sample,  # 10
-        dataloader,  # 11
-        meta_learner,  # 12
+    return Setup(
+        env=env,
+        shapes=shapes,
+        interfaces=interfaces,
+        transition_fns=transition_fns,
+        loss_fns=loss_fns,
+        inference_axes=inference_axes,
+        data_sample=data_sample,
+        dataloader=dataloader,
+        meta_learner=meta_learner,
     )
 
 
@@ -290,21 +292,21 @@ def test_rtrl_vs_bptt_level0():
     print("=" * 60)
 
     config_bptt = make_single_level_config(BPTTConfig(truncate_at=None))
-    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0))
+    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None))
 
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
 
-    data = stuff_bptt[10]
+    data = stuff_bptt.data_sample
 
     # Verify initial envs are identical
-    params_init_bptt = stuff_bptt[7][0].get_param(stuff_bptt[0])
-    params_init_rtrl = stuff_rtrl[7][0].get_param(stuff_rtrl[0])
+    params_init_bptt = stuff_bptt.interfaces[(MODEL_LEARNER, 0)].param.get(stuff_bptt.env)
+    params_init_rtrl = stuff_rtrl.interfaces[(MODEL_LEARNER, 0)].param.get(stuff_rtrl.env)
     init_diff = jnp.max(jnp.abs(params_init_bptt - params_init_rtrl))
     print(f"  Initial param diff: {init_diff:.2e}")
 
-    env_bptt_after, stats_bptt = stuff_bptt[12](stuff_bptt[0], data)
-    env_rtrl_after, stats_rtrl = stuff_rtrl[12](stuff_rtrl[0], data)
+    env_bptt_after, stats_bptt = stuff_bptt.meta_learner(stuff_bptt.env, data)
+    env_rtrl_after, stats_rtrl = stuff_rtrl.meta_learner(stuff_rtrl.env, data)
 
     # Compare meta-gradient norms.
     # optimizer_learner is RTRL in both configs, differentiating through the
@@ -323,10 +325,10 @@ def test_rtrl_vs_bptt_level0():
 
     # Compare params after one step — the model_learner gradient (BPTT vs RTRL)
     # feeds into SGD. If equivalent, params are identical after one step.
-    val_interface_bptt = stuff_bptt[7][0]
-    val_interface_rtrl = stuff_rtrl[7][0]
-    params_bptt = val_interface_bptt.get_param(env_bptt_after)
-    params_rtrl = val_interface_rtrl.get_param(env_rtrl_after)
+    val_interface_bptt = stuff_bptt.interfaces[(MODEL_LEARNER, 0)]
+    val_interface_rtrl = stuff_rtrl.interfaces[(MODEL_LEARNER, 0)]
+    params_bptt = val_interface_bptt.param.get(env_bptt_after)
+    params_rtrl = val_interface_rtrl.param.get(env_rtrl_after)
     param_diff = jnp.max(jnp.abs(params_bptt - params_rtrl))
 
     print(f"  Max abs param difference: {param_diff:.2e}")
@@ -347,41 +349,35 @@ def test_validation_gradient_rtrl_vs_bptt():
     print("TEST 1b: Validation gradient RTRL vs BPTT (direct)")
     print("=" * 60)
 
-    from meta_learn_lib.create_env import env_resetters
-    from meta_learn_lib.create_axes import diff_axes
-
     config_bptt = make_single_level_config(BPTTConfig(truncate_at=None))
-    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0))
+    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None))
 
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
 
     # Rebuild validation learners to get model_learner gradients directly
-    vl_learners_bptt, _ = create_validation_learners(stuff_bptt[5], stuff_bptt[6], list(stuff_bptt[7]), config_bptt)
-    vl_learners_rtrl, _ = create_validation_learners(stuff_rtrl[5], stuff_rtrl[6], list(stuff_rtrl[7]), config_rtrl)
+    vl_learners_bptt, _ = create_validation_learners(stuff_bptt.transition_fns, stuff_bptt.loss_fns, stuff_bptt.interfaces, config_bptt)
+    vl_learners_rtrl, _ = create_validation_learners(stuff_rtrl.transition_fns, stuff_rtrl.loss_fns, stuff_rtrl.interfaces, config_rtrl)
     vl_bptt = vl_learners_bptt[0]
     vl_rtrl = vl_learners_rtrl[0]
 
-    env_bptt = stuff_bptt[0]
-    env_rtrl = stuff_rtrl[0]
+    env_bptt = stuff_bptt.env
+    env_rtrl = stuff_rtrl.env
 
     # Compute axes for vmap (to peel nested.batch dim)
     def get_axes(config, stuff):
-        resetters = env_resetters(
-            config,
-            stuff[1],
-            stuff[2],
-            list(zip(stuff[7], stuff[8])),
-            [False] * len(config.levels),
-        )
+        resetters = env_resetters(config, stuff.shapes, stuff.interfaces, [False] * len(config.levels))
         inner_resetter, _ = resetters[0]
-        return diff_axes(stuff[0], inner_resetter(stuff[0], jax.random.key(0)))
+        accessors = [
+            acc for iface in stuff.interfaces.values() for acc in interface_to_accessors(iface)
+        ]
+        return diff_axes(stuff.env, inner_resetter(stuff.env, jax.random.key(0)), accessors)
 
     axes_bptt = get_axes(config_bptt, stuff_bptt)
     axes_rtrl = get_axes(config_rtrl, stuff_rtrl)
 
     # Extract validation data from dataloader batch
-    data_batch = stuff_bptt[10]
+    data_batch = stuff_bptt.data_sample
     step_data = jax.tree.map(lambda x: x[0], data_batch)
     _, vl_data = step_data
 
@@ -419,21 +415,20 @@ def test_reset_state():
 
     config = make_single_level_config(BPTTConfig(truncate_at=None))
     stuff = setup_env_and_fns(config)
-    env = stuff[0]
-    val_learn_interfaces = stuff[7]
-    val_interface = val_learn_interfaces[0]
+    env = stuff.env
+    val_interface = stuff.interfaces[(MODEL_LEARNER, 0)]
 
-    val_resetters = env_validation_resetters(config, stuff[1], stuff[2], list(val_learn_interfaces))
+    val_resetters = env_validation_resetters(config, stuff.shapes, stuff.interfaces)
     resetter = val_resetters[0]
 
-    state_before = val_interface.get_state(env)
+    state_before = val_interface.state.get(env)
     print(f"  State norm before reset:  {jnp.linalg.norm(state_before):.6f}")
 
-    env_corrupted = val_interface.put_state(env, state_before + 999.0)
-    print(f"  State norm after corrupt: {jnp.linalg.norm(val_interface.get_state(env_corrupted)):.6f}")
+    env_corrupted = val_interface.state.put(env, state_before + 999.0)
+    print(f"  State norm after corrupt: {jnp.linalg.norm(val_interface.state.get(env_corrupted)):.6f}")
 
     env_reset = resetter(env_corrupted, jax.random.key(77))
-    state_after = val_interface.get_state(env_reset)
+    state_after = val_interface.state.get(env_reset)
     print(f"  State norm after reset:   {jnp.linalg.norm(state_after):.6f}")
 
     assert jnp.allclose(state_after, jnp.zeros_like(state_after), atol=1e-6), (
@@ -453,18 +448,17 @@ def test_reset_preserves_params():
 
     config = make_single_level_config(BPTTConfig(truncate_at=None))
     stuff = setup_env_and_fns(config)
-    env = stuff[0]
-    val_learn_interfaces = stuff[7]
-    val_interface = val_learn_interfaces[0]
+    env = stuff.env
+    val_interface = stuff.interfaces[(MODEL_LEARNER, 0)]
 
-    val_resetters = env_validation_resetters(config, stuff[1], stuff[2], list(val_learn_interfaces))
+    val_resetters = env_validation_resetters(config, stuff.shapes, stuff.interfaces)
     resetter = val_resetters[0]
 
-    param_before = val_interface.get_param(env)
+    param_before = val_interface.param.get(env)
     print(f"  Param norm before reset: {jnp.linalg.norm(param_before):.6f}")
 
     env_reset = resetter(env, jax.random.key(77))
-    param_after = val_interface.get_param(env_reset)
+    param_after = val_interface.param.get(env_reset)
     print(f"  Param norm after reset:  {jnp.linalg.norm(param_after):.6f}")
 
     diff = jnp.max(jnp.abs(param_before - param_after))
@@ -482,31 +476,30 @@ def test_reset_zeros_influence_tensor():
     print("TEST 4: Reset zeros influence tensor")
     print("=" * 60)
 
-    config = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0))
+    config = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None))
     stuff = setup_env_and_fns(config)
-    env = stuff[0]
-    val_learn_interfaces = stuff[7]
-    val_interface = val_learn_interfaces[0]
+    env = stuff.env
+    val_interface = stuff.interfaces[(MODEL_LEARNER, 0)]
 
-    J = val_interface.get_forward_mode_jacobian(env)
-    print(f"  Influence tensor shape: {J.value.shape}")
-    print(f"  Influence tensor norm (init): {jnp.linalg.norm(J.value):.6f}")
+    J = val_interface.forward_mode_jacobian.get(env)
+    print(f"  Influence tensor shape: {J.shape}")
+    print(f"  Influence tensor norm (init): {jnp.linalg.norm(J):.6f}")
 
-    assert J.value.shape[1] > 0, f"Influence tensor has zero state dim — test is vacuous"
+    assert J.shape[1] > 0, f"Influence tensor has zero state dim — test is vacuous"
 
-    env_corrupted = val_interface.put_forward_mode_jacobian(env, J.set(value=J.value + 100.0))
+    env_corrupted = val_interface.forward_mode_jacobian.put(env, J + 100.0)
     print(
-        f"  Influence tensor norm (corrupted): {jnp.linalg.norm(val_interface.get_forward_mode_jacobian(env_corrupted).value):.6f}"
+        f"  Influence tensor norm (corrupted): {jnp.linalg.norm(val_interface.forward_mode_jacobian.get(env_corrupted)):.6f}"
     )
 
-    val_resetters = env_validation_resetters(config, stuff[1], stuff[2], list(val_learn_interfaces))
+    val_resetters = env_validation_resetters(config, stuff.shapes, stuff.interfaces)
     resetter = val_resetters[0]
     env_reset = resetter(env_corrupted, jax.random.key(77))
-    J_after = val_interface.get_forward_mode_jacobian(env_reset)
-    print(f"  Influence tensor norm (after reset): {jnp.linalg.norm(J_after.value):.6f}")
+    J_after = val_interface.forward_mode_jacobian.get(env_reset)
+    print(f"  Influence tensor norm (after reset): {jnp.linalg.norm(J_after):.6f}")
 
-    assert jnp.linalg.norm(J_after.value) < 50.0, (
-        f"Influence tensor not re-initialized after reset, norm={jnp.linalg.norm(J_after.value):.2f}"
+    assert jnp.linalg.norm(J_after) < 50.0, (
+        f"Influence tensor not re-initialized after reset, norm={jnp.linalg.norm(J_after):.2f}"
     )
 
 
@@ -522,22 +515,21 @@ def test_tick_reset():
 
     config = make_single_level_config(BPTTConfig(truncate_at=None))
     stuff = setup_env_and_fns(config)
-    env = stuff[0]
-    val_learn_interfaces = stuff[7]
-    val_interface = val_learn_interfaces[0]
+    env = stuff.env
+    val_interface = stuff.interfaces[(MODEL_LEARNER, 0)]
 
-    tick_init = val_interface.get_tick(env)
+    tick_init = val_interface.tick.get(env)
     print(f"  Tick at init: {tick_init}")
 
     advance = make_tick_advancer(val_interface)
     env4 = advance(advance(advance(env)))
-    tick_after_3 = val_interface.get_tick(env4)
+    tick_after_3 = val_interface.tick.get(env4)
     print(f"  Tick after 3 advances: {tick_after_3}")
 
-    val_resetters = env_validation_resetters(config, stuff[1], stuff[2], list(val_learn_interfaces))
+    val_resetters = env_validation_resetters(config, stuff.shapes, stuff.interfaces)
     resetter = val_resetters[0]
     env_reset = resetter(env4, jax.random.key(77))
-    tick_after_reset = val_interface.get_tick(env_reset)
+    tick_after_reset = val_interface.tick.get(env_reset)
     print(f"  Tick after reset: {tick_after_reset}")
 
     assert int(tick_after_reset) == 0, f"Tick not reset to 0, got {tick_after_reset}"
@@ -553,10 +545,10 @@ def test_identity_learner():
     print("TEST 6: Identity learner produces zero meta-gradient")
     print("=" * 60)
 
-    config = make_single_level_config(IdentityLearnerConfig())
+    config = make_single_level_config(IdentityLearnerConfig(bptt_config=BPTTConfig(None)))
     stuff = setup_env_and_fns(config)
 
-    _, stats = stuff[12](stuff[0], stuff[10])
+    _, stats = stuff.meta_learner(stuff.env, stuff.data_sample)
     grad_norm = stats["level0/meta_gradient_norm"]
     print(f"  Gradient norm: {grad_norm:.2e}")
 
@@ -575,9 +567,8 @@ def test_reset_checker_fires_correctly():
 
     config = make_single_level_config(BPTTConfig(truncate_at=None))
     stuff = setup_env_and_fns(config)
-    env = stuff[0]
-    val_learn_interfaces = stuff[7]
-    val_interface = val_learn_interfaces[0]
+    env = stuff.env
+    val_interface = stuff.interfaces[(MODEL_LEARNER, 0)]
 
     advance = make_tick_advancer(val_interface)
     reset_t = 5
@@ -586,7 +577,7 @@ def test_reset_checker_fires_correctly():
     would_reset = []
     env_cur = env
     for i in range(12):
-        t = val_interface.get_tick(env_cur).squeeze()
+        t = val_interface.tick.get(env_cur).squeeze()
         tick_vals.append(int(t))
         would_reset.append(bool(int(t) % reset_t == 0))
         env_cur = advance(env_cur)

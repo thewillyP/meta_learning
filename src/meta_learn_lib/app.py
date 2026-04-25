@@ -87,7 +87,7 @@ def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> tuple[int,
 
 def make_eval_config(config: GodConfig) -> GodConfig:
     identity_grad = GradientConfig(
-        method=IdentityLearnerConfig(),
+        method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
         add_clip=None,
         scale=1.0,
     )

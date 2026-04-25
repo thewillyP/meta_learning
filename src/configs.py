@@ -220,7 +220,7 @@ OHO_RNN32 = GodConfig(
                             start_at_step=0,
                             damping=1e-5,
                             beta=1.0,
-                            finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                            use_finite_hvp=1e-3,
                         ),
                         num_arnoldi_iters=10,
                     ),
@@ -281,12 +281,12 @@ OHO_RNN32 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -530,7 +530,7 @@ OHO_RNN32_ADAM = GodConfig(
                         start_at_step=0,
                         damping=0.0,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -587,12 +587,12 @@ OHO_RNN32_ADAM = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -855,7 +855,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -914,12 +914,12 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -1161,7 +1161,7 @@ OHO_RNN256_V2 = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -1220,12 +1220,12 @@ OHO_RNN256_V2 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -1467,7 +1467,7 @@ OHO_RNN256_V3 = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -1524,12 +1524,12 @@ OHO_RNN256_V3 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -1765,7 +1765,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -1819,12 +1819,12 @@ OHO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -2068,8 +2068,12 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 optimizer_learner=GradientConfig(
                     method=RFLOConfig(
                         time_constant="meta2_rflo_time_constant",
-                        damping=0.0,
-                        beta=0.1,
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
+                            damping=0.0,
+                            beta=0.1,
+                            use_finite_hvp=None,
+                        ),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -2123,12 +2127,12 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -2325,12 +2329,12 @@ RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -2374,12 +2378,12 @@ RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -2611,7 +2615,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -2665,12 +2669,12 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -2902,7 +2906,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -2956,12 +2960,12 @@ OHO_GRU128_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -3233,7 +3237,7 @@ VAE_BETA_OHO = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     # method=RTRLConfig(
                     #     start_at_step=0,
@@ -3303,12 +3307,12 @@ VAE_BETA_OHO = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -3599,7 +3603,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                         start_at_step=0,
                         damping=0,
                         beta=0.01,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     # method=RTRLConfig(
                     #     start_at_step=0,
@@ -3669,12 +3673,12 @@ VAE_BETA_OHO_ADAM = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -4004,7 +4008,7 @@ VAE_LR_OHO = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -4068,12 +4072,12 @@ VAE_LR_OHO = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -4326,7 +4330,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                         start_at_step=0,
                         damping=1e-5,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -4382,12 +4386,12 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -4651,7 +4655,7 @@ VAE_BASELINE = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -4703,12 +4707,12 @@ VAE_BASELINE = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -4957,13 +4961,14 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=UOROFiniteDiffConfig(
-                        epsilon=1e-3,
-                        uoro_config=UOROConfig(
-                            std=1.0,
-                            distribution="uniform",
+                    method=UOROConfig(
+                        std=1.0,
+                        distribution="uniform",
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
                             damping=0.0,
                             beta=0.1,
+                            use_finite_hvp=1e-3,
                         ),
                     ),
                     add_clip=None,
@@ -5018,12 +5023,12 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -5261,13 +5266,14 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=UOROFiniteDiffConfig(
-                        epsilon=1e-3,
-                        uoro_config=UOROConfig(
-                            std=1.0,
-                            distribution="uniform",
+                    method=UOROConfig(
+                        std=1.0,
+                        distribution="uniform",
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
                             damping=1e-2,
                             beta=0.1,
+                            use_finite_hvp=1e-3,
                         ),
                     ),
                     add_clip=None,
@@ -5327,12 +5333,12 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -5567,8 +5573,12 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                     method=UOROConfig(
                         std=1e-3,
                         distribution="normal",
-                        damping=1e-4,
-                        beta=0.1,
+                        rtrl_config=RTRLConfig(
+                            start_at_step=0,
+                            damping=1e-4,
+                            beta=0.1,
+                            use_finite_hvp=None,
+                        ),
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5622,12 +5632,12 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
@@ -5869,7 +5879,7 @@ OHO_RNN32_TEST = GodConfig(
                         start_at_step=0,
                         damping=1e-4,
                         beta=0.1,
-                        finite_hvp=RTRLFiniteHvpConfig(epsilon=1e-3),
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5926,12 +5936,12 @@ OHO_RNN32_TEST = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=IdentityLearnerConfig(),
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
                 ),

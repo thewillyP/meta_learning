@@ -827,9 +827,7 @@ def create_meta_learner[ENV](
     env: ENV,
 ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
-    all_accessors = [
-        acc for iface in interfaces.values() for acc in interface_to_accessors(iface) if acc.category is not None
-    ]
+    all_accessors = [acc for iface in interfaces.values() for acc in interface_to_accessors(iface)]
 
     validation_learners, validation_losses = create_validation_learners(transition_fns, readout_fns, interfaces, config)
     resetters = env_resetters(config, shapes, interfaces, [False] * len(config.levels))

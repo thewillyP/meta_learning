@@ -61,6 +61,7 @@ def build_mask[ENV](
 class GodInterface[ENV]:
     take_prng: Callable[[ENV], tuple[PRNG, ENV]]
     put_prng: Callable[[ENV, PRNG], ENV]
+    prng: Accessor[ENV, PRNG]
     tick: Accessor[ENV, jax.Array]
     logs: Accessor[ENV, Logs]
     state: Accessor[ENV, jax.Array]
@@ -106,6 +107,7 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
     return GodInterface[ENV](
         take_prng=lambda env: (None, env),
         put_prng=lambda env, v: env,
+        prng=noop(),
         tick=noop(),
         logs=noop(),
         state=noop(),
@@ -134,10 +136,9 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
 
 def interface_to_accessors[ENV, T](interface: GodInterface[ENV]) -> list[Accessor[ENV, T]]:
     return [
+        interface.prng,
         interface.tick,
         interface.logs,
-        interface.state,
-        interface.param,
         interface.mlp_model,
         interface.rnn_w_rec,
         interface.rnn_b_rec,

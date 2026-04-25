@@ -4,7 +4,7 @@ import equinox as eqx
 import math
 
 from meta_learn_lib.config import *
-from meta_learn_lib.env import GodState
+from meta_learn_lib.env import RNN, GodState
 from meta_learn_lib.interface import *
 from meta_learn_lib.util import to_vector
 from meta_learn_lib.constants import *
@@ -97,6 +97,21 @@ def mlp_model(
     return get, put
 
 
+def upsert_rnn[T](
+    level: int,
+    i: int,
+    set_field: Callable[[RNN, T], RNN],
+) -> Callable[[GodState, T], GodState]:
+    def fn(env: GodState, val: T) -> GodState:
+        def update(existing):
+            base = existing if isinstance(existing, RNN) else RNN()
+            return set_field(base, val)
+
+        return env.transform(["meta_parameters", level, "rnns", i], update)
+
+    return fn
+
+
 def rnn_w_rec(
     i: int, level: int
 ) -> tuple[
@@ -104,11 +119,10 @@ def rnn_w_rec(
     Callable[[GodState, jax.Array], GodState],
 ]:
     def get(env: GodState) -> jax.Array:
-        return env.meta_parameters[level].rnns.get(i).w_rec
+        rnn = env.meta_parameters[level].rnns.get(i)
+        return None if rnn is None else rnn.w_rec
 
-    def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["meta_parameters", level, "rnns", i, "w_rec"], lambda _: val)
-
+    put = upsert_rnn(level, i, lambda rnn, v: rnn.set(w_rec=v))
     return get, put
 
 
@@ -119,11 +133,10 @@ def rnn_b_rec(
     Callable[[GodState, jax.Array], GodState],
 ]:
     def get(env: GodState) -> jax.Array:
-        return env.meta_parameters[level].rnns.get(i).b_rec
+        rnn = env.meta_parameters[level].rnns.get(i)
+        return None if rnn is None else rnn.b_rec
 
-    def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["meta_parameters", level, "rnns", i, "b_rec"], lambda _: val)
-
+    put = upsert_rnn(level, i, lambda rnn, v: rnn.set(b_rec=v))
     return get, put
 
 
@@ -134,11 +147,10 @@ def rnn_layer_norm(
     Callable[[GodState, eqx.Module], GodState],
 ]:
     def get(env: GodState) -> eqx.Module:
-        return env.meta_parameters[level].rnns.get(i).layer_norm
+        rnn = env.meta_parameters[level].rnns.get(i)
+        return None if rnn is None else rnn.layer_norm
 
-    def put(env: GodState, val: eqx.Module) -> GodState:
-        return env.transform(["meta_parameters", level, "rnns", i, "layer_norm"], lambda _: val)
-
+    put = upsert_rnn(level, i, lambda rnn, v: rnn.set(layer_norm=v))
     return get, put
 
 

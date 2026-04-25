@@ -21,9 +21,9 @@ class Logs(PClass):
 
 
 class RNN(PClass):
-    w_rec: jax.Array = field(serializer=deep_serialize)
-    b_rec: jax.Array = field(serializer=deep_serialize)
-    layer_norm: eqx.Module = field(serializer=deep_serialize)
+    w_rec: jax.Array = field(initial=None, serializer=deep_serialize)
+    b_rec: jax.Array = field(initial=None, serializer=deep_serialize)
+    layer_norm: eqx.Module = field(initial=None, serializer=deep_serialize)
 
 
 class VanillaRecurrentState(PClass):

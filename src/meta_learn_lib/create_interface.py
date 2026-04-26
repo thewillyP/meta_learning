@@ -390,18 +390,18 @@ def build_id_map(config: GodConfig) -> dict[S_ID, int]:
     keys: list[S_ID] = []
 
     # shared params — one per node, level=None
-    keys.extend((name, None) for name in config.nodes)
+    keys.extend((name, None) for name in sorted(config.nodes))
 
     # per-level states — one per (node, level)
     for level in range(len(config.levels)):
-        keys.extend((name, level) for name in config.nodes)
+        keys.extend((name, level) for name in sorted(config.nodes))
 
     # HPs — each at its own level
-    keys.extend((name, hp.level) for name, hp in config.hyperparameters.items())
+    keys.extend((name, hp.level) for name, hp in sorted(config.hyperparameters.items()))
 
     # per-level optimizers
     for level, mc in enumerate(config.levels):
-        keys.extend((name, level) for name in mc.learner.optimizer)
+        keys.extend((name, level) for name in sorted(mc.learner.optimizer))
 
     # per-level learners and tasks
     for level in range(len(config.levels)):

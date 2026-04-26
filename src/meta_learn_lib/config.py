@@ -276,7 +276,7 @@ class LSTMLayer:
 
 @dataclass(frozen=True)
 class Scan:  # Wraps around a layer and repeats it in an unfold manner
-    graph: dict[str, set[str]]
+    graph: dict[str, frozenset[str]]
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     pred_source: str  # which node in the graph to source teacher predictions.
     start_token: Literal["zeros"]
@@ -427,8 +427,8 @@ type SampleReporter = Union[ImageReporter]
 
 @dataclass(frozen=True)
 class SampleGeneratorConfig:
-    transition_graph: dict[str, set[str]]
-    readout_graph: dict[str, set[str]]
+    transition_graph: dict[str, frozenset[str]]
+    readout_graph: dict[str, frozenset[str]]
     source_nodes: dict[str, Node]
     input_shape: tuple[int, ...]
     num_samples: int
@@ -486,8 +486,8 @@ class GodConfig(eqx.Module):
     checkpoint_every_n_minibatches: int
     checkpoint_every_n_epochs: int
 
-    transition_graph: dict[str, set[str]]
-    readout_graph: dict[str, set[str]]
+    transition_graph: dict[str, frozenset[str]]
+    readout_graph: dict[str, frozenset[str]]
     nodes: dict[str, Node]
     hyperparameters: dict[HP, HyperparameterConfig]
 

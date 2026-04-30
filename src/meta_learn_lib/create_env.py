@@ -14,7 +14,7 @@ from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
-from meta_learn_lib.optimizer import get_opt_state
+from meta_learn_lib.optimizer import init_opt_state
 from meta_learn_lib.util import filter_cond, get_activation_fn, hyperparameter_reparametrization
 
 
@@ -507,14 +507,12 @@ def reset_params_hyperparams_optimizer[ENV](
         k2, prng = jax.random.split(prng, 2)
         env = create_hyperparameters(hyperparameters, interfaces, learnables_per_level, env, k2)
 
-        env = get_opt_state(
-            meta_config.learner.optimizer,
-            interfaces,
-            level,
-            env,
-            hyperparameters,
-            meta_config.nested.track_influence_in,
-        )
+        for assignment_name, assignment in meta_config.learner.optimizer.items():
+            opt_value = init_opt_state(assignment_name, assignment, interfaces, level, env, hyperparameters)
+            env = interfaces[(assignment_name, level)].opt_state.put_tagged(
+                env,
+                Tagged(value=opt_value, meta=StateMeta(is_stateful=meta_config.nested.track_influence_in)),
+            )
 
         k3, prng = jax.random.split(prng, 2)
         env = factory(env, k3)

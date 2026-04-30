@@ -215,14 +215,11 @@ OHO_RNN32 = GodConfig(
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImplicitEulerRTRLConfig(
-                        rtrl_config=RTRLConfig(
-                            start_at_step=0,
-                            damping=1e-5,
-                            beta=1.0,
-                            use_finite_hvp=1e-3,
-                        ),
-                        num_arnoldi_iters=10,
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=0.0,
+                        beta=0.1,
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,

@@ -161,36 +161,27 @@ def get_batched_env_and_axes[ENV](
     return K, batched_env, env_axes
 
 
-def get_opt_state[ENV](
-    assignments: dict[str, OptimizerAssignment],
+def init_opt_state[ENV](
+    assignment_name: str,
+    assignment: OptimizerAssignment,
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
     env: ENV,
     hps: dict[HP, HyperparameterConfig],
-    track_influence_in: frozenset[int],
-) -> ENV:
+) -> optax.OptState:
+    interface = interfaces[(assignment_name, level)]
+    param_vec: Vector = get_parameters(assignment, interfaces, level, env)
+    flat_params = param_vec.vector
 
-    for assignment_name, assignment in assignments.items():
-        interface = interfaces[(assignment_name, level)]
+    K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
 
-        param_vec: Vector = get_parameters(assignment, interfaces, level, env)
-        flat_params = param_vec.vector
+    chunk_size = flat_params.shape[0] // K
+    param_chunks = flat_params[: K * chunk_size].reshape(K, chunk_size)
 
-        K, batched_env, env_axes = get_batched_env_and_axes(assignment, env, interface)
+    def init_one(env_slice: ENV, param_chunk: jax.Array) -> optax.OptState:
+        return get_opt(assignment, env_slice, interface, hps).init(param_chunk)
 
-        chunk_size = flat_params.shape[0] // K
-        param_chunks = flat_params[: K * chunk_size].reshape(K, chunk_size)
-
-        def init_one(env_slice: ENV, param_chunk: jax.Array) -> optax.OptState:
-            return get_opt(assignment, env_slice, interface, hps).init(param_chunk)
-
-        batched_opt_state = jax.vmap(init_one, in_axes=(env_axes, 0))(batched_env, param_chunks)
-
-        env = interface.opt_state.put_tagged(
-            env, Tagged(value=batched_opt_state, meta=StateMeta(is_stateful=track_influence_in))
-        )
-
-    return env
+    return jax.vmap(init_one, in_axes=(env_axes, 0))(batched_env, param_chunks)
 
 
 def get_opt_step[ENV](

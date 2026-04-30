@@ -221,7 +221,7 @@ OHO_RNN32 = GodConfig(
                         beta=0.1,
                         use_finite_hvp=1e-3,
                     ),
-                    add_clip=None,
+                    add_clip=HardClip(1.0),
                     scale=1.0,
                 ),
                 optimizer={

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import jax
 import equinox as eqx
 import optax
+from jaxtyping import PyTree
 
 from meta_learn_lib.config import *
 from meta_learn_lib.env import RNN, GodState, Tagged, ParamMeta, StateMeta, Logs
@@ -13,8 +14,30 @@ from meta_learn_lib.constants import *
 from meta_learn_lib.lib_types import *
 
 
-def read_only[ENV, T](acc: Accessor[ENV, T]) -> Accessor[ENV, T]:
-    return Accessor(get=acc.get, put=lambda env, v: env, put_tagged=lambda env, v: env)
+def make_param_lens(owned: list[Accessor[GodState, PyTree]]) -> Accessor[GodState, jax.Array]:
+    is_leaf = lambda x: x is None or isinstance(x, Tagged)
+
+    def keep_if_learnable(x):
+        if isinstance(x, Tagged) and isinstance(x.meta, ParamMeta) and x.meta.learnable:
+            return x
+        return None
+
+    def get(env: GodState) -> jax.Array:
+        f_env = jax.tree.map(keep_if_learnable, env, is_leaf=is_leaf)
+        values = [acc.get(f_env) for acc in owned]
+        return to_vector(values).vector
+
+    def put(env: GodState, vec: jax.Array) -> GodState:
+        f_env = jax.tree.map(keep_if_learnable, env, is_leaf=is_leaf)
+        values = [acc.get(f_env) for acc in owned]
+        new_values = to_vector(values).to_param(vec)
+        new_env = env
+        for acc, new_val in zip(owned, new_values):
+            if new_val is not None:
+                new_env = acc.put(new_env, new_val)
+        return new_env
+
+    return Accessor(get=get, put=put, put_tagged=lambda env, v: env)
 
 
 # ============================================================================
@@ -469,49 +492,59 @@ def build_interfaces(
 
             match node:
                 case NNLayer():
+                    mlp = mlp_model(pi, 0)
                     interfaces[(name, level)] = copy.replace(
                         default,
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        mlp_model=mlp_model(pi, 0),
+                        mlp_model=mlp,
+                        param=make_param_lens([mlp]),
                     )
 
                 case VanillaRNNLayer(_, _, tc):
                     hp_cfg = config.hyperparameters[tc]
                     hi = id_map[(tc, hp_cfg.level)]
+                    w_rec = rnn_w_rec(pi, 0)
+                    b_rec = rnn_b_rec(pi, 0)
+                    ln = rnn_layer_norm(pi, 0)
                     interfaces[(name, level)] = copy.replace(
                         default,
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        rnn_w_rec=rnn_w_rec(pi, 0),
-                        rnn_b_rec=rnn_b_rec(pi, 0),
-                        rnn_layer_norm=rnn_layer_norm(pi, 0),
+                        rnn_w_rec=w_rec,
+                        rnn_b_rec=b_rec,
+                        rnn_layer_norm=ln,
                         vanilla_rnn_state=vanilla_rnn_state(si, level),
-                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
+                        time_constant=time_constant(hi, hp_cfg.level),
+                        param=make_param_lens([w_rec, b_rec, ln]),
                     )
 
                 case GRULayer(_, _, _, tc):
                     hp_cfg = config.hyperparameters[tc]
                     hi = id_map[(tc, hp_cfg.level)]
+                    cell = gru_cell(pi, 0)
                     interfaces[(name, level)] = copy.replace(
                         default,
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        gru_cell=gru_cell(pi, 0),
+                        gru_cell=cell,
                         gru_activation=gru_activation(si, level),
-                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
+                        time_constant=time_constant(hi, hp_cfg.level),
+                        param=make_param_lens([cell]),
                     )
 
                 case LSTMLayer(_, _, _, tc):
                     hp_cfg = config.hyperparameters[tc]
                     hi = id_map[(tc, hp_cfg.level)]
+                    cell = lstm_cell(pi, 0)
                     interfaces[(name, level)] = copy.replace(
                         default,
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        lstm_cell=lstm_cell(pi, 0),
+                        lstm_cell=cell,
                         lstm_state=lstm_state(si, level),
-                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
+                        time_constant=time_constant(hi, hp_cfg.level),
+                        param=make_param_lens([cell]),
                     )
 
                 case Scan():
@@ -544,15 +577,20 @@ def build_interfaces(
 
         match hp.kind:
             case "learning_rate":
-                interfaces[(name, hp.level)] = copy.replace(base, learning_rate=learning_rate(hi, hp.level))
+                lr = learning_rate(hi, hp.level)
+                interfaces[(name, hp.level)] = copy.replace(base, learning_rate=lr, param=make_param_lens([lr]))
             case "weight_decay":
-                interfaces[(name, hp.level)] = copy.replace(base, weight_decay=weight_decay(hi, hp.level))
+                wd = weight_decay(hi, hp.level)
+                interfaces[(name, hp.level)] = copy.replace(base, weight_decay=wd, param=make_param_lens([wd]))
             case "momentum":
-                interfaces[(name, hp.level)] = copy.replace(base, momentum=momentum(hi, hp.level))
+                m = momentum(hi, hp.level)
+                interfaces[(name, hp.level)] = copy.replace(base, momentum=m, param=make_param_lens([m]))
             case "time_constant":
-                interfaces[(name, hp.level)] = copy.replace(base, time_constant=time_constant(hi, hp.level))
+                tc_acc = time_constant(hi, hp.level)
+                interfaces[(name, hp.level)] = copy.replace(base, time_constant=tc_acc, param=make_param_lens([tc_acc]))
             case "kl_regularizer_beta":
-                interfaces[(name, hp.level)] = copy.replace(base, kl_regularizer_beta=kl_regularizer_beta(hi, hp.level))
+                kl = kl_regularizer_beta(hi, hp.level)
+                interfaces[(name, hp.level)] = copy.replace(base, kl_regularizer_beta=kl, param=make_param_lens([kl]))
 
     # 3. optimizers
     for level, mc in enumerate(config.levels):
@@ -595,7 +633,7 @@ def build_interfaces(
                 hi = id_map[(beta, hp_cfg.level)]
                 interfaces[(TASK, level)] = copy.replace(
                     base,
-                    kl_regularizer_beta=read_only(kl_regularizer_beta(hi, hp_cfg.level)),
+                    kl_regularizer_beta=kl_regularizer_beta(hi, hp_cfg.level),
                 )
             case _:
                 interfaces[(TASK, level)] = base
@@ -636,7 +674,7 @@ def build_interfaces(
                     interfaces[(slot_name, level)] = copy.replace(
                         base,
                         forward_mode_jacobian=forward_mode_jacobian(li, level),
-                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
+                        time_constant=time_constant(hi, hp_cfg.level),
                     )
 
                 case UOROConfig():

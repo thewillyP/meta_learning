@@ -26,33 +26,21 @@ def get_parameters[ENV](
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
     env: ENV,
-) -> Vector[ENV]:
-    mask = jax.tree.map(lambda _: False, env)
-
-    for name in assignment.target:
-        interface = interfaces[(name, level)]
-        for acc in (
-            interface.mlp_model,
-            interface.rnn_w_rec,
-            interface.rnn_b_rec,
-            interface.rnn_layer_norm,
-            interface.gru_cell,
-            interface.lstm_cell,
-            interface.learning_rate,
-            interface.weight_decay,
-            interface.momentum,
-            interface.time_constant,
-            interface.kl_regularizer_beta,
-        ):
-            if acc.get(env) is not None:
-                mask = acc.put(mask, True)
-
-    params, _ = eqx.partition(env, mask, is_leaf=lambda x: x is None)
-    return to_vector(params)
+) -> Vector[list[jax.Array]]:
+    parts = [interfaces[(name, level)].param.get(env) for name in assignment.target]
+    return to_vector(parts)
 
 
-def put_parameters[ENV](env: ENV, new_env: ENV) -> ENV:
-    return eqx.combine(new_env, env)
+def put_parameters[ENV](
+    assignment: OptimizerAssignment,
+    interfaces: dict[S_ID, GodInterface[ENV]],
+    level: int,
+    env: ENV,
+    new_parts: list[jax.Array],
+) -> ENV:
+    for name, new_part in zip(assignment.target, new_parts):
+        env = interfaces[(name, level)].param.put(env, new_part)
+    return env
 
 
 def scale_by_sign_of_param() -> optax.GradientTransformationExtraArgs:
@@ -226,6 +214,6 @@ def get_opt_step[ENV](
 
         new_params = new_param_chunks.reshape(-1)
         env = interface.opt_state.put(env, new_opt_state)
-        env = put_parameters(env, param_vec.to_param(new_params))
+        env = put_parameters(assignment, interfaces, level, env, param_vec.to_param(new_params))
 
     return project_parameters(env)

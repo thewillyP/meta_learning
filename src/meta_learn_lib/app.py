@@ -2,6 +2,7 @@ import dataclasses
 from logging import Logger
 import random
 import os
+import time
 from typing import Callable, Iterator
 import jax
 import jax.numpy as jnp
@@ -197,9 +198,14 @@ def run(
     print("Starting main loop...")
 
     collected: tuple[STAT, ...] = ()
+    t_prev = time.time()
     for k, data in enumerate(dataloader):
+        t_data = time.time()
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
+        t_compute = time.time()
+        print(f"data: {t_data - t_prev:.3f}  compute+sync: {t_compute - t_data:.3f}")
+
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 
@@ -210,6 +216,10 @@ def run(
 
         step_sample_prng, sample_prng = jax.random.split(sample_prng)
         sample_runner(eqx.combine(arr, static), scalar_logger, PRNG(step_sample_prng), global_step)
+
+        t_log = time.time()
+        print(f"  log+sample: {t_log - t_compute:.3f}")
+        t_prev = time.time()
 
     scalar_logger.flush()
     scalar_logger.shutdown()

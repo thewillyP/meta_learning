@@ -198,10 +198,8 @@ def run(
 
     collected: tuple[STAT, ...] = ()
     for k, data in enumerate(dataloader):
-        print("one")
         arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
-        print("two")
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 

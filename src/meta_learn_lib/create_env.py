@@ -513,6 +513,7 @@ def reset_params_hyperparams_optimizer[ENV](
             level,
             env,
             hyperparameters,
+            meta_config.nested.track_influence_in,
         )
 
         k3, prng = jax.random.split(prng, 2)

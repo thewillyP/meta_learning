@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import equinox as eqx
@@ -8,6 +9,27 @@ from pyrsistent.typing import PMap, PVector
 
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.util import deep_serialize
+
+
+@dataclass(frozen=True)
+class ParamMeta:
+    learnable: bool
+    min_value: float
+    max_value: float
+    parametrizes_transition: bool
+
+
+@dataclass(frozen=True)
+class StateMeta:
+    is_stateful: frozenset[int]
+
+
+type Meta = ParamMeta | StateMeta
+
+
+class Tagged[T](PClass):
+    value: T = field(serializer=deep_serialize)
+    meta: Meta = field()
 
 
 class Logs(PClass):
@@ -21,9 +43,9 @@ class Logs(PClass):
 
 
 class RNN(PClass):
-    w_rec: jax.Array = field(initial=None, serializer=deep_serialize)
-    b_rec: jax.Array = field(initial=None, serializer=deep_serialize)
-    layer_norm: eqx.Module = field(initial=None, serializer=deep_serialize)
+    w_rec: Tagged[jax.Array] = field(initial=None, serializer=deep_serialize)
+    b_rec: Tagged[jax.Array] = field(initial=None, serializer=deep_serialize)
+    layer_norm: Tagged[eqx.Module] = field(initial=None, serializer=deep_serialize)
 
 
 class VanillaRecurrentState(PClass):
@@ -47,35 +69,35 @@ class MidpointBuffer(PClass):
 
 
 class Parameters(PClass):
-    mlps: PMap[int, eqx.nn.Sequential] = field(serializer=deep_serialize)
+    mlps: PMap[int, Tagged[eqx.nn.Sequential]] = field(serializer=deep_serialize)
     rnns: PMap[int, RNN] = field(serializer=deep_serialize)
-    grus: PMap[int, eqx.nn.GRUCell] = field(serializer=deep_serialize)
-    lstms: PMap[int, eqx.nn.LSTMCell] = field(serializer=deep_serialize)
-    learning_rates: PMap[int, jax.Array] = field(serializer=deep_serialize)
-    weight_decays: PMap[int, jax.Array] = field(serializer=deep_serialize)
-    time_constants: PMap[int, jax.Array] = field(serializer=deep_serialize)
-    momentums: PMap[int, jax.Array] = field(serializer=deep_serialize)
-    kl_regularizer_betas: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    grus: PMap[int, Tagged[eqx.nn.GRUCell]] = field(serializer=deep_serialize)
+    lstms: PMap[int, Tagged[eqx.nn.LSTMCell]] = field(serializer=deep_serialize)
+    learning_rates: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
+    weight_decays: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
+    time_constants: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
+    momentums: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
+    kl_regularizer_betas: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
 
 
 class LearningStates(PClass):
-    influence_tensors: PMap[int, JACOBIAN] = field(serializer=deep_serialize)
-    uoros: PMap[int, UOROState] = field(serializer=deep_serialize)
-    midpoint_buffers: PMap[int, MidpointBuffer] = field(serializer=deep_serialize)
-    opt_states: PMap[int, optax.OptState] = field(serializer=deep_serialize)
+    influence_tensors: PMap[int, Tagged[JACOBIAN]] = field(serializer=deep_serialize)
+    uoros: PMap[int, Tagged[UOROState]] = field(serializer=deep_serialize)
+    midpoint_buffers: PMap[int, Tagged[MidpointBuffer]] = field(serializer=deep_serialize)
+    opt_states: PMap[int, Tagged[optax.OptState]] = field(serializer=deep_serialize)
 
 
 class ModelStates(PClass):
-    recurrent_states: PMap[int, jax.Array] = field(serializer=deep_serialize)
-    vanilla_recurrent_states: PMap[int, VanillaRecurrentState] = field(serializer=deep_serialize)
-    lstm_states: PMap[int, LSTMState] = field(serializer=deep_serialize)
-    autoregressive_predictions: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    recurrent_states: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
+    vanilla_recurrent_states: PMap[int, Tagged[VanillaRecurrentState]] = field(serializer=deep_serialize)
+    lstm_states: PMap[int, Tagged[LSTMState]] = field(serializer=deep_serialize)
+    autoregressive_predictions: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
 
 
 class LevelMeta(PClass):
-    log: Logs = field(serializer=deep_serialize)
-    prngs: PMap[int, PRNG] = field(serializer=deep_serialize)
-    ticks: PMap[int, jax.Array] = field(serializer=deep_serialize)
+    log: Tagged[Logs] = field(serializer=deep_serialize)
+    prngs: PMap[int, Tagged[PRNG]] = field(serializer=deep_serialize)
+    ticks: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
 
 
 class GodState(PClass):

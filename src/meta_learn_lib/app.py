@@ -147,6 +147,17 @@ def run(
     interfaces = build_interfaces(config, id_map)
 
     env = env_factory(config, shapes, interfaces)
+
+    inference_axes = [
+        create_inference_axes(env, config, interfaces, shape, level) for level, shape in enumerate(shapes)
+    ]
+    transitions, readouts = zip(
+        *[create_inference_and_readout(config, interfaces, level, axes) for level, axes in enumerate(inference_axes)]
+    )
+    transition_fns = create_transition_fns(config, shapes, interfaces, list(transitions))
+    loss_fns = create_readout_loss_fns(config, interfaces, list(readouts))
+    meta_learner = create_meta_learner(config, shapes, transition_fns, loss_fns, interfaces, env)
+
     arr, static = eqx.partition(env, eqx.is_array)
 
     start_step = 0
@@ -172,37 +183,13 @@ def run(
     remaining = total_iterations - start_step
     dataloader = prefetch(toolz.take(remaining, dataloader), buffer_size=config.prefetch_buffer_size)
 
-    def step(c__data: tuple[GodConfig, tuple], arr: GodState) -> tuple[GodState, STAT]:
-        c, data = c__data
+    def update_fn(data: tuple, arr: GodState) -> tuple[GodState, STAT]:
         env = eqx.combine(arr, static)
-        local_id_map = build_id_map(c)
-        local_interfaces = build_interfaces(c, local_id_map)
-
-        local_inference_axes = [
-            create_inference_axes(env, c, local_interfaces, shape, level) for level, shape in enumerate(shapes)
-        ]
-        transitions, readouts = zip(
-            *[
-                create_inference_and_readout(c, local_interfaces, level, axes)
-                for level, axes in enumerate(local_inference_axes)
-            ]
-        )
-        transition_fns = create_transition_fns(c, shapes, local_interfaces, list(transitions))
-        loss_fns = create_readout_loss_fns(c, local_interfaces, list(readouts))
-        meta_learner = create_meta_learner(
-            c,
-            shapes,
-            transition_fns,
-            loss_fns,
-            local_interfaces,
-            env,
-        )
-
         new_env, stat = meta_learner(env, data)
         new_arr, _ = eqx.partition(new_env, eqx.is_array)
         return new_arr, stat
 
-    compiled = eqx.filter_jit(step, donate="all-except-first").lower((config, x), arr).compile()
+    compiled = eqx.filter_jit(update_fn, donate="all-except-first").lower(x, arr).compile()
 
     checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
     sample_runner = build_sample_runner(config, interfaces, data_sources, sample_prng, iterations_per_epoch)
@@ -211,8 +198,10 @@ def run(
 
     collected: tuple[STAT, ...] = ()
     for k, data in enumerate(dataloader):
-        arr, stats = compiled((config, data), arr)
+        print("one")
+        arr, stats = compiled(data, arr)
         jax.block_until_ready(arr)
+        print("two")
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 

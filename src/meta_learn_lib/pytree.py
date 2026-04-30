@@ -57,6 +57,7 @@ def register_pytree(cls, static_fields):
 # ============================================================================
 
 # Register leaf types first
+register_pytree(Tagged, {"meta"})
 register_pytree(Logs, set())
 register_pytree(VanillaRecurrentState, {"activation_fn"})
 register_pytree(LSTMState, set())

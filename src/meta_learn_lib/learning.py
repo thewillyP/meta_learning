@@ -752,10 +752,11 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
             env = param_acc.put(env, param[state_size:])
             return env
 
+        noop_put_tagged = lambda env, v: env
         return copy.replace(
             interface,
-            state=Accessor(get=lambda env: jnp.empty(0), put=lambda env, s: env, meta=noop_meta(), category=None),
-            param=Accessor(get=get_param, put=put_param, meta=noop_meta(), category=None),
+            state=Accessor(get=lambda env: jnp.empty(0), put=lambda env, s: env, put_tagged=noop_put_tagged),
+            param=Accessor(get=get_param, put=put_param, put_tagged=noop_put_tagged),
         )
 
     gradient_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]] = []
@@ -835,13 +836,11 @@ def create_meta_learner[ENV](
     env: ENV,
 ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
-    all_accessors = [acc for iface in interfaces.values() for acc in interface_to_accessors(iface)]
-
     validation_learners, validation_losses = create_validation_learners(transition_fns, readout_fns, interfaces, config)
     resetters = env_resetters(config, shapes, interfaces, [False] * len(config.levels))
 
     val_resetters = env_validation_resetters(config, shapes, interfaces)
-    per_level_val_axes = [diff_axes(env, vr(env, jax.random.key(0)), all_accessors) for vr in val_resetters]
+    per_level_val_axes = [diff_axes(env, vr(env, jax.random.key(0))) for vr in val_resetters]
 
     def make_optimized_transition[X](
         inner: Callable[[ENV, tuple], tuple[ENV, STAT]],
@@ -901,9 +900,9 @@ def create_meta_learner[ENV](
         vl_learner = validation_learners[level]
         vl_loss = validation_losses[level]
 
-        axes = diff_axes(env, inner_resetter(env, jax.random.key(0)), all_accessors)
+        axes = diff_axes(env, inner_resetter(env, jax.random.key(0)))
 
-        for ax in [diff_axes(env, resetters[l][0](env, jax.random.key(0)), all_accessors) for l in range(level)]:
+        for ax in [diff_axes(env, resetters[l][0](env, jax.random.key(0))) for l in range(level)]:
             combined = eqx.combine(ax, per_level_val_axes[level])
             vl_learner = restore_broadcast(vl_learner, combined)
             vl_loss = restore_broadcast(vl_loss, combined)

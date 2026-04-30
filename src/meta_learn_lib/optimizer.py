@@ -10,21 +10,15 @@ from meta_learn_lib.constants import *
 from meta_learn_lib.util import Vector, hyperparameter_reparametrization, to_vector
 
 
-def project_parameters[ENV](
-    env: ENV,
-    interfaces: dict[S_ID, GodInterface[ENV]],
-) -> ENV:
-    all_accs = [
-        acc
-        for iface in interfaces.values()
-        for acc in interface_to_accessors(iface)
-        if acc.category is not None and isinstance(acc.meta, ParamMeta) and acc.meta.learnable
-    ]
-    for acc in all_accs:
-        val = acc.get(env)
-        if val is not None:
-            env = acc.put(env, jax.tree.map(lambda v: jnp.clip(v, acc.meta.min_value, acc.meta.max_value), val))
-    return env
+def project_parameters[ENV](env: ENV) -> ENV:
+    is_leaf = lambda x: x is None or isinstance(x, Tagged)
+
+    def clamp(x):
+        if isinstance(x, Tagged) and isinstance(x.meta, ParamMeta) and x.meta.learnable:
+            return x.set(value=jax.tree.map(lambda v: jnp.clip(v, x.meta.min_value, x.meta.max_value), x.value))
+        return x
+
+    return jax.tree.map(clamp, env, is_leaf=is_leaf)
 
 
 def get_parameters[ENV](
@@ -37,8 +31,20 @@ def get_parameters[ENV](
 
     for name in assignment.target:
         interface = interfaces[(name, level)]
-        for acc in interface_to_accessors(interface):
-            if acc.category == "param" and acc.get(env) is not None:
+        for acc in (
+            interface.mlp_model,
+            interface.rnn_w_rec,
+            interface.rnn_b_rec,
+            interface.rnn_layer_norm,
+            interface.gru_cell,
+            interface.lstm_cell,
+            interface.learning_rate,
+            interface.weight_decay,
+            interface.momentum,
+            interface.time_constant,
+            interface.kl_regularizer_beta,
+        ):
+            if acc.get(env) is not None:
                 mask = acc.put(mask, True)
 
     params, _ = eqx.partition(env, mask, is_leaf=lambda x: x is None)
@@ -228,4 +234,4 @@ def get_opt_step[ENV](
         env = interface.opt_state.put(env, new_opt_state)
         env = put_parameters(env, param_vec.to_param(new_params))
 
-    return project_parameters(env, interfaces)
+    return project_parameters(env)

@@ -1,10 +1,12 @@
 import copy
+from dataclasses import dataclass
+
 import jax
 import equinox as eqx
-import math
+import optax
 
 from meta_learn_lib.config import *
-from meta_learn_lib.env import RNN, GodState
+from meta_learn_lib.env import RNN, GodState, Tagged, ParamMeta, StateMeta, Logs
 from meta_learn_lib.interface import *
 from meta_learn_lib.util import to_vector
 from meta_learn_lib.constants import *
@@ -12,86 +14,69 @@ from meta_learn_lib.lib_types import *
 
 
 # ============================================================================
-# PRNG / TICK / LOG — non-Accessor primitives (special signatures)
+# PRNG primitives
 # ============================================================================
 
 
-def take_prng(key: int, level: int):
-    def fn(env: GodState) -> tuple[jax.Array, GodState]:
-        prng, new_prng = jax.random.split(env.level_meta[level].prngs[key])
-        return prng, env.transform(["level_meta", level, "prngs", key], lambda _: new_prng)
-
-    return fn
-
-
-def put_prng(key: int, level: int):
-    def fn(env: GodState, prng: jax.Array) -> GodState:
-        return env.transform(["level_meta", level, "prngs", key], lambda _: prng)
-
-    return fn
-
-
-def prng_fns(
-    key: int, level: int
-) -> tuple[
-    Callable[[GodState], PRNG],
-    Callable[[GodState, PRNG], GodState],
-]:
+def prng_accessor(key: int, level: int) -> Accessor[GodState, PRNG]:
     def get(env: GodState) -> PRNG:
-        return env.level_meta[level].prngs.get(key)
+        t = env.level_meta[level].prngs.get(key)
+        return None if t is None else t.value
 
     def put(env: GodState, val: PRNG) -> GodState:
-        return env.transform(["level_meta", level, "prngs", key], lambda _: val)
+        return env.transform(["level_meta", level, "prngs", key, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[PRNG]) -> GodState:
+        return env.transform(["level_meta", level, "prngs", key], lambda _: tagged)
 
-
-def get_tick(i: int, level: int):
-    def fn(env: GodState) -> jax.Array:
-        return env.level_meta[level].ticks.get(i)
-
-    return fn
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def put_tick(i: int, level: int):
-    def fn(env: GodState, tick: jax.Array) -> GodState:
-        return env.transform(["level_meta", level, "ticks", i], lambda _: tick)
+def tick_accessor(i: int, level: int) -> Accessor[GodState, jax.Array]:
+    def get(env: GodState) -> jax.Array:
+        t = env.level_meta[level].ticks.get(i)
+        return None if t is None else t.value
 
-    return fn
+    def put(env: GodState, val: jax.Array) -> GodState:
+        return env.transform(["level_meta", level, "ticks", i, "value"], lambda _: val)
+
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["level_meta", level, "ticks", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def get_logs(level: int):
-    def fn(env: GodState) -> Logs:
-        return env.level_meta[level].log
+def logs_accessor(level: int) -> Accessor[GodState, Logs]:
+    def get(env: GodState) -> Logs:
+        t = env.level_meta[level].log
+        return None if t is None else t.value
 
-    return fn
+    def put(env: GodState, val: Logs) -> GodState:
+        return env.transform(["level_meta", level, "log", "value"], lambda _: val)
 
+    def put_tagged(env: GodState, tagged: Tagged[Logs]) -> GodState:
+        return env.transform(["level_meta", level, "log"], lambda _: tagged)
 
-def put_logs(level: int):
-    def fn(env: GodState, logs: Logs) -> GodState:
-        return env.transform(["level_meta", level, "log"], lambda _: logs)
-
-    return fn
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
 # ============================================================================
-# PARAM ACCESSORS — (get, put) pairs for parameter slots
+# PARAMETER ACCESSORS
 # ============================================================================
 
 
-def mlp_model(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], eqx.nn.Sequential],
-    Callable[[GodState, eqx.nn.Sequential], GodState],
-]:
+def mlp_model(i: int, level: int) -> Accessor[GodState, eqx.nn.Sequential]:
     def get(env: GodState) -> eqx.nn.Sequential:
-        return env.meta_parameters[level].mlps.get(i)
+        t = env.meta_parameters[level].mlps.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: eqx.nn.Sequential) -> GodState:
-        return env.transform(["meta_parameters", level, "mlps", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "mlps", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[eqx.nn.Sequential]) -> GodState:
+        return env.transform(["meta_parameters", level, "mlps", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
 def upsert_rnn[T](
@@ -109,281 +94,271 @@ def upsert_rnn[T](
     return fn
 
 
-def rnn_w_rec(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def rnn_w_rec(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         rnn = env.meta_parameters[level].rnns.get(i)
-        return None if rnn is None else rnn.w_rec
+        if rnn is None or rnn.w_rec is None:
+            return None
+        return rnn.w_rec.value
 
-    put = upsert_rnn(level, i, lambda rnn, v: rnn.set(w_rec=v))
-    return get, put
+    def put(env: GodState, val: jax.Array) -> GodState:
+        return env.transform(["meta_parameters", level, "rnns", i, "w_rec", "value"], lambda _: val)
+
+    put_tagged = upsert_rnn(level, i, lambda r, v: r.set(w_rec=v))
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def rnn_b_rec(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def rnn_b_rec(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         rnn = env.meta_parameters[level].rnns.get(i)
-        return None if rnn is None else rnn.b_rec
+        if rnn is None or rnn.b_rec is None:
+            return None
+        return rnn.b_rec.value
 
-    put = upsert_rnn(level, i, lambda rnn, v: rnn.set(b_rec=v))
-    return get, put
+    def put(env: GodState, val: jax.Array) -> GodState:
+        return env.transform(["meta_parameters", level, "rnns", i, "b_rec", "value"], lambda _: val)
+
+    put_tagged = upsert_rnn(level, i, lambda r, v: r.set(b_rec=v))
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def rnn_layer_norm(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], eqx.Module],
-    Callable[[GodState, eqx.Module], GodState],
-]:
+def rnn_layer_norm(i: int, level: int) -> Accessor[GodState, eqx.Module]:
     def get(env: GodState) -> eqx.Module:
         rnn = env.meta_parameters[level].rnns.get(i)
-        return None if rnn is None else rnn.layer_norm
+        if rnn is None or rnn.layer_norm is None:
+            return None
+        return rnn.layer_norm.value
 
-    put = upsert_rnn(level, i, lambda rnn, v: rnn.set(layer_norm=v))
-    return get, put
+    def put(env: GodState, val: eqx.Module) -> GodState:
+        return env.transform(["meta_parameters", level, "rnns", i, "layer_norm", "value"], lambda _: val)
+
+    put_tagged = upsert_rnn(level, i, lambda r, v: r.set(layer_norm=v))
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def gru_cell(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], eqx.nn.GRUCell],
-    Callable[[GodState, eqx.nn.GRUCell], GodState],
-]:
+def gru_cell(i: int, level: int) -> Accessor[GodState, eqx.nn.GRUCell]:
     def get(env: GodState) -> eqx.nn.GRUCell:
-        return env.meta_parameters[level].grus.get(i)
+        t = env.meta_parameters[level].grus.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: eqx.nn.GRUCell) -> GodState:
-        return env.transform(["meta_parameters", level, "grus", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "grus", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[eqx.nn.GRUCell]) -> GodState:
+        return env.transform(["meta_parameters", level, "grus", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def lstm_cell(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], eqx.nn.LSTMCell],
-    Callable[[GodState, eqx.nn.LSTMCell], GodState],
-]:
+def lstm_cell(i: int, level: int) -> Accessor[GodState, eqx.nn.LSTMCell]:
     def get(env: GodState) -> eqx.nn.LSTMCell:
-        return env.meta_parameters[level].lstms.get(i)
+        t = env.meta_parameters[level].lstms.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: eqx.nn.LSTMCell) -> GodState:
-        return env.transform(["meta_parameters", level, "lstms", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "lstms", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[eqx.nn.LSTMCell]) -> GodState:
+        return env.transform(["meta_parameters", level, "lstms", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def learning_rate(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def learning_rate(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
-        return env.meta_parameters[level].learning_rates.get(i)
+        t = env.meta_parameters[level].learning_rates.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["meta_parameters", level, "learning_rates", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "learning_rates", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["meta_parameters", level, "learning_rates", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def weight_decay(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def weight_decay(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
-        return env.meta_parameters[level].weight_decays.get(i)
+        t = env.meta_parameters[level].weight_decays.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["meta_parameters", level, "weight_decays", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "weight_decays", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["meta_parameters", level, "weight_decays", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def momentum(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def momentum(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
-        return env.meta_parameters[level].momentums.get(i)
+        t = env.meta_parameters[level].momentums.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["meta_parameters", level, "momentums", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "momentums", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["meta_parameters", level, "momentums", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def time_constant(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def time_constant(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
-        return env.meta_parameters[level].time_constants.get(i)
+        t = env.meta_parameters[level].time_constants.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["meta_parameters", level, "time_constants", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "time_constants", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["meta_parameters", level, "time_constants", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def kl_regularizer_beta(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def kl_regularizer_beta(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
-        return env.meta_parameters[level].kl_regularizer_betas.get(i)
+        t = env.meta_parameters[level].kl_regularizer_betas.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["meta_parameters", level, "kl_regularizer_betas", i], lambda _: val)
+        return env.transform(["meta_parameters", level, "kl_regularizer_betas", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["meta_parameters", level, "kl_regularizer_betas", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
 # ============================================================================
-# STATE ACCESSORS — (get, put) pairs for state slots
+# STATE ACCESSORS
 # ============================================================================
 
 
-def vanilla_rnn_state(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], VanillaRecurrentState],
-    Callable[[GodState, VanillaRecurrentState], GodState],
-]:
+def vanilla_rnn_state(i: int, level: int) -> Accessor[GodState, VanillaRecurrentState]:
     def get(env: GodState) -> VanillaRecurrentState:
-        return env.model_states[level].vanilla_recurrent_states.get(i)
+        t = env.model_states[level].vanilla_recurrent_states.get(i)
+        return None if t is None else t.value
 
-    def put(env: GodState, state: VanillaRecurrentState) -> GodState:
-        return env.transform(["model_states", level, "vanilla_recurrent_states", i], lambda _: state)
+    def put(env: GodState, val: VanillaRecurrentState) -> GodState:
+        return env.transform(["model_states", level, "vanilla_recurrent_states", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[VanillaRecurrentState]) -> GodState:
+        return env.transform(["model_states", level, "vanilla_recurrent_states", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def gru_activation(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def gru_activation(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
-        return env.model_states[level].recurrent_states.get(i)
+        t = env.model_states[level].recurrent_states.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["model_states", level, "recurrent_states", i], lambda _: val)
+        return env.transform(["model_states", level, "recurrent_states", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["model_states", level, "recurrent_states", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def lstm_state(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], LSTMState],
-    Callable[[GodState, LSTMState], GodState],
-]:
+def lstm_state(i: int, level: int) -> Accessor[GodState, LSTMState]:
     def get(env: GodState) -> LSTMState:
-        return env.model_states[level].lstm_states.get(i)
+        t = env.model_states[level].lstm_states.get(i)
+        return None if t is None else t.value
 
-    def put(env: GodState, state: LSTMState) -> GodState:
-        return env.transform(["model_states", level, "lstm_states", i], lambda _: state)
+    def put(env: GodState, val: LSTMState) -> GodState:
+        return env.transform(["model_states", level, "lstm_states", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[LSTMState]) -> GodState:
+        return env.transform(["model_states", level, "lstm_states", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def autoregressive_predictions(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], jax.Array],
-    Callable[[GodState, jax.Array], GodState],
-]:
+def autoregressive_predictions(i: int, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
-        return env.model_states[level].autoregressive_predictions.get(i)
+        t = env.model_states[level].autoregressive_predictions.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: jax.Array) -> GodState:
-        return env.transform(["model_states", level, "autoregressive_predictions", i], lambda _: val)
+        return env.transform(["model_states", level, "autoregressive_predictions", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[jax.Array]) -> GodState:
+        return env.transform(["model_states", level, "autoregressive_predictions", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
 # ============================================================================
-# LEARNING STATE ACCESSORS — (get, put) pairs for learning state slots
+# LEARNING STATE ACCESSORS
 # ============================================================================
 
 
-def opt_state(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], optax.OptState],
-    Callable[[GodState, optax.OptState], GodState],
-]:
+def opt_state(i: int, level: int) -> Accessor[GodState, optax.OptState]:
     def get(env: GodState) -> optax.OptState:
-        return env.learning_states[level].opt_states.get(i)
+        t = env.learning_states[level].opt_states.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: optax.OptState) -> GodState:
-        return env.transform(["learning_states", level, "opt_states", i], lambda _: val)
+        return env.transform(["learning_states", level, "opt_states", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[optax.OptState]) -> GodState:
+        return env.transform(["learning_states", level, "opt_states", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def forward_mode_jacobian(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], JACOBIAN],
-    Callable[[GodState, JACOBIAN], GodState],
-]:
+def forward_mode_jacobian(i: int, level: int) -> Accessor[GodState, JACOBIAN]:
     def get(env: GodState) -> JACOBIAN:
-        return env.learning_states[level].influence_tensors.get(i)
+        t = env.learning_states[level].influence_tensors.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: JACOBIAN) -> GodState:
-        return env.transform(["learning_states", level, "influence_tensors", i], lambda _: val)
+        return env.transform(["learning_states", level, "influence_tensors", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[JACOBIAN]) -> GodState:
+        return env.transform(["learning_states", level, "influence_tensors", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def uoro_state(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], UOROState],
-    Callable[[GodState, UOROState], GodState],
-]:
+def uoro_state(i: int, level: int) -> Accessor[GodState, UOROState]:
     def get(env: GodState) -> UOROState:
-        return env.learning_states[level].uoros.get(i)
+        t = env.learning_states[level].uoros.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: UOROState) -> GodState:
-        return env.transform(["learning_states", level, "uoros", i], lambda _: val)
+        return env.transform(["learning_states", level, "uoros", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[UOROState]) -> GodState:
+        return env.transform(["learning_states", level, "uoros", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def midpoint_buffer(
-    i: int, level: int
-) -> tuple[
-    Callable[[GodState], MidpointBuffer],
-    Callable[[GodState, MidpointBuffer], GodState],
-]:
+def midpoint_buffer(i: int, level: int) -> Accessor[GodState, MidpointBuffer]:
     def get(env: GodState) -> MidpointBuffer:
-        return env.learning_states[level].midpoint_buffers.get(i)
+        t = env.learning_states[level].midpoint_buffers.get(i)
+        return None if t is None else t.value
 
     def put(env: GodState, val: MidpointBuffer) -> GodState:
-        return env.transform(["learning_states", level, "midpoint_buffers", i], lambda _: val)
+        return env.transform(["learning_states", level, "midpoint_buffers", i, "value"], lambda _: val)
 
-    return get, put
+    def put_tagged(env: GodState, tagged: Tagged[MidpointBuffer]) -> GodState:
+        return env.transform(["learning_states", level, "midpoint_buffers", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
+
+
+# ============================================================================
+# ID MAP
+# ============================================================================
 
 
 def build_id_map(config: GodConfig) -> dict[S_ID, int]:
@@ -416,47 +391,9 @@ def build_id_map(config: GodConfig) -> dict[S_ID, int]:
     return {key: i for i, key in enumerate(keys)}
 
 
-def param_accessor[ENV, T](
-    get: Callable[[ENV], T],
-    put: Callable[[ENV, T], ENV],
-    learnable: bool,
-    min_value: float,
-    max_value: float,
-    parametrizes_transition: bool,
-    category: Category,
-) -> Accessor[ENV, T]:
-    return Accessor(
-        get=get,
-        put=put,
-        meta=ParamMeta(
-            learnable=learnable,
-            min_value=min_value,
-            max_value=max_value,
-            parametrizes_transition=parametrizes_transition,
-        ),
-        category=category,
-    )
-
-
-def prng_accessor(key: int, level: int) -> Accessor[GodState, PRNG]:
-    g, p = prng_fns(key, level)
-    return Accessor(get=g, put=p, meta=noop_meta(), category=None)
-
-
-def state_accessor[ENV, T](
-    get: Callable[[ENV], T],
-    put: Callable[[ENV, T], ENV],
-    is_stateful: frozenset[int],
-    category: Category,
-) -> Accessor[ENV, T]:
-    return Accessor(
-        get=get,
-        put=put,
-        meta=StateMeta(
-            is_stateful=is_stateful,
-        ),
-        category=category,
-    )
+# ============================================================================
+# LENS — vectorized view over learnable params / stateful states in a slice
+# ============================================================================
 
 
 @dataclass(frozen=True)
@@ -465,43 +402,49 @@ class Lens:
     put: Callable[[GodState, jax.Array], GodState]
 
 
-def make_lens(
-    accessors: list[tuple[S_ID, Accessor]],
-    model_states_sl: slice,
-    learning_states_sl: slice,
-    params_sl: slice,
-) -> Lens:
-    target_level = params_sl.stop
+def make_lens(model_states: slice, learning_states: slice, params: slice) -> Lens:
+    is_leaf = lambda x: x is None or isinstance(x, Tagged)
 
-    relevant = [
-        acc
-        for (_, level), acc in accessors
-        if level is not None
-        and (
-            (acc.category == "state" and model_states_sl.start <= level < model_states_sl.stop)
-            or (acc.category == "learning_state" and learning_states_sl.start <= level < learning_states_sl.stop)
-            or (acc.category == "param" and params_sl.start <= level < params_sl.stop)
-        )
-    ]
-
-    def predicate(meta: AccessorMeta) -> bool:
-        match meta:
-            case ParamMeta():
-                return meta.learnable
-            case StateMeta():
-                return target_level in meta.is_stateful
+    def predicate(x):
+        if isinstance(x, Tagged):
+            match x.meta:
+                case ParamMeta():
+                    return x.meta.learnable
+                case StateMeta():
+                    return params.stop in x.meta.is_stateful
+        return True
 
     def get(env: GodState) -> jax.Array:
-        mask = build_mask(env, relevant, predicate)
-        filtered, _ = eqx.partition(env, mask)
+        combined = (
+            env.model_states[model_states],
+            env.learning_states[learning_states],
+            env.meta_parameters[params],
+        )
+        filtered, _ = eqx.partition(combined, predicate, is_leaf=is_leaf)
         return to_vector(filtered).vector
 
     def put(env: GodState, vector: jax.Array) -> GodState:
-        mask = build_mask(env, relevant, predicate)
-        filtered, static = eqx.partition(env, mask)
-        return eqx.combine(to_vector(filtered).to_param(vector), static)
+        combined = (
+            env.model_states[model_states],
+            env.learning_states[learning_states],
+            env.meta_parameters[params],
+        )
+        filtered, static = eqx.partition(combined, predicate, is_leaf=is_leaf)
+        new_model, new_learning, new_params = eqx.combine(to_vector(filtered).to_param(vector), static, is_leaf=is_leaf)
+        return env.set(
+            model_states=env.model_states[: model_states.start] + new_model + env.model_states[model_states.stop :],
+            learning_states=env.learning_states[: learning_states.start]
+            + new_learning
+            + env.learning_states[learning_states.stop :],
+            meta_parameters=env.meta_parameters[: params.start] + new_params + env.meta_parameters[params.stop :],
+        )
 
     return Lens(get=get, put=put)
+
+
+# ============================================================================
+# BUILD INTERFACES
+# ============================================================================
 
 
 def build_interfaces(
@@ -512,183 +455,72 @@ def build_interfaces(
     interfaces: dict[S_ID, GodInterface[GodState]] = {}
     default = default_god_interface()
     num_levels = len(config.levels)
-    learnables_per_level = [
-        frozenset().union(*[v.target for v in mc.learner.optimizer.values()]) for mc in config.levels
-    ]
 
     # 1. nodes
     for level in range(num_levels):
-        val_track = config.levels[level].validation.track_influence_in
-
         for name, node in config.nodes.items():
             pi = id_map[(name, None)]
             si = id_map[(name, level)]
-            is_learnable = name in learnables_per_level[0]
-            is_transition = name not in config.readout_graph
-
-            logs_acc = Accessor(get=get_logs(level), put=put_logs(level), meta=noop_meta(), category=None)
+            logs_acc = logs_accessor(level)
 
             match node:
                 case NNLayer():
-                    g, p = mlp_model(pi, 0)
                     interfaces[(name, level)] = copy.replace(
                         default,
-                        take_prng=take_prng(si, level),
-                        put_prng=put_prng(si, level),
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        mlp_model=param_accessor(
-                            g,
-                            p,
-                            learnable=is_learnable,
-                            min_value=-math.inf,
-                            max_value=math.inf,
-                            parametrizes_transition=is_transition,
-                            category="param",
-                        ),
+                        mlp_model=mlp_model(pi, 0),
                     )
 
-                case VanillaRNNLayer(nn_layer, _, tc):
-                    g_wr, p_wr = rnn_w_rec(pi, 0)
-                    g_br, p_br = rnn_b_rec(pi, 0)
-                    g_ln, p_ln = rnn_layer_norm(pi, 0)
-                    g_st, p_st = vanilla_rnn_state(si, level)
-
+                case VanillaRNNLayer(_, _, tc):
                     hp_cfg = config.hyperparameters[tc]
                     hi = id_map[(tc, hp_cfg.level)]
-                    g_tc, p_tc = time_constant(hi, hp_cfg.level)
-
                     interfaces[(name, level)] = copy.replace(
                         default,
-                        take_prng=take_prng(si, level),
-                        put_prng=put_prng(si, level),
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        rnn_w_rec=param_accessor(
-                            g_wr,
-                            p_wr,
-                            learnable=is_learnable,
-                            min_value=-math.inf,
-                            max_value=math.inf,
-                            parametrizes_transition=is_transition,
-                            category="param",
-                        ),
-                        rnn_b_rec=param_accessor(
-                            g_br,
-                            p_br,
-                            learnable=is_learnable and nn_layer.use_bias,
-                            min_value=-math.inf,
-                            max_value=math.inf,
-                            parametrizes_transition=is_transition,
-                            category="param",
-                        ),
-                        rnn_layer_norm=param_accessor(
-                            g_ln,
-                            p_ln,
-                            learnable=is_learnable and nn_layer.layer_norm is not None,
-                            min_value=-math.inf,
-                            max_value=math.inf,
-                            parametrizes_transition=is_transition,
-                            category="param",
-                        ),
-                        vanilla_rnn_state=state_accessor(g_st, p_st, is_stateful=val_track, category="state"),
-                        time_constant=param_accessor(
-                            g_tc,
-                            p_tc,
-                            learnable=tc in learnables_per_level[hp_cfg.level],
-                            min_value=hp_cfg.min_value,
-                            max_value=hp_cfg.max_value,
-                            parametrizes_transition=hp_cfg.parametrizes_transition,
-                            category=None,
-                        ),
+                        rnn_w_rec=rnn_w_rec(pi, 0),
+                        rnn_b_rec=rnn_b_rec(pi, 0),
+                        rnn_layer_norm=rnn_layer_norm(pi, 0),
+                        vanilla_rnn_state=vanilla_rnn_state(si, level),
+                        time_constant=time_constant(hi, hp_cfg.level),
                     )
 
                 case GRULayer(_, _, _, tc):
-                    g_cell, p_cell = gru_cell(pi, 0)
-                    g_act, p_act = gru_activation(si, level)
-
                     hp_cfg = config.hyperparameters[tc]
                     hi = id_map[(tc, hp_cfg.level)]
-                    g_tc, p_tc = time_constant(hi, hp_cfg.level)
-
                     interfaces[(name, level)] = copy.replace(
                         default,
-                        take_prng=take_prng(si, level),
-                        put_prng=put_prng(si, level),
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        gru_cell=param_accessor(
-                            g_cell,
-                            p_cell,
-                            learnable=is_learnable,
-                            min_value=-math.inf,
-                            max_value=math.inf,
-                            parametrizes_transition=is_transition,
-                            category="param",
-                        ),
-                        gru_activation=state_accessor(g_act, p_act, is_stateful=val_track, category="state"),
-                        time_constant=param_accessor(
-                            g_tc,
-                            p_tc,
-                            learnable=tc in learnables_per_level[hp_cfg.level],
-                            min_value=hp_cfg.min_value,
-                            max_value=hp_cfg.max_value,
-                            parametrizes_transition=hp_cfg.parametrizes_transition,
-                            category=None,
-                        ),
+                        gru_cell=gru_cell(pi, 0),
+                        gru_activation=gru_activation(si, level),
+                        time_constant=time_constant(hi, hp_cfg.level),
                     )
 
                 case LSTMLayer(_, _, _, tc):
-                    g_cell, p_cell = lstm_cell(pi, 0)
-                    g_st, p_st = lstm_state(si, level)
-
                     hp_cfg = config.hyperparameters[tc]
                     hi = id_map[(tc, hp_cfg.level)]
-                    g_tc, p_tc = time_constant(hi, hp_cfg.level)
-
                     interfaces[(name, level)] = copy.replace(
                         default,
-                        take_prng=take_prng(si, level),
-                        put_prng=put_prng(si, level),
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        lstm_cell=param_accessor(
-                            g_cell,
-                            p_cell,
-                            learnable=is_learnable,
-                            min_value=-math.inf,
-                            max_value=math.inf,
-                            parametrizes_transition=is_transition,
-                            category="param",
-                        ),
-                        lstm_state=state_accessor(g_st, p_st, is_stateful=val_track, category="state"),
-                        time_constant=param_accessor(
-                            g_tc,
-                            p_tc,
-                            learnable=tc in learnables_per_level[hp_cfg.level],
-                            min_value=hp_cfg.min_value,
-                            max_value=hp_cfg.max_value,
-                            parametrizes_transition=hp_cfg.parametrizes_transition,
-                            category=None,
-                        ),
+                        lstm_cell=lstm_cell(pi, 0),
+                        lstm_state=lstm_state(si, level),
+                        time_constant=time_constant(hi, hp_cfg.level),
                     )
 
                 case Scan():
-                    g_ap, p_ap = autoregressive_predictions(si, level)
                     interfaces[(name, level)] = copy.replace(
                         default,
-                        take_prng=take_prng(si, level),
-                        put_prng=put_prng(si, level),
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
-                        autoregressive_predictions=state_accessor(g_ap, p_ap, is_stateful=val_track, category="state"),
+                        autoregressive_predictions=autoregressive_predictions(si, level),
                     )
 
                 case ReparameterizeLayer():
                     interfaces[(name, level)] = copy.replace(
                         default,
-                        take_prng=take_prng(si, level),
-                        put_prng=put_prng(si, level),
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
                     )
@@ -699,122 +531,45 @@ def build_interfaces(
     # 2. HPs
     for name, hp in config.hyperparameters.items():
         hi = id_map[(name, hp.level)]
-        is_learnable = name in learnables_per_level[hp.level]
-        hp_meta_kw = dict(
-            learnable=is_learnable,
-            min_value=hp.min_value,
-            max_value=hp.max_value,
-            parametrizes_transition=hp.parametrizes_transition,
-            category="param",
+        logs_acc = logs_accessor(hp.level)
+        base = copy.replace(
+            default,
+            prng=prng_accessor(hi, hp.level),
+            logs=logs_acc,
         )
-        logs_acc = Accessor(get=get_logs(hp.level), put=put_logs(hp.level), meta=noop_meta(), category=None)
 
         match hp.kind:
             case "learning_rate":
-                g, p = learning_rate(hi, hp.level)
-                interfaces[(name, hp.level)] = copy.replace(
-                    default,
-                    take_prng=take_prng(hi, hp.level),
-                    put_prng=put_prng(hi, hp.level),
-                    prng=prng_accessor(hi, hp.level),
-                    logs=logs_acc,
-                    learning_rate=param_accessor(g, p, **hp_meta_kw),
-                )
+                interfaces[(name, hp.level)] = copy.replace(base, learning_rate=learning_rate(hi, hp.level))
             case "weight_decay":
-                g, p = weight_decay(hi, hp.level)
-                interfaces[(name, hp.level)] = copy.replace(
-                    default,
-                    take_prng=take_prng(hi, hp.level),
-                    put_prng=put_prng(hi, hp.level),
-                    prng=prng_accessor(hi, hp.level),
-                    logs=logs_acc,
-                    weight_decay=param_accessor(g, p, **hp_meta_kw),
-                )
+                interfaces[(name, hp.level)] = copy.replace(base, weight_decay=weight_decay(hi, hp.level))
             case "momentum":
-                g, p = momentum(hi, hp.level)
-                interfaces[(name, hp.level)] = copy.replace(
-                    default,
-                    take_prng=take_prng(hi, hp.level),
-                    put_prng=put_prng(hi, hp.level),
-                    prng=prng_accessor(hi, hp.level),
-                    logs=logs_acc,
-                    momentum=param_accessor(g, p, **hp_meta_kw),
-                )
+                interfaces[(name, hp.level)] = copy.replace(base, momentum=momentum(hi, hp.level))
             case "time_constant":
-                g, p = time_constant(hi, hp.level)
-                interfaces[(name, hp.level)] = copy.replace(
-                    default,
-                    take_prng=take_prng(hi, hp.level),
-                    put_prng=put_prng(hi, hp.level),
-                    prng=prng_accessor(hi, hp.level),
-                    logs=logs_acc,
-                    time_constant=param_accessor(g, p, **hp_meta_kw),
-                )
+                interfaces[(name, hp.level)] = copy.replace(base, time_constant=time_constant(hi, hp.level))
             case "kl_regularizer_beta":
-                g, p = kl_regularizer_beta(hi, hp.level)
-                interfaces[(name, hp.level)] = copy.replace(
-                    default,
-                    take_prng=take_prng(hi, hp.level),
-                    put_prng=put_prng(hi, hp.level),
-                    prng=prng_accessor(hi, hp.level),
-                    logs=logs_acc,
-                    kl_regularizer_beta=param_accessor(g, p, **hp_meta_kw),
-                )
+                interfaces[(name, hp.level)] = copy.replace(base, kl_regularizer_beta=kl_regularizer_beta(hi, hp.level))
 
     # 3. optimizers
     for level, mc in enumerate(config.levels):
-        nested_track = mc.nested.track_influence_in
         for name, assignment in mc.learner.optimizer.items():
             oi = id_map[(name, level)]
-            logs_acc = Accessor(get=get_logs(level), put=put_logs(level), meta=noop_meta(), category=None)
+            logs_acc = logs_accessor(level)
 
             match assignment.optimizer:
                 case SGDConfig() | SGDNormalizedConfig() | AdamConfig() | ExponentiatedGradientConfig() as opt:
-                    g_os, p_os = opt_state(oi, level)
-
                     hp_lr = config.hyperparameters[opt.learning_rate]
-                    g_lr, p_lr = learning_rate(id_map[(opt.learning_rate, hp_lr.level)], hp_lr.level)
-
                     hp_wd = config.hyperparameters[opt.weight_decay]
-                    g_wd, p_wd = weight_decay(id_map[(opt.weight_decay, hp_wd.level)], hp_wd.level)
-
                     hp_m = config.hyperparameters[opt.momentum]
-                    g_m, p_m = momentum(id_map[(opt.momentum, hp_m.level)], hp_m.level)
 
                     interfaces[(name, level)] = copy.replace(
                         default,
-                        take_prng=take_prng(oi, level),
-                        put_prng=put_prng(oi, level),
                         prng=prng_accessor(oi, level),
                         logs=logs_acc,
-                        opt_state=state_accessor(g_os, p_os, is_stateful=nested_track, category="learning_state"),
-                        learning_rate=param_accessor(
-                            g_lr,
-                            p_lr,
-                            learnable=opt.learning_rate in learnables_per_level[hp_lr.level],
-                            min_value=hp_lr.min_value,
-                            max_value=hp_lr.max_value,
-                            parametrizes_transition=hp_lr.parametrizes_transition,
-                            category=None,
-                        ),
-                        weight_decay=param_accessor(
-                            g_wd,
-                            p_wd,
-                            learnable=opt.weight_decay in learnables_per_level[hp_wd.level],
-                            min_value=hp_wd.min_value,
-                            max_value=hp_wd.max_value,
-                            parametrizes_transition=hp_wd.parametrizes_transition,
-                            category=None,
-                        ),
-                        momentum=param_accessor(
-                            g_m,
-                            p_m,
-                            learnable=opt.momentum in learnables_per_level[hp_m.level],
-                            min_value=hp_m.min_value,
-                            max_value=hp_m.max_value,
-                            parametrizes_transition=hp_m.parametrizes_transition,
-                            category=None,
-                        ),
+                        opt_state=opt_state(oi, level),
+                        learning_rate=learning_rate(id_map[(opt.learning_rate, hp_lr.level)], hp_lr.level),
+                        weight_decay=weight_decay(id_map[(opt.weight_decay, hp_wd.level)], hp_wd.level),
+                        momentum=momentum(id_map[(opt.momentum, hp_m.level)], hp_m.level),
                     )
 
                 case _:
@@ -823,156 +578,81 @@ def build_interfaces(
     # 4. tasks
     for level, mc in enumerate(config.levels):
         ti = id_map[(TASK, level)]
-        logs_acc = Accessor(get=get_logs(level), put=put_logs(level), meta=noop_meta(), category=None)
+        logs_acc = logs_accessor(level)
+        base = copy.replace(
+            default,
+            prng=prng_accessor(ti, level),
+            logs=logs_acc,
+        )
 
         match mc.objective_fn:
             case ELBOObjective(beta, _):
                 hp_cfg = config.hyperparameters[beta]
                 hi = id_map[(beta, hp_cfg.level)]
-                g_kl, p_kl = kl_regularizer_beta(hi, hp_cfg.level)
                 interfaces[(TASK, level)] = copy.replace(
-                    default,
-                    take_prng=take_prng(ti, level),
-                    put_prng=put_prng(ti, level),
-                    prng=prng_accessor(ti, level),
-                    logs=logs_acc,
-                    kl_regularizer_beta=param_accessor(
-                        g_kl,
-                        p_kl,
-                        learnable=beta in learnables_per_level[hp_cfg.level],
-                        min_value=hp_cfg.min_value,
-                        max_value=hp_cfg.max_value,
-                        parametrizes_transition=hp_cfg.parametrizes_transition,
-                        category=None,
-                    ),
+                    base,
+                    kl_regularizer_beta=kl_regularizer_beta(hi, hp_cfg.level),
                 )
             case _:
-                interfaces[(TASK, level)] = copy.replace(
-                    default,
-                    take_prng=take_prng(ti, level),
-                    put_prng=put_prng(ti, level),
-                    prng=prng_accessor(ti, level),
-                    logs=logs_acc,
-                )
+                interfaces[(TASK, level)] = base
 
-    # 5. learner states (without state/param lenses)
+    # 5. learner states
     for level, mc in enumerate(config.levels):
-        nested_track = mc.nested.track_influence_in
-
         for slot_name, learner in [
             (MODEL_LEARNER, mc.learner.model_learner),
             (OPTIMIZER_LEARNER, mc.learner.optimizer_learner),
         ]:
             li = id_map[(slot_name, level)]
-            tick_acc = Accessor(get=get_tick(li, level), put=put_tick(li, level), meta=noop_meta(), category=None)
-            logs_acc = Accessor(get=get_logs(level), put=put_logs(level), meta=noop_meta(), category=None)
+            tick_acc = tick_accessor(li, level)
+            logs_acc = logs_accessor(level)
+            base = copy.replace(
+                default,
+                prng=prng_accessor(li, level),
+                tick=tick_acc,
+                logs=logs_acc,
+            )
 
             match learner.method:
                 case RTRLConfig() | TikhonovRTRLConfig() | PadeRTRLConfig() | ImplicitEulerRTRLConfig():
-                    g_fj, p_fj = forward_mode_jacobian(li, level)
                     interfaces[(slot_name, level)] = copy.replace(
-                        default,
-                        take_prng=take_prng(li, level),
-                        put_prng=put_prng(li, level),
-                        prng=prng_accessor(li, level),
-                        tick=tick_acc,
-                        logs=logs_acc,
-                        forward_mode_jacobian=state_accessor(
-                            g_fj,
-                            p_fj,
-                            is_stateful=nested_track,
-                            category="learning_state",
-                        ),
+                        base,
+                        forward_mode_jacobian=forward_mode_jacobian(li, level),
                     )
 
                 case MidpointRTRLConfig() | HeunRTRLConfig():
-                    g_fj, p_fj = forward_mode_jacobian(li, level)
-                    g_mb, p_mb = midpoint_buffer(li, level)
                     interfaces[(slot_name, level)] = copy.replace(
-                        default,
-                        take_prng=take_prng(li, level),
-                        put_prng=put_prng(li, level),
-                        prng=prng_accessor(li, level),
-                        tick=tick_acc,
-                        logs=logs_acc,
-                        forward_mode_jacobian=state_accessor(
-                            g_fj,
-                            p_fj,
-                            is_stateful=nested_track,
-                            category="learning_state",
-                        ),
-                        midpoint_buffer=state_accessor(g_mb, p_mb, is_stateful=nested_track, category="learning_state"),
+                        base,
+                        forward_mode_jacobian=forward_mode_jacobian(li, level),
+                        midpoint_buffer=midpoint_buffer(li, level),
                     )
 
                 case RFLOConfig(tc):
-                    g_fj, p_fj = forward_mode_jacobian(li, level)
                     hp_cfg = config.hyperparameters[tc]
                     hi = id_map[(tc, hp_cfg.level)]
-                    g_tc, p_tc = time_constant(hi, hp_cfg.level)
                     interfaces[(slot_name, level)] = copy.replace(
-                        default,
-                        take_prng=take_prng(li, level),
-                        put_prng=put_prng(li, level),
-                        prng=prng_accessor(li, level),
-                        tick=tick_acc,
-                        logs=logs_acc,
-                        forward_mode_jacobian=state_accessor(
-                            g_fj,
-                            p_fj,
-                            is_stateful=nested_track,
-                            category="learning_state",
-                        ),
-                        time_constant=param_accessor(
-                            g_tc,
-                            p_tc,
-                            learnable=tc in learnables_per_level[hp_cfg.level],
-                            min_value=hp_cfg.min_value,
-                            max_value=hp_cfg.max_value,
-                            parametrizes_transition=hp_cfg.parametrizes_transition,
-                            category=None,
-                        ),
+                        base,
+                        forward_mode_jacobian=forward_mode_jacobian(li, level),
+                        time_constant=time_constant(hi, hp_cfg.level),
                     )
 
                 case UOROConfig():
-                    g_uo, p_uo = uoro_state(li, level)
                     interfaces[(slot_name, level)] = copy.replace(
-                        default,
-                        take_prng=take_prng(li, level),
-                        put_prng=put_prng(li, level),
-                        prng=prng_accessor(li, level),
-                        tick=tick_acc,
-                        logs=logs_acc,
-                        uoro_state=state_accessor(g_uo, p_uo, is_stateful=nested_track, category="learning_state"),
+                        base,
+                        uoro_state=uoro_state(li, level),
                     )
 
                 case _:
-                    interfaces[(slot_name, level)] = copy.replace(
-                        default,
-                        take_prng=take_prng(li, level),
-                        put_prng=put_prng(li, level),
-                        prng=prng_accessor(li, level),
-                        tick=tick_acc,
-                        logs=logs_acc,
-                    )
+                    interfaces[(slot_name, level)] = base
 
-    # 6. compute all_tagged from everything built so far
-    all_tagged: list[tuple[S_ID, Accessor]] = [
-        ((name, level), acc)
-        for (name, level), iface in interfaces.items()
-        for acc in interface_to_accessors(iface)
-        if acc.category is not None
-    ]
+    # 6. wire learner state/param lenses
+    noop_put_tagged = lambda env, v: env
 
-    # 7. wire learner lenses onto learner interfaces
-    for level, mc in enumerate(config.levels):
-        for slot_name, learner, is_val in [
-            (MODEL_LEARNER, mc.learner.model_learner, True),
-            (OPTIMIZER_LEARNER, mc.learner.optimizer_learner, False),
-        ]:
-            if is_val:
-                state_lens = make_lens(all_tagged, slice(level, level + 1), slice(level, level), slice(level, level))
-                param_lens1 = make_lens(all_tagged, slice(0, level), slice(0, level), slice(0, level))
-                param_lens2 = make_lens(all_tagged, slice(level, level), slice(level, level), slice(level, level + 1))
+    for level in range(num_levels):
+        for slot_name in (MODEL_LEARNER, OPTIMIZER_LEARNER):
+            if slot_name == MODEL_LEARNER:
+                state_lens = make_lens(slice(level, level + 1), slice(level, level), slice(level, level))
+                param_lens1 = make_lens(slice(0, level), slice(0, level), slice(0, level))
+                param_lens2 = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
 
                 def get_param(env, pl1=param_lens1, pl2=param_lens2):
                     return to_vector((pl1.get(env), pl2.get(env))).vector
@@ -983,14 +663,14 @@ def build_interfaces(
 
                 param_lens = Lens(get=get_param, put=put_param)
             else:
-                state_lens = make_lens(all_tagged, slice(0, level), slice(0, level), slice(0, level))
-                param_lens = make_lens(all_tagged, slice(level, level), slice(level, level), slice(level, level + 1))
+                state_lens = make_lens(slice(0, level), slice(0, level), slice(0, level))
+                param_lens = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
 
             iface = interfaces[(slot_name, level)]
             interfaces[(slot_name, level)] = copy.replace(
                 iface,
-                state=Accessor(get=state_lens.get, put=state_lens.put, meta=noop_meta(), category=None),
-                param=Accessor(get=param_lens.get, put=param_lens.put, meta=noop_meta(), category=None),
+                state=Accessor(get=state_lens.get, put=state_lens.put, put_tagged=noop_put_tagged),
+                param=Accessor(get=param_lens.get, put=param_lens.put, put_tagged=noop_put_tagged),
             )
 
     return interfaces

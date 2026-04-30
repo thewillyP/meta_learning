@@ -36,7 +36,7 @@ from meta_learn_lib.create_interface import build_id_map, build_interfaces
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
-from meta_learn_lib.interface import GodInterface, interface_to_accessors
+from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.learning import create_meta_learner, create_validation_learners
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.loss_function import create_readout_loss_fns
@@ -253,9 +253,7 @@ def setup_env_and_fns(config: GodConfig):
 
     env = create_env(config, shapes, interfaces, env_prng)
 
-    inference_axes = [
-        create_inference_axes(env, config, interfaces, s, lvl) for lvl, s in enumerate(shapes)
-    ]
+    inference_axes = [create_inference_axes(env, config, interfaces, s, lvl) for lvl, s in enumerate(shapes)]
 
     transitions, readouts = zip(
         *[create_inference_and_readout(config, interfaces, lvl, ax) for lvl, ax in enumerate(inference_axes)]
@@ -356,8 +354,12 @@ def test_validation_gradient_rtrl_vs_bptt():
     stuff_rtrl = setup_env_and_fns(config_rtrl)
 
     # Rebuild validation learners to get model_learner gradients directly
-    vl_learners_bptt, _ = create_validation_learners(stuff_bptt.transition_fns, stuff_bptt.loss_fns, stuff_bptt.interfaces, config_bptt)
-    vl_learners_rtrl, _ = create_validation_learners(stuff_rtrl.transition_fns, stuff_rtrl.loss_fns, stuff_rtrl.interfaces, config_rtrl)
+    vl_learners_bptt, _ = create_validation_learners(
+        stuff_bptt.transition_fns, stuff_bptt.loss_fns, stuff_bptt.interfaces, config_bptt
+    )
+    vl_learners_rtrl, _ = create_validation_learners(
+        stuff_rtrl.transition_fns, stuff_rtrl.loss_fns, stuff_rtrl.interfaces, config_rtrl
+    )
     vl_bptt = vl_learners_bptt[0]
     vl_rtrl = vl_learners_rtrl[0]
 
@@ -368,10 +370,7 @@ def test_validation_gradient_rtrl_vs_bptt():
     def get_axes(config, stuff):
         resetters = env_resetters(config, stuff.shapes, stuff.interfaces, [False] * len(config.levels))
         inner_resetter, _ = resetters[0]
-        accessors = [
-            acc for iface in stuff.interfaces.values() for acc in interface_to_accessors(iface)
-        ]
-        return diff_axes(stuff.env, inner_resetter(stuff.env, jax.random.key(0)), accessors)
+        return diff_axes(stuff.env, inner_resetter(stuff.env, jax.random.key(0)))
 
     axes_bptt = get_axes(config_bptt, stuff_bptt)
     axes_rtrl = get_axes(config_rtrl, stuff_rtrl)

@@ -11,7 +11,7 @@ from toposort import toposort_flatten
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.env import *
-from meta_learn_lib.interface import GodInterface, interface_to_accessors, build_mask, ParamMeta
+from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
 from meta_learn_lib.optimizer import get_opt_state
@@ -76,6 +76,7 @@ def create_inference_state[ENV](
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
     node_features: dict[str, tuple[int, ...]],
+    track_influence_in: frozenset[int],
     is_init: bool,
     env: ENV,
     prng: PRNG,
@@ -91,12 +92,11 @@ def create_inference_state[ENV](
                 else:
                     activation = ACTIVATION(jnp.zeros((nn_layer.n,)))
 
-                rnn_state = VanillaRecurrentState(
-                    activation=activation,
-                    activation_fn=nn_layer.activation_fn,
+                rnn_state = VanillaRecurrentState(activation=activation, activation_fn=nn_layer.activation_fn)
+                env = interface.vanilla_rnn_state.put_tagged(
+                    env, Tagged(value=rnn_state, meta=StateMeta(is_stateful=track_influence_in))
                 )
-                env = interface.vanilla_rnn_state.put(env, rnn_state)
-                env = interface.put_prng(env, k2)
+                env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
             case GRULayer(n, use_bias, use_random_init):
                 k1, k2, prng = jax.random.split(prng, 3)
                 if use_random_init:
@@ -104,8 +104,10 @@ def create_inference_state[ENV](
                 else:
                     activation = ACTIVATION(jnp.zeros((n,)))
 
-                env = interface.gru_activation.put(env, activation)
-                env = interface.put_prng(env, k2)
+                env = interface.gru_activation.put_tagged(
+                    env, Tagged(value=activation, meta=StateMeta(is_stateful=track_influence_in))
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
             case LSTMLayer(n, use_bias, use_random_init):
                 k1, k2, k3, prng = jax.random.split(prng, 4)
                 if use_random_init:
@@ -116,19 +118,23 @@ def create_inference_state[ENV](
                     cell = ACTIVATION(jnp.zeros((n,)))
 
                 lstm_state = LSTMState(h=activation, c=cell)
-                env = interface.lstm_state.put(env, lstm_state)
-                env = interface.put_prng(env, k3)
+                env = interface.lstm_state.put_tagged(
+                    env, Tagged(value=lstm_state, meta=StateMeta(is_stateful=track_influence_in))
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k3, meta=StateMeta(is_stateful=frozenset())))
             case Scan(graph, autoregressive_mask, pred_source, start_token):
                 k1, prng = jax.random.split(prng, 2)
                 shape = node_features[node_name][1:]
                 match start_token:
                     case "zeros":
                         token = jnp.zeros(shape)
-                env = interface.autoregressive_predictions.put(env, token)
-                env = interface.put_prng(env, k1)
+                env = interface.autoregressive_predictions.put_tagged(
+                    env, Tagged(value=token, meta=StateMeta(is_stateful=track_influence_in))
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
             case _:
                 k1, prng = jax.random.split(prng, 2)
-                env = interface.put_prng(env, k1)
+                env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
 
     return env
 
@@ -140,6 +146,7 @@ def create_inference_parameters[ENV](
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
     node_features: dict[str, tuple[int, ...]],
+    learnables: frozenset[str],
     env: ENV,
     prng: PRNG,
 ) -> ENV:
@@ -148,6 +155,8 @@ def create_inference_parameters[ENV](
 
     for node_name, node in nodes.items():
         interface = interfaces[(node_name, level)]
+        is_learnable = node_name in learnables
+        is_transition = node_name not in readout_graph
         match node:
             case NNLayer(n, activation_fn, use_bias, layer_norm):
                 n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
@@ -166,8 +175,19 @@ def create_inference_parameters[ENV](
                         layer = eqx.nn.Identity()
 
                 nn_model = eqx.nn.Sequential([new_linear, layer, eqx.nn.Lambda(get_activation_fn(activation_fn))])
-                env = interface.mlp_model.put(env, nn_model)
-                env = interface.put_prng(env, k2)
+                env = interface.mlp_model.put_tagged(
+                    env,
+                    Tagged(
+                        value=nn_model,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
             case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
                 n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
@@ -184,29 +204,84 @@ def create_inference_parameters[ENV](
                     case None:
                         layer = eqx.nn.Identity()
 
-                env = interface.rnn_w_rec.put(env, w_rec)
-                env = interface.rnn_b_rec.put(env, b_rec)
-                env = interface.rnn_layer_norm.put(env, layer)
-                env = interface.put_prng(env, k3)
+                env = interface.rnn_w_rec.put_tagged(
+                    env,
+                    Tagged(
+                        value=w_rec,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.rnn_b_rec.put_tagged(
+                    env,
+                    Tagged(
+                        value=b_rec,
+                        meta=ParamMeta(
+                            learnable=is_learnable and nn_layer.use_bias,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.rnn_layer_norm.put_tagged(
+                    env,
+                    Tagged(
+                        value=layer,
+                        meta=ParamMeta(
+                            learnable=is_learnable and nn_layer.layer_norm is not None,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k3, meta=StateMeta(is_stateful=frozenset())))
 
             case GRULayer(n, use_bias, use_random_init):
                 n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
                 k1, k2, prng = jax.random.split(prng, 3)
 
                 gru = eqx.nn.GRUCell(n_in, n, use_bias=use_bias, key=k1)
-                env = interface.gru_cell.put(env, gru)
-                env = interface.put_prng(env, k2)
+                env = interface.gru_cell.put_tagged(
+                    env,
+                    Tagged(
+                        value=gru,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
             case LSTMLayer(n, use_bias, use_random_init):
                 n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
                 k1, k2, prng = jax.random.split(prng, 3)
 
                 lstm = eqx.nn.LSTMCell(n_in, n, use_bias=use_bias, key=k1)
-                env = interface.lstm_cell.put(env, lstm)
-                env = interface.put_prng(env, k2)
+                env = interface.lstm_cell.put_tagged(
+                    env,
+                    Tagged(
+                        value=lstm,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
             case _:
                 k1, prng = jax.random.split(prng, 2)
-                env = interface.put_prng(env, k1)
+                env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
 
     return env
 
@@ -214,6 +289,7 @@ def create_inference_parameters[ENV](
 def create_hyperparameters[ENV](
     hps: dict[HP, HyperparameterConfig],
     interfaces: dict[S_ID, GodInterface[ENV]],
+    learnables_per_level: list[frozenset[str]],
     env: ENV,
     prng: PRNG,
 ) -> ENV:
@@ -223,21 +299,27 @@ def create_hyperparameters[ENV](
         interface = interfaces[(hp_name, hp_config.level)]
         _, invert = hyperparameter_reparametrization(hp_config.hyperparameter_parametrization)
         val = jnp.full((hp_config.count,), invert(hp_config.value))
+        meta = ParamMeta(
+            learnable=hp_name in learnables_per_level[hp_config.level],
+            min_value=hp_config.min_value,
+            max_value=hp_config.max_value,
+            parametrizes_transition=hp_config.parametrizes_transition,
+        )
         k1, prng = jax.random.split(prng, 2)
 
         match hp_config.kind:
             case "learning_rate":
-                env = interface.learning_rate.put(env, val)
+                env = interface.learning_rate.put_tagged(env, Tagged(value=val, meta=meta))
             case "weight_decay":
-                env = interface.weight_decay.put(env, val)
+                env = interface.weight_decay.put_tagged(env, Tagged(value=val, meta=meta))
             case "momentum":
-                env = interface.momentum.put(env, val)
+                env = interface.momentum.put_tagged(env, Tagged(value=val, meta=meta))
             case "time_constant":
-                env = interface.time_constant.put(env, val)
+                env = interface.time_constant.put_tagged(env, Tagged(value=val, meta=meta))
             case "kl_regularizer_beta":
-                env = interface.kl_regularizer_beta.put(env, val)
+                env = interface.kl_regularizer_beta.put_tagged(env, Tagged(value=val, meta=meta))
 
-        env = interface.put_prng(env, k1)
+        env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
 
     return env
 
@@ -247,10 +329,12 @@ def create_learner_states[ENV](
     method: GradientMethod,
     interfaces: dict[S_ID, GodInterface[ENV]],
     learner_key: S_ID,
+    track_influence_in: frozenset[int],
     env: ENV,
     prng: PRNG,
 ) -> ENV:
     interface = interfaces[learner_key]
+    state_meta = StateMeta(is_stateful=track_influence_in)
 
     match method:
         case (
@@ -277,14 +361,14 @@ def create_learner_states[ENV](
                 dhdp = eqx.filter_jacfwd(infl_fn)(param)
             else:
                 dhdp = eqx.filter_jacrev(infl_fn)(param)
-            env = interface.forward_mode_jacobian.put(new_env, dhdp)
+            env = interface.forward_mode_jacobian.put_tagged(new_env, Tagged(value=dhdp, meta=state_meta))
             match gradient_method:
                 case MidpointRTRLConfig() | HeunRTRLConfig():
-                    env = interface.midpoint_buffer.put(
+                    env = interface.midpoint_buffer.put_tagged(
                         env,
-                        MidpointBuffer(P_prev=dhdp, predictor=dhdp),
+                        Tagged(value=MidpointBuffer(P_prev=dhdp, predictor=dhdp), meta=state_meta),
                     )
-            env = interface.put_prng(env, k2)
+            env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
         case UOROConfig():
             k0, k1, k2, k3, prng = jax.random.split(prng, 5)
             env = factory(env, k0)
@@ -296,50 +380,39 @@ def create_learner_states[ENV](
             a = jax.random.normal(k1, state.shape)
 
             # B: start fully random, then zero out nonrecurrent params
-            b = jax.random.normal(k2, param.shape)
+            b_env = interface.param.put(env, jax.random.normal(k2, param.shape))
 
-            # Zero out non-transition params in b
-            all_accs = [
-                acc
-                for iface in interfaces.values()
-                for acc in interface_to_accessors(iface)
-                if acc.category is not None
-            ]
-            non_transition_mask = build_mask(
-                env,
-                all_accs,
-                lambda meta: isinstance(meta, ParamMeta) and not meta.parametrizes_transition,
-            )
-            b_env = interface.param.put(env, b)
-            non_transition, rest = eqx.partition(b_env, non_transition_mask)
-            zeroed = jax.tree.map(lambda v: jnp.zeros_like(v), non_transition)
-            b_env = eqx.combine(zeroed, rest)
+            def zero_readout(x):
+                if isinstance(x, Tagged) and isinstance(x.meta, ParamMeta) and not x.meta.parametrizes_transition:
+                    arrays, non_arrays = eqx.partition(x, eqx.is_inexact_array)
+                    zeroed = jax.tree.map(lambda v: jnp.zeros_like(v), arrays)
+                    return eqx.combine(zeroed, non_arrays)
+                return x
+
+            b_env = jax.tree.map(zero_readout, b_env, is_leaf=lambda x: isinstance(x, Tagged))
             b = interface.param.get(b_env)
 
             uoro = UOROState(A=a, B=b)
-            env = interface.uoro_state.put(env, uoro)
-            env = interface.put_prng(env, k3)
+            env = interface.uoro_state.put_tagged(env, Tagged(value=uoro, meta=state_meta))
+            env = interface.prng.put_tagged(env, Tagged(value=k3, meta=StateMeta(is_stateful=frozenset())))
         case _:
             k1, k2, prng = jax.random.split(prng, 3)
             env = factory(env, k1)
-            env = interface.put_prng(env, k2)
+            env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
-    env = interface.tick.put(env, jnp.array(0))
+    env = interface.tick.put_tagged(env, Tagged(value=jnp.array(0), meta=StateMeta(is_stateful=frozenset())))
     return env
 
 
 def vmap_factory[ENV](
     factory: Callable[[ENV, PRNG], ENV],
     batches: list[int],
-    interfaces: dict[S_ID, GodInterface[ENV]],
 ) -> Callable[[ENV, PRNG], ENV]:
-
-    all_accessors = [acc for iface in interfaces.values() for acc in interface_to_accessors(iface)]
 
     def vmap_env(env: ENV, prng: PRNG) -> ENV:
         k1, k2, prng = jax.random.split(prng, 3)
         new_env = factory(env, k1)
-        axes = diff_axes(env, new_env, all_accessors)
+        axes = diff_axes(env, new_env)
         _, static = eqx.partition(new_env, eqx.is_array)
 
         def f_init(e, k):
@@ -369,14 +442,18 @@ def reset_validation[ENV](
     is_init: bool,
 ) -> Callable[[ENV, PRNG], ENV]:
 
+    track_influence_in = meta_config.validation.track_influence_in
+
     def create_env(env: ENV, prng: PRNG) -> ENV:
         k1, prng = jax.random.split(prng, 2)
-        f1 = lambda e, k: create_inference_state(nodes, interfaces, level, node_features, is_init, e, k)
+        f1 = lambda e, k: create_inference_state(
+            nodes, interfaces, level, node_features, track_influence_in, is_init, e, k
+        )
         batch_size = [
             meta_config.validation.batch,
             meta_config.dataset.num_examples_in_minibatch,
         ]
-        env = vmap_factory(f1, batch_size, interfaces)(env, k1)
+        env = vmap_factory(f1, batch_size)(env, k1)
 
         k1, k2, prng = jax.random.split(prng, 3)
         env = create_learner_states(
@@ -384,6 +461,7 @@ def reset_validation[ENV](
             meta_config.learner.model_learner.method,
             interfaces,
             (MODEL_LEARNER, level),
+            track_influence_in,
             env,
             k2,
         )
@@ -395,6 +473,7 @@ def reset_validation[ENV](
 
 def reset_params_hyperparams_optimizer[ENV](
     factory: Callable[[ENV, PRNG], ENV],
+    config: GodConfig,
     interfaces: dict[S_ID, GodInterface[ENV]],
     meta_config: MetaConfig,
     level: int,
@@ -406,15 +485,27 @@ def reset_params_hyperparams_optimizer[ENV](
     create_inference_param: bool,
 ) -> Callable[[ENV, PRNG], ENV]:
 
+    learnables_per_level = [
+        frozenset().union(*[v.target for v in mc.learner.optimizer.values()]) for mc in config.levels
+    ]
+
     def create_env(env: ENV, prng: PRNG) -> ENV:
         if create_inference_param:
             k1, prng = jax.random.split(prng, 2)
             env = create_inference_parameters(
-                nodes, transition_graph, readout_graph, interfaces, level, node_features, env, k1
+                nodes,
+                transition_graph,
+                readout_graph,
+                interfaces,
+                level,
+                node_features,
+                learnables_per_level[0],
+                env,
+                k1,
             )
 
         k2, prng = jax.random.split(prng, 2)
-        env = create_hyperparameters(hyperparameters, interfaces, env, k2)
+        env = create_hyperparameters(hyperparameters, interfaces, learnables_per_level, env, k2)
 
         env = get_opt_state(
             meta_config.learner.optimizer,
@@ -440,6 +531,7 @@ def reset_nested_learner[ENV](
 ) -> Callable[[ENV, PRNG], ENV]:
 
     nest_interface = interfaces[(OPTIMIZER_LEARNER, level)]
+    track_influence_in = meta_config.nested.track_influence_in
 
     def create_env(env: ENV, prng: PRNG) -> ENV:
         k1, k2, prng = jax.random.split(prng, 3)
@@ -450,6 +542,7 @@ def reset_nested_learner[ENV](
             meta_config.learner.optimizer_learner.method,
             interfaces,
             (OPTIMIZER_LEARNER, level),
+            track_influence_in,
             env,
             k2,
         )
@@ -521,7 +614,7 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
         level_meta=pvector(
             [
                 LevelMeta(
-                    log=Logs(),
+                    log=Tagged(value=Logs(), meta=StateMeta(is_stateful=frozenset())),
                     prngs=pmap({}),
                     ticks=pmap({}),
                 )
@@ -618,10 +711,11 @@ def env_resetters[ENV](
             level,
         )
 
-        inner = vmap_factory(_reset_nested_learner, [meta_config.nested.batch], interfaces)
+        inner = vmap_factory(_reset_nested_learner, [meta_config.nested.batch])
 
         full = reset_params_hyperparams_optimizer(
             inner,
+            config,
             interfaces,
             meta_config,
             level,
@@ -650,7 +744,7 @@ def env_resetters[ENV](
 
     val_resetters = env_validation_resetters(config, shapes, interfaces)
     batches = [mc.nested.batch for mc in reversed(config.levels)]
-    batched_val_resetters = [vmap_factory(vr, batches, interfaces) for vr in val_resetters]
+    batched_val_resetters = [vmap_factory(vr, batches) for vr in val_resetters]
 
     def compose(
         nested_inner: Callable[[ENV, PRNG], ENV],
@@ -753,7 +847,8 @@ def create_inference_axes[ENV](
     level: int,
 ) -> ENV:
     node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
-    f = lambda e, k: create_inference_state(config.nodes, interfaces, level, node_features, False, e, k)
-
-    all_accessors = [acc for iface in interfaces.values() for acc in interface_to_accessors(iface)]
-    return diff_axes(env, f(env, jax.random.key(0)), all_accessors)
+    track_influence_in = config.levels[level].validation.track_influence_in
+    f = lambda e, k: create_inference_state(
+        config.nodes, interfaces, level, node_features, track_influence_in, False, e, k
+    )
+    return diff_axes(env, f(env, jax.random.key(0)))

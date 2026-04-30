@@ -1,7 +1,4 @@
 import os
-
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
-
 import json
 import clearml
 from clearml import InputModel, Model
@@ -52,9 +49,9 @@ def main(
     resume_model_id: str | None,
     cache_dir: str,
 ):
-    jax.config.update("jax_compilation_cache_dir", os.path.expanduser(cache_dir))
-    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
-    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+    # jax.config.update("jax_compilation_cache_dir", os.path.expanduser(cache_dir))
+    # jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+    # jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 
     if not skip_jitter:
         _jitter_rng = random.Random()

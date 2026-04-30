@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Callable
 
 import jax
-import math
 import optax
 import equinox as eqx
 
@@ -10,46 +9,18 @@ from meta_learn_lib.env import (
     LSTMState,
     Logs,
     MidpointBuffer,
+    Tagged,
     UOROState,
     VanillaRecurrentState,
 )
-from meta_learn_lib.lib_types import JACOBIAN, PRNG, Category
-
-
-@dataclass(frozen=True)
-class ParamMeta:
-    learnable: bool
-    min_value: float
-    max_value: float
-    parametrizes_transition: bool
-
-
-@dataclass(frozen=True)
-class StateMeta:
-    is_stateful: frozenset[int]
-
-
-type AccessorMeta = ParamMeta | StateMeta
+from meta_learn_lib.lib_types import JACOBIAN, PRNG
 
 
 @dataclass(frozen=True)
 class Accessor[ENV, T]:
     get: Callable[[ENV], T]
     put: Callable[[ENV, T], ENV]
-    meta: AccessorMeta
-    category: Category
-
-
-def build_mask[ENV](
-    env: ENV,
-    accessors: Iterable[Accessor[ENV, bool]],
-    predicate: Callable[[AccessorMeta], bool],
-) -> ENV:
-    mask = jax.tree.map(lambda _: False, env)
-    for acc in accessors:
-        if predicate(acc.meta):
-            mask = acc.put(mask, True)
-    return mask
+    put_tagged: Callable[[ENV, Tagged[T]], ENV]
 
 
 # ============================================================================
@@ -59,8 +30,6 @@ def build_mask[ENV](
 
 @dataclass(frozen=True)
 class GodInterface[ENV]:
-    take_prng: Callable[[ENV], tuple[PRNG, ENV]]
-    put_prng: Callable[[ENV, PRNG], ENV]
     prng: Accessor[ENV, PRNG]
     tick: Accessor[ENV, jax.Array]
     logs: Accessor[ENV, Logs]
@@ -89,24 +58,26 @@ class GodInterface[ENV]:
     def advance_tick(self: "GodInterface[ENV]", env: ENV) -> ENV:
         return self.tick.put(env, self.tick.get(env) + 1)
 
+    def take_prng(self: "GodInterface[ENV]", env: ENV) -> tuple[PRNG, ENV]:
+        sub, new = jax.random.split(self.prng.get(env))
+        return sub, self.prng.put(env, new)
 
-def noop_meta() -> ParamMeta:
-    return ParamMeta(
-        learnable=False,
-        min_value=-math.inf,
-        max_value=math.inf,
-        parametrizes_transition=False,
-    )
+    def merge_logs(self: "GodInterface[ENV]", env: ENV, logs: Logs) -> ENV:
+        current = self.logs.get(env)
+        merged = current.set(**{k: v for k, v in logs.serialize().items() if v is not None})
+        return self.logs.put(env, merged)
 
 
 def default_god_interface[ENV]() -> GodInterface[ENV]:
 
     def noop[T]() -> Accessor[ENV, T]:
-        return Accessor(get=lambda env: None, put=lambda env, v: env, meta=noop_meta(), category=None)
+        return Accessor(
+            get=lambda env: None,
+            put=lambda env, v: env,
+            put_tagged=lambda env, v: env,
+        )
 
     return GodInterface[ENV](
-        take_prng=lambda env: (None, env),
-        put_prng=lambda env, v: env,
         prng=noop(),
         tick=noop(),
         logs=noop(),
@@ -132,30 +103,3 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         momentum=noop(),
         kl_regularizer_beta=noop(),
     )
-
-
-def interface_to_accessors[ENV, T](interface: GodInterface[ENV]) -> list[Accessor[ENV, T]]:
-    return [
-        interface.prng,
-        interface.tick,
-        interface.logs,
-        interface.mlp_model,
-        interface.rnn_w_rec,
-        interface.rnn_b_rec,
-        interface.rnn_layer_norm,
-        interface.vanilla_rnn_state,
-        interface.gru_cell,
-        interface.gru_activation,
-        interface.lstm_cell,
-        interface.lstm_state,
-        interface.autoregressive_predictions,
-        interface.time_constant,
-        interface.opt_state,
-        interface.forward_mode_jacobian,
-        interface.uoro_state,
-        interface.midpoint_buffer,
-        interface.learning_rate,
-        interface.weight_decay,
-        interface.momentum,
-        interface.kl_regularizer_beta,
-    ]

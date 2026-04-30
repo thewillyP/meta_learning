@@ -217,7 +217,7 @@ OHO_RNN32 = GodConfig(
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
-                        damping=0.0,
+                        damping=1e-4,
                         beta=0.1,
                         use_finite_hvp=1e-3,
                     ),

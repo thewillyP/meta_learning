@@ -13,6 +13,10 @@ from meta_learn_lib.constants import *
 from meta_learn_lib.lib_types import *
 
 
+def read_only[ENV, T](acc: Accessor[ENV, T]) -> Accessor[ENV, T]:
+    return Accessor(get=acc.get, put=lambda env, v: env, put_tagged=lambda env, v: env)
+
+
 # ============================================================================
 # PRNG primitives
 # ============================================================================
@@ -483,7 +487,7 @@ def build_interfaces(
                         rnn_b_rec=rnn_b_rec(pi, 0),
                         rnn_layer_norm=rnn_layer_norm(pi, 0),
                         vanilla_rnn_state=vanilla_rnn_state(si, level),
-                        time_constant=time_constant(hi, hp_cfg.level),
+                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
                     )
 
                 case GRULayer(_, _, _, tc):
@@ -495,7 +499,7 @@ def build_interfaces(
                         logs=logs_acc,
                         gru_cell=gru_cell(pi, 0),
                         gru_activation=gru_activation(si, level),
-                        time_constant=time_constant(hi, hp_cfg.level),
+                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
                     )
 
                 case LSTMLayer(_, _, _, tc):
@@ -507,7 +511,7 @@ def build_interfaces(
                         logs=logs_acc,
                         lstm_cell=lstm_cell(pi, 0),
                         lstm_state=lstm_state(si, level),
-                        time_constant=time_constant(hi, hp_cfg.level),
+                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
                     )
 
                 case Scan():
@@ -591,7 +595,7 @@ def build_interfaces(
                 hi = id_map[(beta, hp_cfg.level)]
                 interfaces[(TASK, level)] = copy.replace(
                     base,
-                    kl_regularizer_beta=kl_regularizer_beta(hi, hp_cfg.level),
+                    kl_regularizer_beta=read_only(kl_regularizer_beta(hi, hp_cfg.level)),
                 )
             case _:
                 interfaces[(TASK, level)] = base
@@ -632,7 +636,7 @@ def build_interfaces(
                     interfaces[(slot_name, level)] = copy.replace(
                         base,
                         forward_mode_jacobian=forward_mode_jacobian(li, level),
-                        time_constant=time_constant(hi, hp_cfg.level),
+                        time_constant=read_only(time_constant(hi, hp_cfg.level)),
                     )
 
                 case UOROConfig():

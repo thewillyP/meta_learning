@@ -133,16 +133,14 @@ class AdamConfig(eqx.Module):
     learning_rate: HP
     weight_decay: HP
     momentum: HP
+    second_momentum: jax.Array
     eps: jax.Array
     eps_root: jax.Array
 
 
 @dataclass(frozen=True)
 class ExponentiatedGradientConfig:
-    learning_rate: HP
-    weight_decay: HP
-    momentum: HP
-    use_adam: bool
+    base: Union[SGDConfig, AdamConfig]
 
 
 type Optimizer = Union[

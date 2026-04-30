@@ -93,7 +93,7 @@ def get_opt[ENV](
                 optax.add_decayed_weights(wd_forward(wd)),
                 optax.sgd(lr_forward(lr), momentum=m_forward(m)),
             )
-        case AdamConfig(learning_rate, weight_decay, momentum, eps, eps_root):
+        case AdamConfig(learning_rate, weight_decay, momentum, second_momentum, eps, eps_root):
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
             wd_forward, _ = hyperparameter_reparametrization(hps[weight_decay].hyperparameter_parametrization)
             m_forward, _ = hyperparameter_reparametrization(hps[momentum].hyperparameter_parametrization)
@@ -105,21 +105,32 @@ def get_opt[ENV](
                     lr_forward(lr),
                     weight_decay=wd_forward(wd),
                     b1=m_forward(m),
+                    b2=second_momentum,
                     eps=eps,
                     eps_root=eps_root,
                 ),
             )
-        case ExponentiatedGradientConfig(learning_rate, weight_decay, momentum, use_adam):
-            lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
-            wd_forward, _ = hyperparameter_reparametrization(hps[weight_decay].hyperparameter_parametrization)
-            m_forward, _ = hyperparameter_reparametrization(hps[momentum].hyperparameter_parametrization)
+        case ExponentiatedGradientConfig(base):
+            lr_forward, _ = hyperparameter_reparametrization(hps[base.learning_rate].hyperparameter_parametrization)
+            wd_forward, _ = hyperparameter_reparametrization(hps[base.weight_decay].hyperparameter_parametrization)
+            m_forward, _ = hyperparameter_reparametrization(hps[base.momentum].hyperparameter_parametrization)
             lr = interface.learning_rate.get(env)
             wd = interface.weight_decay.get(env)
             m = interface.momentum.get(env)
+            match base:
+                case SGDConfig():
+                    inner = optax.trace(decay=m_forward(m), nesterov=False)
+                case AdamConfig(_, _, _, second_momentum, eps, eps_root):
+                    inner = optax.scale_by_adam(
+                        b1=m_forward(m),
+                        b2=second_momentum,
+                        eps=eps,
+                        eps_root=eps_root,
+                    )
             return optax.chain(
                 scale_by_sign_of_param(),
                 add_scalar_wd(wd_forward(wd)),
-                optax.scale_by_adam(b1=m_forward(m)) if use_adam else optax.identity(),
+                inner,
                 optax.scale(-lr_forward(lr)),
             )
 

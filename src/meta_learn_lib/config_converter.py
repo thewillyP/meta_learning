@@ -116,6 +116,8 @@ def make_converter() -> Converter:
         converter,
         Union[SGDConfig, SGDNormalizedConfig, AdamConfig, ExponentiatedGradientConfig],
     )
+    # ExponentiatedGradientConfig.base — nested union dispatch
+    setup_flattened_union(converter, Union[SGDConfig, AdamConfig])
 
     # -- Clip --
     setup_flattened_union(converter, Union[HardClip, SoftClip])

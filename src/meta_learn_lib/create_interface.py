@@ -600,18 +600,23 @@ def build_interfaces(
 
             match assignment.optimizer:
                 case SGDConfig() | SGDNormalizedConfig() | AdamConfig() | ExponentiatedGradientConfig() as opt:
-                    hp_lr = config.hyperparameters[opt.learning_rate]
-                    hp_wd = config.hyperparameters[opt.weight_decay]
-                    hp_m = config.hyperparameters[opt.momentum]
+                    match opt:
+                        case ExponentiatedGradientConfig(base):
+                            inner = base
+                        case _:
+                            inner = opt
+                    hp_lr = config.hyperparameters[inner.learning_rate]
+                    hp_wd = config.hyperparameters[inner.weight_decay]
+                    hp_m = config.hyperparameters[inner.momentum]
 
                     interfaces[(name, level)] = copy.replace(
                         default,
                         prng=prng_accessor(oi, level),
                         logs=logs_acc,
                         opt_state=opt_state(oi, level),
-                        learning_rate=learning_rate(id_map[(opt.learning_rate, hp_lr.level)], hp_lr.level),
-                        weight_decay=weight_decay(id_map[(opt.weight_decay, hp_wd.level)], hp_wd.level),
-                        momentum=momentum(id_map[(opt.momentum, hp_m.level)], hp_m.level),
+                        learning_rate=learning_rate(id_map[(inner.learning_rate, hp_lr.level)], hp_lr.level),
+                        weight_decay=weight_decay(id_map[(inner.weight_decay, hp_wd.level)], hp_wd.level),
+                        momentum=momentum(id_map[(inner.momentum, hp_m.level)], hp_m.level),
                     )
 
                 case _:

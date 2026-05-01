@@ -176,12 +176,15 @@ def create_readout_loss_fns[ENV](
         loss_fn: Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]],
         readout: Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs],
         level: int,
+        collect_predictions: bool,
     ) -> Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]:
         def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, LOSS, STAT]:
             outputs = readout(env, data)
             loss, stat = loss_fn(env, outputs, data)
             stat = {f"level{level}/{k}": v for k, v in stat.items()}
             stat |= get_env_stats(config, env, interfaces, level)
+            if collect_predictions:
+                stat[f"level{level}/prediction"] = jax.lax.stop_gradient(outputs.prediction)
             return env, loss, stat
 
         return fn
@@ -196,6 +199,7 @@ def create_readout_loss_fns[ENV](
             ),
             readout,
             level,
+            meta_config.collect_predictions,
         )
         for level, (meta_config, readout) in enumerate(zip(config.levels, readouts))
     ]

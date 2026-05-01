@@ -3,7 +3,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-from typing import Protocol
+from typing import Iterator, Protocol
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from itertools import accumulate
@@ -188,12 +188,27 @@ def compute_strides(shape: tuple[int, ...]) -> list[int]:
     return list(reversed(strides[:-1]))
 
 
+def compute_ref_shape(stats: dict[str, np.ndarray], num_levels: int) -> tuple[int, ...]:
+    """Take scan dims from the deepest-level (highest-ndim) stat as the iteration ref."""
+    if not stats:
+        return ()
+    max_ndim = max(v.ndim for v in stats.values())
+    for k, v in stats.items():
+        if v.ndim == max_ndim:
+            ref_level = infer_level(k)
+            n_ref_pairs = num_levels - ref_level
+            return tuple(v.shape[i] for i in range(0, 2 * n_ref_pairs, 2))
+    return ()
+
+
 class ScalarLogger:
     """Logs dict[str, jax.Array] stats.
 
-    Each stat has shape (..., time) where dims before time are a mix of
-    scan and batch dims. Scan dims advance the shared iteration counter.
-    Batch dims become separate named series.
+    Each stat has shape (..., time, *feature_dims). Dims before time are a mix of
+    paired (scan, vmap) blocks and trailing batch dims. Scan dims advance the shared
+    iteration counter; batch dims become separate named series.
+
+    For scalar stats use n_feature_dims=0; for images use n_feature_dims=3 (C,H,W).
     """
 
     def __init__(
@@ -214,40 +229,28 @@ class ScalarLogger:
         self.global_step = 0
         self.iteration_offset = iteration_offset
 
-    def log(self, stats: dict[str, jax.Array]):
-        # Bulk transfer all JAX arrays to numpy once (single device-to-host copy)
-        stats = {k: np.asarray(v) for k, v in stats.items()}
-
-        # ref_shape from deepest level's scan dims (exclude time)
-        max_ndim = max(v.ndim for v in stats.values())
-        for k, v in stats.items():
-            if v.ndim == max_ndim:
-                ref_level = infer_level(k)
-                n_ref_pairs = self.num_levels - ref_level
-                ref_shape = tuple(v.shape[i] for i in range(0, 2 * n_ref_pairs, 2))
-                break
-
+    def for_each_entry(
+        self,
+        stats: dict[str, np.ndarray],
+        n_feature_dims: int,
+    ) -> Iterator[tuple[str, int, bool, np.ndarray]]:
+        """Yields (series, iteration, has_time, sub) for each scan/batch index of
+        each stat. `sub` is `value[full_idx]` — shape `(time, *feature_dims)` if
+        has_time, else `(*feature_dims,)`. Caller decides reduction."""
+        ref_shape = compute_ref_shape(stats, self.num_levels)
         strides = compute_strides(ref_shape)
-        context = self.logger.get_context()
 
         for idx in itertools.product(*(range(d) for d in ref_shape)):
             local_step = sum(i * st for i, st in zip(idx, strides))
             iteration = self.global_step + local_step + 1
 
-            if iteration % self.checkpoint_every != 0:
-                continue
-
             for key, value in stats.items():
                 level = infer_level(key)
-                n_scan_vmap_pairs = self.num_levels - level
-                n_paired_dims = 2 * n_scan_vmap_pairs
+                n_paired_dims = 2 * (self.num_levels - level)
                 expected_with_time = n_paired_dims + level + 1
-                has_time = value.ndim >= expected_with_time
-
-                if has_time:
-                    n_before_time = value.ndim - 1
-                else:
-                    n_before_time = value.ndim
+                effective_ndim = value.ndim - n_feature_dims
+                has_time = effective_ndim >= expected_with_time
+                n_before_time = (effective_ndim - 1) if has_time else effective_ndim
 
                 actual_paired = min(n_paired_dims, n_before_time)
                 actual_paired = actual_paired - (actual_paired % 2)
@@ -277,37 +280,106 @@ class ScalarLogger:
                             full_idx[ax] = batch_idx[batch_pos]
                             batch_pos += 1
 
-                    if has_time:
-                        time_slice = value[tuple(full_idx)]
-                        mean_v = float(np.nanmean(time_slice))
-                        if not np.isnan(mean_v):
-                            self.logger.log_scalar(
-                                context,
-                                series,
-                                self.log_title,
-                                mean_v,
-                                iteration,
-                                self.total_iterations,
-                                self.iteration_offset,
-                            )
-                    else:
-                        v = float(value[tuple(full_idx)])
-                        if not np.isnan(v):
-                            self.logger.log_scalar(
-                                context,
-                                series,
-                                self.log_title,
-                                v,
-                                iteration,
-                                self.total_iterations,
-                                self.iteration_offset,
-                            )
+                    yield series, iteration, has_time, value[tuple(full_idx)]
 
-        self.global_step += math.prod(ref_shape)
+    def log(self, stats: dict[str, jax.Array]):
+        # Bulk transfer all JAX arrays to numpy once (single device-to-host copy)
+        stats = {k: np.asarray(v) for k, v in stats.items()}
+
+        # Keep only scalar-shaped stats; image-shaped go through log_image_stats.
+        scalar_stats = {
+            k: v for k, v in stats.items() if v.ndim <= 2 * (self.num_levels - infer_level(k)) + infer_level(k) + 1
+        }
+        if not scalar_stats:
+            return
+
+        context = self.logger.get_context()
+
+        for series, iteration, has_time, sub in self.for_each_entry(scalar_stats, 0):
+            if iteration % self.checkpoint_every != 0:
+                continue
+            v = float(np.nanmean(sub)) if has_time else float(sub)
+            if np.isnan(v):
+                continue
+            self.logger.log_scalar(
+                context,
+                series,
+                self.log_title,
+                v,
+                iteration,
+                self.total_iterations,
+                self.iteration_offset,
+            )
+
+        self.global_step += math.prod(compute_ref_shape(scalar_stats, self.num_levels))
         self.logger.close_context(context)
 
-    def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
-        self.logger.log_image(title, series, iteration, image)
+    def log_image_stats(self, stats: dict[str, jax.Array], title: str, n_feature_dims: int) -> None:
+        """Log image-shaped stats with the same scan/vmap iteration walk as scalars.
+        `n_feature_dims` is the number of trailing feature dims (3 for (C,H,W)).
+        Does NOT bump global_step — call after log() to land at the next iteration,
+        or before log() to land at the same iteration as that step's scalars."""
+        stats = {k: np.asarray(v) for k, v in stats.items()}
+
+        # Keep only stats whose shape (after peeling features) fits scalar shape,
+        # with or without a time axis.
+        image_stats = {
+            k: v
+            for k, v in stats.items()
+            if v.ndim >= n_feature_dims
+            and (v.ndim - n_feature_dims) <= 2 * (self.num_levels - infer_level(k)) + infer_level(k) + 1
+            and (v.ndim - n_feature_dims) >= 2 * (self.num_levels - infer_level(k)) + infer_level(k)
+        }
+        if not image_stats:
+            return
+
+        for series, iteration, has_time, sub in self.for_each_entry(image_stats, n_feature_dims):
+            img = np.nanmean(sub, axis=0) if has_time else sub
+            if img.ndim == 3:
+                img = np.transpose(img, (1, 2, 0))
+                if img.shape[2] == 1:
+                    img = img.squeeze(2)
+            img = np.clip(img, 0.0, 1.0)
+            self.logger.log_image(title, series, iteration, img)
+
+    def log_plot_stats(self, stats: dict[str, jax.Array], title: str, n_feature_dims: int) -> None:
+        """Log feature-vector stats as line plots. Renders matplotlib to a numpy RGBA
+        image and dispatches via log_image. `n_feature_dims` trailing dims are
+        flattened into a single 1D series for plotting."""
+        stats = {k: np.asarray(v) for k, v in stats.items()}
+
+        plot_stats = {
+            k: v
+            for k, v in stats.items()
+            if v.ndim >= n_feature_dims
+            and (v.ndim - n_feature_dims) <= 2 * (self.num_levels - infer_level(k)) + infer_level(k) + 1
+            and (v.ndim - n_feature_dims) >= 2 * (self.num_levels - infer_level(k)) + infer_level(k)
+        }
+        if not plot_stats:
+            return
+
+        for series, iteration, has_time, sub in self.for_each_entry(plot_stats, n_feature_dims):
+            # sub shape: (time, *feature_dims) if has_time else (*feature_dims,)
+            if has_time:
+                data = sub.reshape(sub.shape[0], -1)  # (time, num_features)
+                x_label = "time"
+            else:
+                data = sub.flatten().reshape(1, -1)  # (1, num_features)
+                x_label = "step"
+
+            fig, ax = plt.subplots(figsize=(8, 4))
+            for j in range(data.shape[1]):
+                ax.plot(np.arange(data.shape[0]), data[:, j], linewidth=1, label=f"f{j}")
+            ax.set_xlabel(x_label)
+            ax.set_ylabel("value")
+            ax.set_title(f"{title} - {series}")
+            if data.shape[1] <= 12:
+                ax.legend(loc="upper right", fontsize=8)
+            ax.grid(True, alpha=0.3)
+            fig.canvas.draw()
+            img = np.asarray(fig.canvas.renderer.buffer_rgba())
+            plt.close(fig)
+            self.logger.log_image(title, series, iteration, img)
 
 
 class ThreadedScalarLogger:
@@ -344,8 +416,11 @@ class ThreadedScalarLogger:
             except queue.Empty:
                 continue
 
-    def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
-        self.scalar_logger.log_image(title, series, iteration, image)
+    def log_image_stats(self, stats: dict[str, jax.Array], title: str, n_feature_dims: int) -> None:
+        self.scalar_logger.log_image_stats(stats, title, n_feature_dims)
+
+    def log_plot_stats(self, stats: dict[str, jax.Array], title: str, n_feature_dims: int) -> None:
+        self.scalar_logger.log_plot_stats(stats, title, n_feature_dims)
 
     def log(self, stats: dict[str, jax.Array]):
         if self.stop_event.is_set():

@@ -179,6 +179,7 @@ OHO_RNN32 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -248,6 +249,7 @@ OHO_RNN32 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -300,6 +302,7 @@ OHO_RNN32 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -489,6 +492,7 @@ OHO_RNN32_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -555,6 +559,7 @@ OHO_RNN32_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -607,6 +612,7 @@ OHO_RNN32_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -814,6 +820,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -883,6 +890,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -935,6 +943,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -1121,6 +1130,7 @@ OHO_RNN256_V2 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1190,6 +1200,7 @@ OHO_RNN256_V2 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1242,6 +1253,7 @@ OHO_RNN256_V2 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -1428,6 +1440,7 @@ OHO_RNN256_V3 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1494,6 +1507,7 @@ OHO_RNN256_V3 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1546,6 +1560,7 @@ OHO_RNN256_V3 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -1729,6 +1744,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1792,6 +1808,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1841,6 +1858,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -2034,6 +2052,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2100,6 +2119,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2149,6 +2169,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -2302,6 +2323,7 @@ RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2351,6 +2373,7 @@ RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2400,6 +2423,7 @@ RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -2579,6 +2603,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2642,6 +2667,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2691,6 +2717,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -2870,6 +2897,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2933,6 +2961,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2982,6 +3011,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -3193,6 +3223,7 @@ VAE_BETA_OHO = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -3273,6 +3304,7 @@ VAE_BETA_OHO = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -3330,6 +3362,7 @@ VAE_BETA_OHO = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[
@@ -3561,6 +3594,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -3641,6 +3675,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -3698,6 +3733,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[
@@ -3967,6 +4003,7 @@ VAE_LR_OHO = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -4041,6 +4078,7 @@ VAE_LR_OHO = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -4098,6 +4136,7 @@ VAE_LR_OHO = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[
@@ -4298,6 +4337,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4364,6 +4404,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4413,6 +4454,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -4621,6 +4663,7 @@ VAE_BASELINE = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -4678,6 +4721,7 @@ VAE_BASELINE = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -4735,6 +4779,7 @@ VAE_BASELINE = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[
@@ -4935,6 +4980,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5002,6 +5048,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5051,6 +5098,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -5237,6 +5285,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5310,6 +5359,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5362,6 +5412,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -5545,6 +5596,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5612,6 +5664,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5661,6 +5714,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],
@@ -5847,6 +5901,7 @@ OHO_RNN32_TEST = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5913,6 +5968,7 @@ OHO_RNN32_TEST = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -5965,6 +6021,7 @@ OHO_RNN32_TEST = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
+            collect_predictions=False,
         ),
     ],
     sample_generators=[],

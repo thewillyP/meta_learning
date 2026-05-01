@@ -129,7 +129,7 @@ def make_converter() -> Converter:
     # -- Task / dataset source --
     setup_flattened_union(
         converter,
-        Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily],
+        Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily, GaussianNoiseTaskFamily],
     )
 
     # -- ELBOObjective inner unions (must be registered BEFORE ObjectiveFn) --
@@ -143,5 +143,8 @@ def make_converter() -> Converter:
 
     # -- SampleInput --
     setup_flattened_union(converter, Union[GaussianSampleInput, DataSampleInput])
+
+    # -- SampleReporter --
+    setup_flattened_union(converter, Union[ImageReporter, PlotReporter])
 
     return converter

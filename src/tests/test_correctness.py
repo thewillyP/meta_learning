@@ -210,6 +210,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     jacobian=False,
                 ),
                 test_seed=0,
+                collect_predictions=False,
             ),
         ],
         sample_generators=[],

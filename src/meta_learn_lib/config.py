@@ -66,7 +66,13 @@ class DelayAddTaskFamily:
     n_test: int  # number of examples. n_test=1 for online.
 
 
-type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily]
+@dataclass(frozen=True)
+class GaussianNoiseTaskFamily:
+    shape: tuple[int, ...]
+    n: int
+
+
+type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily, GaussianNoiseTaskFamily]
 
 
 class HyperparameterConfig(eqx.Module):
@@ -420,7 +426,12 @@ class ImageReporter:
     title: str
 
 
-type SampleReporter = Union[ImageReporter]
+@dataclass(frozen=True)
+class PlotReporter:
+    title: str
+
+
+type SampleReporter = Union[ImageReporter, PlotReporter]
 
 
 @dataclass(frozen=True)
@@ -471,6 +482,7 @@ class MetaConfig(eqx.Module):
     learner: LearnConfig
     track_logs: TrackLogs
     test_seed: int
+    collect_predictions: bool
 
 
 class GodConfig(eqx.Module):

@@ -5981,7 +5981,7 @@ if __name__ == "__main__":
         # ("VAE_BETA_OHO", VAE_BETA_OHO),
         # ("VAE_LR_OHO", VAE_LR_OHO),
         # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
-        ("OHO_RNN32", OHO_RNN32),
+        ("OHO_RNN32_TEST", OHO_RNN32_TEST),
     ]:
         upload_config(name, config)
 

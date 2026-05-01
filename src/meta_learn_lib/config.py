@@ -97,8 +97,8 @@ class HyperparameterConfig(eqx.Module):
     kind: Kind
     count: int  # how many unique parameters of this kind
     hyperparameter_parametrization: Parametrization
-    min_value: jax.Array  # used for mandatory gradient projection
-    max_value: jax.Array  # used for mandatory gradient projection
+    min_value: float  # used for mandatory gradient projection (static, baked into HLO)
+    max_value: float  # used for mandatory gradient projection (static, baked into HLO)
     level: int  # which meta level this hyperparameter belongs to. used for tracking how to optimize
     parametrizes_transition: bool  # whether this hp influences transitional dynamics vs readout
 

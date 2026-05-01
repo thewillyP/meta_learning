@@ -88,7 +88,7 @@ OHO_RNN32 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_adam1_lr": HyperparameterConfig(
-            value=0.00001,
+            value=0.0001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -218,7 +218,7 @@ OHO_RNN32 = GodConfig(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=1e-4,
-                        beta=0.1,
+                        beta=0.01,
                         use_finite_hvp=1e-3,
                     ),
                     add_clip=None,

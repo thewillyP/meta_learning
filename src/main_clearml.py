@@ -57,13 +57,13 @@ def main(
         _jitter_rng = random.Random()
         time.sleep(_jitter_rng.uniform(1, 60))
 
-    os.environ["CLEARML_SET_ITERATION_OFFSET"] = "0"
     task: clearml.Task = clearml.Task.init(
         project_name="temp",
         task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
         task_type=clearml.TaskTypes.training,
         auto_resource_monitoring=False,
         output_uri=True,
+        continue_last_task=0,
     )
 
     slurm_params = SlurmParams(

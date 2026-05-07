@@ -6,9 +6,9 @@ from typing import Callable
 from meta_learn_lib.config import *
 from meta_learn_lib.env import Logs, Outputs
 from meta_learn_lib.interface import GodInterface
-from meta_learn_lib.lib_types import LOSS, STAT, S_ID
+from meta_learn_lib.lib_types import LOSS, NamedStat, STAT, S_ID
 from meta_learn_lib.constants import TASK
-from meta_learn_lib.util import accuracy, hyperparameter_reparametrization
+from meta_learn_lib.util import accuracy, hyperparameter_reparametrization, scalar
 
 
 def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
@@ -65,19 +65,19 @@ def get_env_stats[ENV](
         forward, _ = hyperparameter_reparametrization(hp_config.hyperparameter_parametrization)
         values = forward(raw)
         for i in range(hp_config.count):
-            stat[f"level{level}/{hp_config.kind}/{hp_name}/{i}"] = jax.lax.stop_gradient(values[i])
+            stat[f"level{level}/{hp_config.kind}/{hp_name}/{i}"] = scalar(jax.lax.stop_gradient(values[i]))
 
     logs: Logs = task_interface.logs.get(env)
     if logs.gradient is not None:
-        stat[f"level{level}/gradient_norm"] = jax.lax.stop_gradient(jnp.linalg.norm(logs.gradient))
+        stat[f"level{level}/gradient_norm"] = scalar(jax.lax.stop_gradient(jnp.linalg.norm(logs.gradient)))
     if logs.largest_eigenvalue is not None:
-        stat[f"level{level}/largest_eigenvalue"] = jax.lax.stop_gradient(logs.largest_eigenvalue)
+        stat[f"level{level}/largest_eigenvalue"] = scalar(jax.lax.stop_gradient(logs.largest_eigenvalue))
     if logs.hessian_contains_nans is not None:
-        stat[f"level{level}/hessian_contains_nans"] = jax.lax.stop_gradient(logs.hessian_contains_nans)
+        stat[f"level{level}/hessian_contains_nans"] = scalar(jax.lax.stop_gradient(logs.hessian_contains_nans))
     if logs.largest_jac_eigenvalue is not None:
-        stat[f"level{level}/largest_jac_eigenvalue"] = jax.lax.stop_gradient(logs.largest_jac_eigenvalue)
+        stat[f"level{level}/largest_jac_eigenvalue"] = scalar(jax.lax.stop_gradient(logs.largest_jac_eigenvalue))
     if logs.influence_tensor_norm is not None:
-        stat[f"level{level}/influence_tensor_norm"] = jax.lax.stop_gradient(logs.influence_tensor_norm)
+        stat[f"level{level}/influence_tensor_norm"] = scalar(jax.lax.stop_gradient(logs.influence_tensor_norm))
 
     return stat
 
@@ -121,8 +121,8 @@ def create_loss_fn[ENV](
                 target_onehot = _to_onehot(target, pred.shape[-1])
                 acc = jnp.sum(jnp.where(mask, accuracy(pred, target_onehot), 0.0)) / jnp.maximum(jnp.sum(mask), 1.0)
                 return loss, {
-                    "loss": nan_if_masked(loss, has_label),
-                    "accuracy": jax.lax.stop_gradient(nan_if_masked(acc, has_label)),
+                    "loss": scalar(nan_if_masked(loss, has_label)),
+                    "accuracy": scalar(jax.lax.stop_gradient(nan_if_masked(acc, has_label))),
                 }
 
         case RegressionObjective(reduction):
@@ -134,7 +134,7 @@ def create_loss_fn[ENV](
                 has_label = jnp.any(mask)
                 raw_loss = optax.losses.squared_error(pred, target)
                 loss = LOSS(reduce(jnp.where(mask, raw_loss, 0.0), mask, reduction))
-                return loss, {"loss": nan_if_masked(loss, has_label)}
+                return loss, {"loss": scalar(nan_if_masked(loss, has_label))}
 
         case BernoulliObjective(reduction):
 
@@ -145,7 +145,7 @@ def create_loss_fn[ENV](
                 has_label = jnp.any(mask)
                 raw_loss = optax.losses.sigmoid_binary_cross_entropy(pred, target)
                 loss = LOSS(reduce(jnp.where(mask, raw_loss, 0.0), mask, reduction))
-                return loss, {"loss": nan_if_masked(loss, has_label)}
+                return loss, {"loss": scalar(nan_if_masked(loss, has_label))}
 
         case ELBOObjective(beta_hp, likelihood, posterior, prior):
             inner_loss_fn = create_loss_fn(likelihood, unlabeled_mask_value, unlabeled_mask_value, task_interface)
@@ -159,8 +159,8 @@ def create_loss_fn[ENV](
                 kl_value = kl(posterior, prior, outputs, mask)
 
                 loss = LOSS(recon_loss + beta * kl_value)
-                stats["kl"] = jax.lax.stop_gradient(kl_value)
-                stats["elbo_loss"] = jax.lax.stop_gradient(loss)
+                stats["kl"] = scalar(jax.lax.stop_gradient(kl_value))
+                stats["elbo_loss"] = scalar(jax.lax.stop_gradient(loss))
                 return loss, stats
 
     return loss_fn
@@ -184,7 +184,8 @@ def create_readout_loss_fns[ENV](
             stat = {f"level{level}/{k}": v for k, v in stat.items()}
             stat |= get_env_stats(config, env, interfaces, level)
             if collect_predictions:
-                stat[f"level{level}/prediction"] = jax.lax.stop_gradient(outputs.prediction)
+                pred = jax.lax.stop_gradient(outputs.prediction)
+                stat[f"level{level}/prediction"] = NamedStat(pred, ("batch", "batch") + ("feature",) * (pred.ndim - 2))
             return env, loss, stat
 
         return fn

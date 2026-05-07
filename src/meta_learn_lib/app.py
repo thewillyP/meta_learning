@@ -208,7 +208,10 @@ def run(
         jax.block_until_ready(arr)
 
         collected = stat_collector(stats, collected)
-        scalar_logger.log(prefix_stats(stats, stat_prefix))
+        prefixed = prefix_stats(stats, stat_prefix)
+        scalar_logger.log(prefixed)
+        prediction_stats = {kk: vv for kk, vv in prefixed.items() if kk.endswith("/prediction")}
+        scalar_logger.log_plot_stats(prediction_stats, "predictions")
 
         global_step = start_step + k + 1
         if checkpoint_interval > 0 and global_step % checkpoint_interval == 0:

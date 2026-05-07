@@ -1,4 +1,5 @@
 from typing import Literal, NewType
+import equinox as eqx
 import jax
 
 PRNG = NewType("PRNG", jax.Array)
@@ -11,7 +12,16 @@ LABEL = NewType("LABEL", jax.Array)  # is a vector
 REC_STATE = NewType("REC_STATE", jax.Array)  # is a vector
 REC_PARAM = NewType("REC_PARAM", jax.Array)  # is a vector
 LOSS = NewType("LOSS", jax.Array)  # is a scalar
-type STAT = dict[str, jax.Array]
+
+type Tag = Literal["scan", "batch", "feature", "time"]
+
+
+class NamedStat(eqx.Module):
+    data: jax.Array
+    axes: tuple[Tag, ...] = eqx.field(static=True)
+
+
+type STAT = dict[str, NamedStat]
 
 LOGITS = NewType("LOGITS", jax.Array)
 PREDICTION = NewType("PREDICTION", jax.Array)

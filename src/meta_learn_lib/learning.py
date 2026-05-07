@@ -15,14 +15,7 @@ from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
 from meta_learn_lib.optimizer import get_opt_step
-from meta_learn_lib.util import (
-    filter_cond,
-    finite_difference_jmp,
-    finite_difference_jvp,
-    jacobian_matrix_product,
-    jvp,
-    softclip,
-)
+from meta_learn_lib.util import *
 
 
 def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
@@ -64,6 +57,7 @@ class LearningArg[ENV, TR_DATA, VL_DATA, READOUT]:
         Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, tuple[READOUT, STAT]]],
     ]
     track_logs: TrackLogs
+    scan_tag: Tag
 
 
 def get_forward_mode[ENV, TR_DATA, VL_DATA](
@@ -82,7 +76,7 @@ def get_forward_mode[ENV, TR_DATA, VL_DATA](
     def gradient_fn(env_init: ENV, ds: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
-        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[GRADIENT, STAT]]:
+        def step(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
 
@@ -110,9 +104,15 @@ def get_forward_mode[ENV, TR_DATA, VL_DATA](
             grad = credit_gr_fn(credit_gr, args.learn_interface, new_env)
 
             arr, _ = eqx.partition(new_env, eqx.is_array)
-            return arr, (grad, trans_stat | readout_stat)
+            return arr, grad, trans_stat | readout_stat
 
-        arr, (grads, stats) = jax.lax.scan(lambda x, y: args.vmap_this(step)(x, y), arr_init, ds, length=args.length)
+        arr, grads, stats = tagged_scan(
+            as_scan_body(args.vmap_this(step)),
+            arr_init,
+            ds,
+            length=args.length,
+            tag=args.scan_tag,
+        )
         env = eqx.combine(arr, static)
         total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
         total_grad = process_gradient(total_grad, args.grad_config)
@@ -606,7 +606,7 @@ def get_backward_mode[ENV, TR_DATA, VL_DATA](
     def loss_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, LOSS, STAT]:
         arr_init, static = eqx.partition(env_init, eqx.is_array)
 
-        def inference_fn(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, tuple[LOSS, STAT]]:
+        def inference_fn(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, LOSS, STAT]:
             env = eqx.combine(arr, static)
             tr_data, vl_data = data
 
@@ -623,10 +623,14 @@ def get_backward_mode[ENV, TR_DATA, VL_DATA](
             env, trans_stat = args.transition(env, tr_data)
             env, loss, readout_stat = args.readout(env, vl_data)
             arr, _ = eqx.partition(env, eqx.is_array)
-            return arr, (loss, trans_stat | readout_stat)
+            return arr, loss, trans_stat | readout_stat
 
-        arr, (losses, stats) = jax.lax.scan(
-            lambda x, y: args.vmap_this(inference_fn)(x, y), arr_init, ds_init, length=args.length
+        arr, losses, stats = tagged_scan(
+            as_scan_body(args.vmap_this(inference_fn)),
+            arr_init,
+            ds_init,
+            length=args.length,
+            tag=args.scan_tag,
         )
         env = eqx.combine(arr, static)
         return env, jnp.sum(losses), stats
@@ -734,8 +738,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         def wrapper(env: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
             data_with_time = jax.tree.map(lambda x: jnp.expand_dims(x, axis=0), (data, data))
             _, gradient, stat = grad_fn(env, data_with_time)
-            stat = jax.tree.map(lambda x: x[0], stat)
-            return env, gradient, stat
+            return env, gradient, strip_leading_axis(stat)
 
         return wrapper
 
@@ -785,6 +788,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                     length=1,
                     vmap_this=lambda f: f,
                     track_logs=track_logs,
+                    scan_tag="time",
                 ),
                 BPTTConfig(truncate_at=None),
             )
@@ -798,6 +802,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
             length=length,
             vmap_this=lambda f: f,
             track_logs=track_logs,
+            scan_tag="time",
         )
         args_gr = dataclasses.replace(args_loss, readout=readout_gr)
 
@@ -877,6 +882,7 @@ def create_meta_learner[ENV](
             length=length,
             vmap_this=vmap_this,
             track_logs=track_logs,
+            scan_tag="scan",
         )
         args_gr = dataclasses.replace(args_loss, readout=readout_gr)
         grad_fn = dispatch_learner(method, args_gr, args_loss)
@@ -885,7 +891,7 @@ def create_meta_learner[ENV](
             env, gradient, stat = grad_fn(env, data)
             gr_env = nest_interface.param.put(env, gradient)
             env = get_opt_step(assignments, interfaces, level, env, gr_env, config.hyperparameters)
-            stat[f"level{level}/meta_gradient_norm"] = jax.lax.stop_gradient(jnp.linalg.norm(gradient))
+            stat[f"level{level}/meta_gradient_norm"] = scalar(jax.lax.stop_gradient(jnp.linalg.norm(gradient)))
             return env, stat
 
         return optimized_transition
@@ -906,11 +912,10 @@ def create_meta_learner[ENV](
             combined = eqx.combine(ax, per_level_val_axes[level])
             vl_learner = restore_broadcast(vl_learner, combined)
             vl_loss = restore_broadcast(vl_loss, combined)
-            vl_learner = eqx.filter_vmap(vl_learner, in_axes=(combined, 0), out_axes=(combined, 0, 0))
-            vl_loss = eqx.filter_vmap(vl_loss, in_axes=(combined, 0), out_axes=(combined, 0, 0))
+            vl_learner = tagged_vmap(vl_learner, in_axes=(combined, 0), out_axes=(combined, 0, 0))
+            vl_loss = tagged_vmap(vl_loss, in_axes=(combined, 0), out_axes=(combined, 0, 0))
 
-        # vmap_this wraps the scan step inside learners, peeling this level's nested dim
-        vmap_this = lambda f, a=axes: eqx.filter_vmap(f, in_axes=(a, 0), out_axes=(a, 0))
+        vmap_this = lambda f, a=axes: tagged_vmap(f, in_axes=(a, 0), out_axes=(a, 0))
 
         current_transition = make_optimized_transition(
             current_transition,

@@ -5737,7 +5737,7 @@ OHO_RNN32_TEST = GodConfig(
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
     ),
-    epochs=100,
+    epochs=1,
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=5,
     transition_graph={
@@ -5981,7 +5981,7 @@ OHO_RNN32_TEST = GodConfig(
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=5_000,
+                num_examples_in_minibatch=8,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -6021,7 +6021,7 @@ OHO_RNN32_TEST = GodConfig(
                 jacobian=False,
             ),
             test_seed=0,
-            collect_predictions=False,
+            collect_predictions=True,
         ),
     ],
     sample_generators=[],

@@ -11,7 +11,64 @@ from pyrsistent._pmap import PMap as PMapClass
 from pyrsistent._pvector import PythonPVector
 
 from meta_learn_lib.config import HyperparameterConfig
-from meta_learn_lib.lib_types import ACTIVATION_FN, PRNG
+from meta_learn_lib.lib_types import ACTIVATION_FN, NamedStat, PRNG, STAT, Tag
+
+
+def scalar(v: jax.Array) -> NamedStat:
+    return NamedStat(v, ())
+
+
+def prepend_tag(stats: STAT, tag: Tag) -> STAT:
+    return jax.tree.map(
+        lambda s: NamedStat(s.data, (tag,) + s.axes) if isinstance(s, NamedStat) else s,
+        stats,
+        is_leaf=lambda x: isinstance(x, NamedStat),
+    )
+
+
+def strip_leading_axis(stats: STAT) -> STAT:
+    return jax.tree.map(
+        lambda s: NamedStat(s.data[0], s.axes[1:]) if isinstance(s, NamedStat) else s,
+        stats,
+        is_leaf=lambda x: isinstance(x, NamedStat),
+    )
+
+
+def tagged_vmap[E, X, D](
+    f: Callable[[E, D], tuple[E, X, STAT]],
+    *,
+    in_axes,
+    out_axes,
+) -> Callable[[E, D], tuple[E, X, STAT]]:
+    vmapped = eqx.filter_vmap(f, in_axes=in_axes, out_axes=out_axes)
+
+    def wrapper(env: E, ds: D) -> tuple[E, X, STAT]:
+        e, x, stat = vmapped(env, ds)
+        return e, x, prepend_tag(stat, "batch")
+
+    return wrapper
+
+
+def as_scan_body[E, X, D](
+    f: Callable[[E, D], tuple[E, X, STAT]],
+) -> Callable[[E, D], tuple[E, tuple[X, STAT]]]:
+    def body(carry: E, y: D) -> tuple[E, tuple[X, STAT]]:
+        e, x, stat = f(carry, y)
+        return e, (x, stat)
+
+    return body
+
+
+def tagged_scan[E, X, D](
+    body: Callable[[E, D], tuple[E, tuple[X, STAT]]],
+    init: E,
+    xs: D,
+    *,
+    length: int,
+    tag: Tag,
+) -> tuple[E, X, STAT]:
+    final, (values, stats) = jax.lax.scan(body, init, xs, length=length)
+    return final, values, prepend_tag(stats, tag)
 
 
 def deep_serialize(_, obj):

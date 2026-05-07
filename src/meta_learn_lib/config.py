@@ -370,6 +370,8 @@ class LoggersConfig:
     hdf5: HDF5LoggerConfig
     console: ConsoleLoggerConfig
     matplotlib: MatplotlibLoggerConfig
+    scalar_queue_size: int
+    sample_queue_size: int
 
 
 type Reduction = Literal["sum", "mean"]

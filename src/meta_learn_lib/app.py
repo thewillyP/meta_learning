@@ -185,6 +185,8 @@ def run(
         config.checkpoint_every_n_minibatches,
         config.log_title,
         start_step * consumption,
+        config.logger_config.scalar_queue_size,
+        config.logger_config.sample_queue_size,
     )
 
     if start_step > 0:
@@ -339,7 +341,16 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
 
     accumulated = jax.tree.map(lambda *xs: jnp.nanmean(jnp.stack(xs), axis=0), *eval_stats)
     accumulated = prefix_stats(accumulated, "eval_accumulated")
-    acc_logger = create_logger(loggers, len(eval_config.levels), 1, 1, config.log_title, 0)
+    acc_logger = create_logger(
+        loggers,
+        len(eval_config.levels),
+        1,
+        1,
+        config.log_title,
+        0,
+        config.logger_config.scalar_queue_size,
+        config.logger_config.sample_queue_size,
+    )
     acc_logger.log(accumulated)
     acc_logger.flush()
     acc_logger.shutdown()

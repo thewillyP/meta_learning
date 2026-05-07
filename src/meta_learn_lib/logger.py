@@ -35,6 +35,7 @@ class HDF5Logger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_every = checkpoint_every
         self.log_file = self.log_dir / f"metrics_{task_id}.h5"
+        self.image_logger = MatplotlibLogger(str(self.log_dir / f"images_{task_id}"))
 
         with h5py.File(self.log_file, "a") as f:
             f.attrs["task_id"] = task_id
@@ -47,7 +48,7 @@ class HDF5Logger:
         f.close()
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
-        pass
+        self.image_logger.log_image(title, series, iteration, image)
 
     def log_scalar(
         self, f: h5py.File, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
@@ -292,8 +293,6 @@ class ScalarLogger:
 
 
 class ThreadedScalarLogger:
-    """Async wrapper that processes log calls in a background thread."""
-
     def __init__(
         self,
         logger: Logger,
@@ -303,53 +302,71 @@ class ThreadedScalarLogger:
         checkpoint_every: int,
         log_title: str,
         iteration_offset: int,
+        scalar_queue_size: int,
+        sample_queue_size: int,
     ):
         self.scalar_logger = ScalarLogger(
             logger, num_levels, total_iterations, checkpoint_every, log_title, iteration_offset
         )
         self.loggers = loggers
-        self.job_queue = queue.Queue()
+        self.scalar_queue: queue.Queue = queue.Queue(maxsize=scalar_queue_size)
+        self.sample_queue: queue.Queue = queue.Queue(maxsize=sample_queue_size)
         self.stop_event = threading.Event()
-        self.worker = threading.Thread(target=self._process, daemon=True)
-        self.worker.start()
+        self.scalar_worker = threading.Thread(target=self._drain, args=(self.scalar_queue,), daemon=True)
+        self.sample_worker = threading.Thread(target=self._drain, args=(self.sample_queue,), daemon=True)
+        self.scalar_worker.start()
+        self.sample_worker.start()
 
-    def _process(self):
+    def _drain(self, q: queue.Queue) -> None:
         while not self.stop_event.is_set():
             try:
-                stats = self.job_queue.get(timeout=0.1)
-                if stats is None:
-                    self.job_queue.task_done()
+                item = q.get(timeout=0.1)
+                if item is None:
+                    q.task_done()
                     break
-                self.scalar_logger.log(stats)
-                self.job_queue.task_done()
+                kind, stats, title = item
+                match kind:
+                    case "scalar":
+                        self.scalar_logger.log(stats)
+                    case "image":
+                        self.scalar_logger.log_image_stats(stats, title)
+                    case "plot":
+                        self.scalar_logger.log_plot_stats(stats, title)
+                q.task_done()
             except queue.Empty:
                 continue
 
-    def log_image_stats(self, stats: dict[str, jax.Array], title: str) -> None:
-        self.scalar_logger.log_image_stats(stats, title)
-
-    def log_plot_stats(self, stats: dict[str, jax.Array], title: str) -> None:
-        self.scalar_logger.log_plot_stats(stats, title)
-
-    def log(self, stats: dict[str, jax.Array]):
+    def log(self, stats: STAT) -> None:
         if self.stop_event.is_set():
             return
-        self.job_queue.put(stats)
+        self.scalar_queue.put(("scalar", stats, None))
 
-    def flush(self):
-        self.job_queue.join()
+    def log_image_stats(self, stats: STAT, title: str) -> None:
+        if self.stop_event.is_set():
+            return
+        self.sample_queue.put(("image", stats, title))
 
-    def shutdown(self):
+    def log_plot_stats(self, stats: STAT, title: str) -> None:
+        if self.stop_event.is_set():
+            return
+        self.sample_queue.put(("plot", stats, title))
+
+    def flush(self) -> None:
+        self.scalar_queue.join()
+        self.sample_queue.join()
+
+    def shutdown(self) -> None:
         self.stop_event.set()
-        # Drain the queue so .join() doesn't block forever
-        while not self.job_queue.empty():
-            try:
-                self.job_queue.get_nowait()
-                self.job_queue.task_done()
-            except queue.Empty:
-                break
-        self.job_queue.put(None)  # sentinel to unblock get()
-        self.worker.join(timeout=5.0)
+        for q in (self.scalar_queue, self.sample_queue):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                    q.task_done()
+                except queue.Empty:
+                    break
+            q.put(None)
+        self.scalar_worker.join(timeout=5.0)
+        self.sample_worker.join(timeout=5.0)
 
     def __del__(self):
         if hasattr(self, "stop_event") and not self.stop_event.is_set():
@@ -363,9 +380,18 @@ def create_logger(
     checkpoint_every: int,
     log_title: str,
     iteration_offset: int,
+    scalar_queue_size: int,
+    sample_queue_size: int,
 ) -> ThreadedScalarLogger:
-    """Construct a ThreadedScalarLogger from a list of loggers."""
     logger = MultiLogger(loggers)
     return ThreadedScalarLogger(
-        logger, loggers, num_levels, total_iterations, checkpoint_every, log_title, iteration_offset
+        logger,
+        loggers,
+        num_levels,
+        total_iterations,
+        checkpoint_every,
+        log_title,
+        iteration_offset,
+        scalar_queue_size,
+        sample_queue_size,
     )

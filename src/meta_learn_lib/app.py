@@ -25,7 +25,7 @@ from meta_learn_lib.lib_types import *
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, get_seq_len, validate_dataloader_config
 from meta_learn_lib.logger import MatplotlibLogger, create_logger
 from meta_learn_lib.loss_function import create_readout_loss_fns
-from meta_learn_lib.sample import build_sample_runner, validate_sample_generators
+from meta_learn_lib.sample import make_sample_config, report_samples, validate_sample_generators
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ def make_eval_config(config: GodConfig) -> GodConfig:
                 nested=dataclasses.replace(new_level.nested, num_steps=1),
             )
         new_levels.append(new_level)
-    return dataclasses.replace(config, levels=new_levels)
+    return dataclasses.replace(config, levels=new_levels, sample_generators=[])
 
 
 def prefix_stats(stats: STAT, prefix: str) -> STAT:
@@ -198,7 +198,24 @@ def run(
     compiled = eqx.filter_jit(step, donate="all-except-first").lower((config, x), arr).compile()
 
     checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
-    sample_runner = build_sample_runner(config, interfaces, data_sources, sample_prng, iterations_per_epoch)
+
+    def make_sample_env_factory(
+        trained_env: GodState,
+        env_prng: PRNG,
+    ) -> Callable[
+        [GodConfig, list[tuple[tuple[int, ...], tuple[int, ...]]], dict[S_ID, GodInterface[GodState]]],
+        GodState,
+    ]:
+        def factory(
+            cfg: GodConfig,
+            shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+            interfaces: dict[S_ID, GodInterface[GodState]],
+        ) -> GodState:
+            fresh = create_env(cfg, shapes, interfaces, env_prng)
+            params_copy = jax.tree.map(jnp.copy, trained_env.meta_parameters)
+            return fresh.set(meta_parameters=params_copy)
+
+        return factory
 
     print("Starting main loop...")
 
@@ -208,18 +225,36 @@ def run(
         jax.block_until_ready(arr)
 
         collected = stat_collector(stats, collected)
-        prefixed = prefix_stats(stats, stat_prefix)
-        scalar_logger.log(prefixed)
-        prediction_stats = {kk: vv for kk, vv in prefixed.items() if kk.endswith("/prediction")}
-        scalar_logger.log_plot_stats(prediction_stats, "predictions")
+        scalar_logger.log(prefix_stats(stats, stat_prefix))
 
         global_step = start_step + k + 1
         if checkpoint_interval > 0 and global_step % checkpoint_interval == 0:
             checkpoint_manager.save(arr, CheckpointMetadata(global_step=global_step))
             print(f"Checkpoint saved at step {global_step} (epoch {global_step // iterations_per_epoch})")
 
-        step_sample_prng, sample_prng = jax.random.split(sample_prng)
-        sample_runner(eqx.combine(arr, static), scalar_logger, PRNG(step_sample_prng), global_step)
+        for sg in config.sample_generators:
+            sample_interval = iterations_per_epoch * sg.every_n_epochs
+            if sample_interval <= 0 or global_step % sample_interval != 0:
+                continue
+            sample_cfg = make_sample_config(config, sg)
+            s_iters, s_per_epoch, s_log_cap = get_iterations(0, sample_cfg, 1)
+            sample_step_prng, sample_prng = jax.random.split(sample_prng)
+            s_data_prng, s_task_prng, s_run_prng, s_env_prng = jax.random.split(sample_step_prng, 4)
+            _, sample_stats = run(
+                sample_cfg,
+                make_sample_env_factory(eqx.combine(arr, static), s_env_prng),
+                s_data_prng,
+                s_task_prng,
+                s_run_prng,
+                s_iters,
+                s_per_epoch,
+                s_log_cap,
+                [],
+                lambda s, acc: acc + (s,),
+                "sample",
+                NullCheckpointManager(),
+            )
+            report_samples(sg, sample_stats[0], scalar_logger)
 
     scalar_logger.flush()
     scalar_logger.shutdown()

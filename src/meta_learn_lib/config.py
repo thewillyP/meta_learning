@@ -434,8 +434,7 @@ class PlotReporter:
 type SampleReporter = Union[ImageReporter, PlotReporter]
 
 
-@dataclass(frozen=True)
-class SampleGeneratorConfig:
+class SampleGeneratorConfig(eqx.Module):
     transition_graph: dict[str, frozenset[str]]
     readout_graph: dict[str, frozenset[str]]
     source_nodes: dict[str, Node]

@@ -6024,7 +6024,24 @@ OHO_RNN32_TEST = GodConfig(
             collect_predictions=True,
         ),
     ],
-    sample_generators=[],
+    sample_generators=[
+        SampleGeneratorConfig(
+            transition_graph={
+                "x": frozenset(),
+                "concat": frozenset({"x"}),
+                "rnn1": frozenset({"concat"}),
+            },
+            readout_graph={
+                "readout": frozenset({"rnn1"}),
+            },
+            source_nodes={},
+            input_shape=(1, 28),
+            num_samples=8,
+            every_n_epochs=1,
+            input=DataSampleInput(),
+            reporter=PlotReporter(title="rnn_predictions"),
+        ),
+    ],
     label_mask_value=-1.0,
     unlabeled_mask_value=-100.0,
     num_tasks=1,

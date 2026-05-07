@@ -130,7 +130,9 @@ class MatplotlibLogger:
         ax.imshow(image, cmap="gray" if image.ndim == 2 else None)
         ax.set_title(f"{title} - {series}")
         ax.axis("off")
-        save_path = self.save_dir / f"{title}_{series}_{iteration}.png"
+        safe_title = title.replace("/", "_")
+        safe_series = series.replace("/", "_")
+        save_path = self.save_dir / f"{safe_title}_{safe_series}_{iteration}.png"
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
 

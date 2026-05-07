@@ -10,6 +10,7 @@ from toposort import toposort_flatten
 
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
+from meta_learn_lib.create_interface import build_id_map, build_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
@@ -626,12 +627,13 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
     return env
 
 
+@eqx.filter_jit
 def create_env(
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
-    interfaces: dict[S_ID, GodInterface[GodState]],
     prng: PRNG,
 ) -> GodState:
+    interfaces = build_interfaces(config, build_id_map(config))
     k1, k2, prng = jax.random.split(prng, 3)
     env = create_empty_env(config, k1)
     creator = env_creator(

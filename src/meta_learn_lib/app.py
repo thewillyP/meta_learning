@@ -112,6 +112,34 @@ def prefix_stats(stats: STAT, prefix: str) -> STAT:
     return {f"{prefix}/{k}": v for k, v in stats.items()}
 
 
+def meta_step(
+    c__data: tuple[GodConfig, tuple],
+    arr: GodState,
+    static: GodState,
+    shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
+) -> tuple[GodState, STAT]:
+    c, data = c__data
+    env = eqx.combine(arr, static)
+    local_interfaces = build_interfaces(c, build_id_map(c))
+
+    local_inference_axes = [
+        create_inference_axes(env, c, local_interfaces, shape, level) for level, shape in enumerate(shapes)
+    ]
+    transitions, readouts = zip(
+        *[
+            create_inference_and_readout(c, local_interfaces, level, axes)
+            for level, axes in enumerate(local_inference_axes)
+        ]
+    )
+    transition_fns = create_transition_fns(c, shapes, local_interfaces, list(transitions))
+    loss_fns = create_readout_loss_fns(c, local_interfaces, list(readouts))
+    meta_learner = create_meta_learner(c, shapes, transition_fns, loss_fns, local_interfaces, env)
+
+    new_env, stat = meta_learner(env, data)
+    new_arr, _ = eqx.partition(new_env, eqx.is_array)
+    return new_arr, stat
+
+
 # ---------------------------------------------------------------------------
 # Core run function
 # ---------------------------------------------------------------------------
@@ -120,11 +148,7 @@ def prefix_stats(stats: STAT, prefix: str) -> STAT:
 def run(
     config: GodConfig,
     env_factory: Callable[
-        [
-            GodConfig,
-            list[tuple[tuple[int, ...], tuple[int, ...]]],
-            dict[S_ID, GodInterface[GodState]],
-        ],
+        [GodConfig, list[tuple[tuple[int, ...], tuple[int, ...]]]],
         GodState,
     ],
     data_prng: PRNG,
@@ -143,10 +167,7 @@ def run(
     dataloader = create_dataloader(config, data_sources, loader_prng, task_prng)
     x, dataloader = toolz.peek(dataloader)
 
-    id_map = build_id_map(config)
-    interfaces = build_interfaces(config, id_map)
-
-    env = env_factory(config, shapes, interfaces)
+    env = env_factory(config, shapes)
     arr, static = eqx.partition(env, eqx.is_array)
 
     start_step = 0
@@ -172,30 +193,7 @@ def run(
     remaining = total_iterations - start_step
     dataloader = prefetch(toolz.take(remaining, dataloader), buffer_size=config.prefetch_buffer_size)
 
-    def step(c__data: tuple[GodConfig, tuple], arr: GodState) -> tuple[GodState, STAT]:
-        c, data = c__data
-        env = eqx.combine(arr, static)
-        local_id_map = build_id_map(c)
-        local_interfaces = build_interfaces(c, local_id_map)
-
-        local_inference_axes = [
-            create_inference_axes(env, c, local_interfaces, shape, level) for level, shape in enumerate(shapes)
-        ]
-        transitions, readouts = zip(
-            *[
-                create_inference_and_readout(c, local_interfaces, level, axes)
-                for level, axes in enumerate(local_inference_axes)
-            ]
-        )
-        transition_fns = create_transition_fns(c, shapes, local_interfaces, list(transitions))
-        loss_fns = create_readout_loss_fns(c, local_interfaces, list(readouts))
-        meta_learner = create_meta_learner(c, shapes, transition_fns, loss_fns, local_interfaces, env)
-
-        new_env, stat = meta_learner(env, data)
-        new_arr, _ = eqx.partition(new_env, eqx.is_array)
-        return new_arr, stat
-
-    compiled = eqx.filter_jit(step, donate="all-except-first").lower((config, x), arr).compile()
+    compiled = eqx.filter_jit(meta_step, donate="all-except-first").lower((config, x), arr, static, shapes).compile()
 
     checkpoint_interval = iterations_per_epoch * config.checkpoint_every_n_epochs
 
@@ -203,15 +201,14 @@ def run(
         trained_env: GodState,
         env_prng: PRNG,
     ) -> Callable[
-        [GodConfig, list[tuple[tuple[int, ...], tuple[int, ...]]], dict[S_ID, GodInterface[GodState]]],
+        [GodConfig, list[tuple[tuple[int, ...], tuple[int, ...]]]],
         GodState,
     ]:
         def factory(
             cfg: GodConfig,
             shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
-            interfaces: dict[S_ID, GodInterface[GodState]],
         ) -> GodState:
-            fresh = create_env(cfg, shapes, interfaces, env_prng)
+            fresh = create_env(cfg, shapes, env_prng)
             params_copy = jax.tree.map(jnp.copy, trained_env.meta_parameters)
             return fresh.set(meta_parameters=params_copy)
 
@@ -221,7 +218,7 @@ def run(
 
     collected: tuple[STAT, ...] = ()
     for k, data in enumerate(dataloader):
-        arr, stats = compiled((config, data), arr)
+        arr, stats = compiled((config, data), arr, static, shapes)
         jax.block_until_ready(arr)
 
         collected = stat_collector(stats, collected)
@@ -307,7 +304,7 @@ def runApp(config: GodConfig, loggers: list[Logger], checkpoint_manager: Checkpo
 
     trained_env, _ = run(
         config,
-        lambda cfg, shapes, interfaces: create_env(cfg, shapes, interfaces, env_prng),
+        lambda cfg, shapes: create_env(cfg, shapes, env_prng),
         dataset_gen_prng,
         task_prng,
         sample_prng,

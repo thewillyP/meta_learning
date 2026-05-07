@@ -5737,7 +5737,7 @@ OHO_RNN32_TEST = GodConfig(
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
     ),
-    epochs=1,
+    epochs=2,
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=5,
     transition_graph={

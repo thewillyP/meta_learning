@@ -915,7 +915,7 @@ def create_meta_learner[ENV](
             vl_learner = tagged_vmap(vl_learner, in_axes=(combined, 0), out_axes=(combined, 0, 0))
             vl_loss = tagged_vmap(vl_loss, in_axes=(combined, 0), out_axes=(combined, 0, 0))
 
-        vmap_this = lambda f, a=axes: tagged_vmap(f, in_axes=(a, 0), out_axes=(a, 0))
+        vmap_this = lambda f, a=axes: tagged_vmap(f, in_axes=(a, 0), out_axes=(a, 0, 0))
 
         current_transition = make_optimized_transition(
             current_transition,

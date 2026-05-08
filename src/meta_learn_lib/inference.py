@@ -246,6 +246,14 @@ def get_inference[ENV](
                     ]
                     x = to_vector(deps).vector
                     outputs = outputs.set(node_name, Outputs(prediction=get_activation_fn(activation_fn)(x)))
+                case LayerNorm() | GroupNorm():
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = deps[-1].prediction
+                    norm = interface.norm_module.get(env)
+                    outputs = outputs.set(node_name, Outputs(prediction=norm(x)))
                 case _:
                     outputs = outputs.set(node_name, Outputs())
         return env, outputs

@@ -262,15 +262,21 @@ class LayerNorm(eqx.Module):
     use_bias: bool
 
 
+class GroupNorm(eqx.Module):
+    groups: int
+    epsilon: jax.Array
+    channelwise_affine: bool
+
+
 class NNLayer(eqx.Module):
     n: int
     activation_fn: ACTIVATION_FN
     use_bias: bool
-    layer_norm: Optional[LayerNorm]
 
 
 class VanillaRNNLayer(eqx.Module):
     nn_layer: NNLayer
+    layer_norm: Optional[LayerNorm | GroupNorm]
     use_random_init: bool
     time_constant: HP
 
@@ -359,6 +365,8 @@ type Node = Union[
     ExtractZ,
     Reshape,
     Activation,
+    LayerNorm,
+    GroupNorm,
 ]
 
 

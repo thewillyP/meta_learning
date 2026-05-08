@@ -36,6 +36,7 @@ class GodInterface[ENV]:
     state: Accessor[ENV, jax.Array]
     param: Accessor[ENV, jax.Array]
     mlp_model: Accessor[ENV, eqx.nn.Sequential]
+    norm_module: Accessor[ENV, eqx.Module]
     rnn_w_rec: Accessor[ENV, jax.Array]
     rnn_b_rec: Accessor[ENV, jax.Array]
     rnn_layer_norm: Accessor[ENV, eqx.Module]
@@ -84,6 +85,7 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         state=noop(),
         param=noop(),
         mlp_model=noop(),
+        norm_module=noop(),
         rnn_w_rec=noop(),
         rnn_b_rec=noop(),
         rnn_layer_norm=noop(),

@@ -106,6 +106,20 @@ def mlp_model(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.Sequential]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
+def norm_module(i: S_ID, level: int) -> Accessor[GodState, eqx.Module]:
+    def get(env: GodState) -> eqx.Module:
+        t = env.meta_parameters[level].norms.get(i)
+        return None if t is None else t.value
+
+    def put(env: GodState, val: eqx.Module) -> GodState:
+        return env.transform(["meta_parameters", level, "norms", i, "value"], lambda _: val)
+
+    def put_tagged(env: GodState, tagged: Tagged[eqx.Module]) -> GodState:
+        return env.transform(["meta_parameters", level, "norms", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
+
+
 def upsert_rnn[T](
     level: int,
     i: S_ID,
@@ -465,7 +479,7 @@ def build_interfaces(
                         param=make_param_lens([mlp]),
                     )
 
-                case VanillaRNNLayer(_, _, tc):
+                case VanillaRNNLayer(_, _, _, tc):
                     hp_cfg = config.hyperparameters[tc]
                     hi = (tc, hp_cfg.level)
                     w_rec = rnn_w_rec(pi, 0)
@@ -524,6 +538,16 @@ def build_interfaces(
                         default,
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
+                    )
+
+                case LayerNorm() | GroupNorm():
+                    norm = norm_module(pi, 0)
+                    interfaces[(name, level)] = copy.replace(
+                        default,
+                        prng=prng_accessor(si, level),
+                        logs=logs_acc,
+                        norm_module=norm,
+                        param=make_param_lens([norm]),
                     )
 
                 case _:

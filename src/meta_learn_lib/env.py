@@ -73,6 +73,7 @@ class Parameters(PClass):
     rnns: PMap[int, RNN] = field(serializer=deep_serialize)
     grus: PMap[int, Tagged[eqx.nn.GRUCell]] = field(serializer=deep_serialize)
     lstms: PMap[int, Tagged[eqx.nn.LSTMCell]] = field(serializer=deep_serialize)
+    norms: PMap[int, Tagged[eqx.Module]] = field(serializer=deep_serialize)
     learning_rates: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
     weight_decays: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)
     time_constants: PMap[int, Tagged[jax.Array]] = field(serializer=deep_serialize)

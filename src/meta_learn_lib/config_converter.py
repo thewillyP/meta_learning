@@ -91,6 +91,8 @@ def make_converter() -> Converter:
             ExtractZ,
             Reshape,
             Activation,
+            LayerNorm,
+            GroupNorm,
         ],
     )
 
@@ -126,6 +128,11 @@ def make_converter() -> Converter:
     # Union[HardClip, SoftClip, NoneType], a different type. Reuse the same hook.
     clip_hook = converter._structure_func.dispatch(Union[HardClip, SoftClip])
     converter.register_structure_hook(Union[HardClip, SoftClip, None], clip_hook)
+
+    # -- Norm --
+    setup_flattened_union(converter, Union[LayerNorm, GroupNorm])
+    norm_hook = converter._structure_func.dispatch(Union[LayerNorm, GroupNorm])
+    converter.register_structure_hook(Union[LayerNorm, GroupNorm, None], norm_hook)
 
     # -- Task / dataset source --
     setup_flattened_union(

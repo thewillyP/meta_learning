@@ -28,9 +28,9 @@ def get_output_shapes(
     x_shape, y_shape = data_shape
     for node_name in toposort_flatten(node_graph):
         match nodes[node_name]:
-            case NNLayer(n, activation_fn, use_bias, layer_norm):
+            case NNLayer(n, activation_fn, use_bias):
                 node_features[node_name] = (n,)
-            case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
+            case VanillaRNNLayer(nn_layer, layer_norm, use_random_init, time_constant):
                 node_features[node_name] = (nn_layer.n,)
             case GRULayer(n, use_bias, use_random_init):
                 node_features[node_name] = (n,)
@@ -69,6 +69,9 @@ def get_output_shapes(
             case Activation(_):
                 n_in = sum(math.prod(node_features[n]) for n in node_graph[node_name])
                 node_features[node_name] = (n_in,)
+            case LayerNorm() | GroupNorm():
+                deps = [node_features[n] for n in node_graph[node_name]]
+                node_features[node_name] = deps[-1]
             case _:
                 node_features[node_name] = ()
 
@@ -89,7 +92,7 @@ def create_inference_state[ENV](
     for node_name, node in nodes.items():
         interface = interfaces[(node_name, level)]
         match node:
-            case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
+            case VanillaRNNLayer(nn_layer, layer_norm, use_random_init, time_constant):
                 k1, k2, prng = jax.random.split(prng, 3)
                 if use_random_init:
                     activation = ACTIVATION(jax.random.normal(k1, (nn_layer.n,)))
@@ -163,7 +166,7 @@ def create_inference_parameters[ENV](
         is_learnable = node_name in learnables
         is_transition = node_name not in readout_graph
         match node:
-            case NNLayer(n, activation_fn, use_bias, layer_norm):
+            case NNLayer(n, activation_fn, use_bias):
                 n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
                 k1, k2, prng = jax.random.split(prng, 3)
 
@@ -173,13 +176,7 @@ def create_inference_parameters[ENV](
                 where = lambda l: (l.weight, l.bias)
                 new_linear: eqx.Module = eqx.tree_at(where, linear, (new_weight, new_bias))
 
-                match layer_norm:
-                    case LayerNorm(epsilon, use_weight, use_bias):
-                        layer = eqx.nn.LayerNorm(n, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
-                    case None:
-                        layer = eqx.nn.Identity()
-
-                nn_model = eqx.nn.Sequential([new_linear, layer, eqx.nn.Lambda(get_activation_fn(activation_fn))])
+                nn_model = eqx.nn.Sequential([new_linear, eqx.nn.Lambda(get_activation_fn(activation_fn))])
                 env = interface.mlp_model.put_tagged(
                     env,
                     Tagged(
@@ -194,7 +191,7 @@ def create_inference_parameters[ENV](
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
-            case VanillaRNNLayer(nn_layer, use_random_init, time_constant):
+            case VanillaRNNLayer(nn_layer, layer_norm, use_random_init, time_constant):
                 n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
                 k1, k2, k3, prng = jax.random.split(prng, 4)
 
@@ -203,9 +200,13 @@ def create_inference_parameters[ENV](
                 w_rec = jnp.hstack([W_rec, W_in])
                 b_rec = jnp.zeros((nn_layer.n,))
 
-                match nn_layer.layer_norm:
+                match layer_norm:
                     case LayerNorm(epsilon, use_weight, use_bias):
                         layer = eqx.nn.LayerNorm(nn_layer.n, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
+                    case GroupNorm(groups, epsilon, channelwise_affine):
+                        layer = eqx.nn.GroupNorm(
+                            groups=groups, channels=nn_layer.n, eps=epsilon, channelwise_affine=channelwise_affine
+                        )
                     case None:
                         layer = eqx.nn.Identity()
 
@@ -238,7 +239,7 @@ def create_inference_parameters[ENV](
                     Tagged(
                         value=layer,
                         meta=ParamMeta(
-                            learnable=is_learnable and nn_layer.layer_norm is not None,
+                            learnable=is_learnable and layer_norm is not None,
                             min_value=-math.inf,
                             max_value=math.inf,
                             parametrizes_transition=is_transition,
@@ -284,6 +285,45 @@ def create_inference_parameters[ENV](
                     ),
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
+
+            case LayerNorm(epsilon, use_weight, use_bias):
+                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                k1, prng = jax.random.split(prng, 2)
+                layer = eqx.nn.LayerNorm(in_shape, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
+                env = interface.norm_module.put_tagged(
+                    env,
+                    Tagged(
+                        value=layer,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
+
+            case GroupNorm(groups, epsilon, channelwise_affine):
+                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                k1, prng = jax.random.split(prng, 2)
+                layer = eqx.nn.GroupNorm(
+                    groups=groups, channels=in_shape[0], eps=epsilon, channelwise_affine=channelwise_affine
+                )
+                env = interface.norm_module.put_tagged(
+                    env,
+                    Tagged(
+                        value=layer,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
+
             case _:
                 k1, prng = jax.random.split(prng, 2)
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
@@ -606,6 +646,7 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
                     rnns=pmap({}),
                     grus=pmap({}),
                     lstms=pmap({}),
+                    norms=pmap({}),
                     learning_rates=pmap({}),
                     weight_decays=pmap({}),
                     time_constants=pmap({}),

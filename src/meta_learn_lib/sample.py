@@ -159,3 +159,6 @@ def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger, confi
             logger.log_image_stats(display_stats, title)
         case PlotReporter(title):
             logger.log_plot_stats(prediction_stats, title)
+        case UMAPReporter(title):
+            label_stats = {k: v for k, v in stats.items() if k.endswith("/label")}
+            logger.log_umap_stats(prediction_stats | label_stats, title)

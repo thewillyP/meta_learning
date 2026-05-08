@@ -13,7 +13,7 @@ REC_STATE = NewType("REC_STATE", jax.Array)  # is a vector
 REC_PARAM = NewType("REC_PARAM", jax.Array)  # is a vector
 LOSS = NewType("LOSS", jax.Array)  # is a scalar
 
-type Tag = Literal["scan", "batch", "feature", "time"]
+type Tag = Literal["scan", "batch", "minibatch", "feature", "time"]
 
 
 class NamedStat(eqx.Module):

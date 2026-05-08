@@ -13,8 +13,9 @@ import queue
 import itertools
 import math
 import jax
+import umap
 
-from meta_learn_lib.lib_types import STAT
+from meta_learn_lib.lib_types import STAT, Tag
 
 
 class Logger(Protocol):
@@ -202,15 +203,17 @@ class ScalarLogger:
         self.global_step = 0
         self.iteration_offset = iteration_offset
 
-    def for_each_entry(self, stats: STAT) -> Iterator[tuple[str, int, np.ndarray]]:
-        """Yields (series, iteration, sub) where sub always has shape (time, *features).
-        If the stat has no time axis, time is inserted as size 1."""
+    def for_each_entry(
+        self,
+        stats: STAT,
+        iterate_tags: tuple[Tag, ...],
+    ) -> Iterator[tuple[str, int, np.ndarray]]:
         for key, ns in stats.items():
             data = np.asarray(ns.data)
             assert len(ns.axes) == data.ndim, f"{key}: axes {ns.axes} mismatch ndim {data.ndim}"
 
             scan_axes = [i for i, t in enumerate(ns.axes) if t == "scan"]
-            batch_axes = [i for i, t in enumerate(ns.axes) if t == "batch"]
+            batch_axes = [i for i, t in enumerate(ns.axes) if t in iterate_tags]
             has_time = any(t == "time" for t in ns.axes)
             scan_shape = tuple(data.shape[i] for i in scan_axes)
             batch_shape = tuple(data.shape[i] for i in batch_axes)
@@ -234,7 +237,7 @@ class ScalarLogger:
 
     def log(self, stats: STAT) -> None:
         context = self.logger.get_context()
-        for series, iteration, sub in self.for_each_entry(stats):
+        for series, iteration, sub in self.for_each_entry(stats, ("batch", "minibatch")):
             if sub.ndim != 1:
                 continue
             if iteration % self.checkpoint_every != 0:
@@ -259,7 +262,7 @@ class ScalarLogger:
         self.logger.close_context(context)
 
     def log_image_stats(self, stats: STAT, title: str) -> None:
-        for series, iteration, sub in self.for_each_entry(stats):
+        for series, iteration, sub in self.for_each_entry(stats, ("batch", "minibatch")):
             if sub.ndim != 4:
                 continue
             if iteration % self.checkpoint_every != 0:
@@ -272,7 +275,7 @@ class ScalarLogger:
                 self.logger.log_image(title, t_series, iteration, img)
 
     def log_plot_stats(self, stats: STAT, title: str) -> None:
-        for series, iteration, sub in self.for_each_entry(stats):
+        for series, iteration, sub in self.for_each_entry(stats, ("batch", "minibatch")):
             if sub.ndim < 2:
                 continue
             if iteration % self.checkpoint_every != 0:
@@ -291,6 +294,29 @@ class ScalarLogger:
             img = np.asarray(fig.canvas.renderer.buffer_rgba())[..., :3]
             plt.close(fig)
             self.logger.log_image(title, series, iteration, img)
+
+    def log_umap_stats(self, stats: STAT, title: str) -> None:
+        preds = {k.removesuffix("/prediction"): ns for k, ns in stats.items() if k.endswith("/prediction")}
+        labels = {k.removesuffix("/label"): ns for k, ns in stats.items() if k.endswith("/label")}
+        for prefix in preds.keys() & labels.keys():
+            pred_iter = self.for_each_entry({f"{prefix}/prediction": preds[prefix]}, ("batch", "time"))
+            label_iter = self.for_each_entry({f"{prefix}/label": labels[prefix]}, ("batch", "time"))
+            for (series, iteration, pred_sub), (_, _, label_sub) in zip(pred_iter, label_iter):
+                if iteration % self.checkpoint_every != 0:
+                    continue
+                pred_flat = pred_sub.reshape(pred_sub.shape[0], -1)
+                label_flat = label_sub.reshape(-1)
+                n_neighbors = min(15, pred_flat.shape[0] - 1)
+                embedding = umap.UMAP(n_components=2, n_neighbors=n_neighbors).fit_transform(pred_flat)
+                fig, ax = plt.subplots(figsize=(8, 6))
+                scatter = ax.scatter(embedding[:, 0], embedding[:, 1], c=label_flat, cmap="tab10", s=10)
+                ax.set_title(f"{title} - {series}")
+                ax.grid(True, alpha=0.3)
+                fig.colorbar(scatter, ax=ax)
+                fig.canvas.draw()
+                img = np.asarray(fig.canvas.renderer.buffer_rgba())[..., :3]
+                plt.close(fig)
+                self.logger.log_image(title, series, iteration, img)
 
 
 class ThreadedScalarLogger:
@@ -333,6 +359,8 @@ class ThreadedScalarLogger:
                         self.scalar_logger.log_image_stats(stats, title)
                     case "plot":
                         self.scalar_logger.log_plot_stats(stats, title)
+                    case "umap":
+                        self.scalar_logger.log_umap_stats(stats, title)
                 q.task_done()
             except queue.Empty:
                 continue
@@ -351,6 +379,11 @@ class ThreadedScalarLogger:
         if self.stop_event.is_set():
             return
         self.sample_queue.put(("plot", stats, title))
+
+    def log_umap_stats(self, stats: STAT, title: str) -> None:
+        if self.stop_event.is_set():
+            return
+        self.sample_queue.put(("umap", stats, title))
 
     def flush(self) -> None:
         self.scalar_queue.join()

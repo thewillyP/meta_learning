@@ -164,6 +164,6 @@ def make_converter() -> Converter:
     setup_flattened_union(converter, Union[GaussianSampleInput, DataSampleInput])
 
     # -- SampleReporter --
-    setup_flattened_union(converter, Union[ImageReporter, PlotReporter])
+    setup_flattened_union(converter, Union[ImageReporter, PlotReporter, UMAPReporter])
 
     return converter

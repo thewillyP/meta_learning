@@ -500,7 +500,12 @@ class PlotReporter:
     title: str
 
 
-type SampleReporter = Union[ImageReporter, PlotReporter]
+@dataclass(frozen=True)
+class UMAPReporter:
+    title: str
+
+
+type SampleReporter = Union[ImageReporter, PlotReporter, UMAPReporter]
 
 
 class SampleGeneratorConfig(eqx.Module):

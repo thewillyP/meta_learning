@@ -190,7 +190,15 @@ def create_readout_loss_fns[ENV](
             stat |= get_env_stats(config, env, interfaces, level)
             if collect_predictions:
                 pred = jax.lax.stop_gradient(outputs.prediction)
-                stat[f"level{level}/prediction"] = NamedStat(pred, ("batch", "batch") + ("feature",) * (pred.ndim - 2))
+                stat[f"level{level}/prediction"] = NamedStat(
+                    pred,
+                    ("batch", "minibatch") + ("feature",) * (pred.ndim - 2),
+                )
+                _, y_data = data
+                stat[f"level{level}/label"] = NamedStat(
+                    jax.lax.stop_gradient(y_data),
+                    ("batch", "minibatch") + ("feature",) * (y_data.ndim - 2),
+                )
             return env, loss, stat
 
         return fn

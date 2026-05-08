@@ -257,14 +257,14 @@ class LearnConfig(eqx.Module):
 
 
 class LayerNorm(eqx.Module):
-    epsilon: jax.Array
+    epsilon: float
     use_weight: bool
     use_bias: bool
 
 
 class GroupNorm(eqx.Module):
     groups: int
-    epsilon: jax.Array
+    epsilon: float
     channelwise_affine: bool
 
 

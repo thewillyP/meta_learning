@@ -130,7 +130,14 @@ def make_converter() -> Converter:
     # -- Task / dataset source --
     setup_flattened_union(
         converter,
-        Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily, GaussianNoiseTaskFamily],
+        Union[
+            MNISTTaskFamily,
+            FashionMNISTTaskFamily,
+            CIFAR10TaskFamily,
+            CIFAR100TaskFamily,
+            DelayAddTaskFamily,
+            GaussianNoiseTaskFamily,
+        ],
     )
 
     # -- ELBOObjective inner unions (must be registered BEFORE ObjectiveFn) --

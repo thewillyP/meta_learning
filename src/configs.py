@@ -128,7 +128,6 @@ OHO_RNN32 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -190,7 +189,6 @@ OHO_RNN32 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -260,7 +258,6 @@ OHO_RNN32 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -440,7 +437,6 @@ OHO_RNN32_ADAM = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -505,7 +501,6 @@ OHO_RNN32_ADAM = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -572,7 +567,6 @@ OHO_RNN32_ADAM = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -773,7 +767,6 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -835,7 +828,6 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -905,7 +897,6 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -1085,7 +1076,6 @@ OHO_RNN256_V2 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -1147,7 +1137,6 @@ OHO_RNN256_V2 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -1217,7 +1206,6 @@ OHO_RNN256_V2 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -1397,7 +1385,6 @@ OHO_RNN256_V3 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -1459,7 +1446,6 @@ OHO_RNN256_V3 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -1526,7 +1512,6 @@ OHO_RNN256_V3 = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -3183,7 +3168,6 @@ VAE_BETA_OHO = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -3259,7 +3243,6 @@ VAE_BETA_OHO = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -3340,7 +3323,6 @@ VAE_BETA_OHO = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -3553,7 +3535,6 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -3632,7 +3613,6 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -3713,7 +3693,6 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -3956,7 +3935,6 @@ VAE_LR_OHO = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -4043,7 +4021,6 @@ VAE_LR_OHO = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -4118,7 +4095,6 @@ VAE_LR_OHO = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -4630,7 +4606,6 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -4707,7 +4682,6 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -4765,7 +4739,6 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="raw",
             ),
             dataset=DatasetConfig(
@@ -5266,7 +5239,6 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -5328,7 +5300,6 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -5402,7 +5373,6 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -5887,7 +5857,6 @@ OHO_RNN32_TEST = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -5949,7 +5918,6 @@ OHO_RNN32_TEST = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
@@ -6016,7 +5984,6 @@ OHO_RNN32_TEST = GodConfig(
                 patch_w=28,
                 label_last_only=True,
                 add_spurious_pixel_to_train=False,
-                domain=frozenset({"mnist"}),
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(

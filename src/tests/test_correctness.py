@@ -157,7 +157,6 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     patch_w=28,
                     label_last_only=True,
                     add_spurious_pixel_to_train=False,
-                    domain=frozenset({"mnist"}),
                     pixel_transform="normalize",
                 ),
                 dataset=DatasetConfig(

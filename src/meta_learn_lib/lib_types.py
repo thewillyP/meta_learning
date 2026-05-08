@@ -28,6 +28,8 @@ PREDICTION = NewType("PREDICTION", jax.Array)
 
 type ACTIVATION_FN = Literal["tanh", "relu", "sigmoid", "identity", "softmax"]
 
+type PixelTransform = Literal["normalize", "binarize", "raw"]
+
 type Category = Literal["param", "state", "learning_state"]
 
 type S_ID = tuple[str, int | None]

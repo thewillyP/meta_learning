@@ -4,7 +4,7 @@ from typing import Literal, Optional, Union
 import equinox as eqx
 import jax
 
-from meta_learn_lib.lib_types import ACTIVATION_FN
+from meta_learn_lib.lib_types import ACTIVATION_FN, PixelTransform
 
 
 @dataclass(frozen=True)
@@ -28,13 +28,19 @@ class SeedConfig:
 
 @dataclass(frozen=True)
 class MNISTTaskFamily:
-    type Domain = Literal["mnist", "fashion_mnist"]
-    type PixelTransform = Literal["normalize", "binarize", "raw"]
     patch_h: int
     patch_w: int
     label_last_only: bool
     add_spurious_pixel_to_train: bool
-    domain: frozenset[Domain]
+    pixel_transform: PixelTransform
+
+
+@dataclass(frozen=True)
+class FashionMNISTTaskFamily:
+    patch_h: int
+    patch_w: int
+    label_last_only: bool
+    add_spurious_pixel_to_train: bool
     pixel_transform: PixelTransform
 
 
@@ -72,7 +78,14 @@ class GaussianNoiseTaskFamily:
     n: int
 
 
-type Task = Union[MNISTTaskFamily, CIFAR10TaskFamily, CIFAR100TaskFamily, DelayAddTaskFamily, GaussianNoiseTaskFamily]
+type Task = Union[
+    MNISTTaskFamily,
+    FashionMNISTTaskFamily,
+    CIFAR10TaskFamily,
+    CIFAR100TaskFamily,
+    DelayAddTaskFamily,
+    GaussianNoiseTaskFamily,
+]
 
 
 class HyperparameterConfig(eqx.Module):

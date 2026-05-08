@@ -70,7 +70,7 @@ class PyTreeDataset(Dataset):
 
 def get_seq_len(task: Task, is_test: bool) -> int:
     match task:
-        case MNISTTaskFamily(ph, pw, _, _, _, _):
+        case MNISTTaskFamily(ph, pw, _, _, _) | FashionMNISTTaskFamily(ph, pw, _, _, _):
             return (MNIST_HEIGHT // ph) * (MNIST_WIDTH // pw)
         case CIFAR10TaskFamily(ph, pw, _):
             return (CIFAR_HEIGHT // ph) * (CIFAR_WIDTH // pw)
@@ -194,7 +194,7 @@ def image_transforms(
     patch_w: int,
     y_mask: float,
     label_last_only: bool,
-    pixel_transform: MNISTTaskFamily.PixelTransform,
+    pixel_transform: PixelTransform,
 ) -> tuple[Lambda, Lambda, Callable[[jax.Array], jax.Array]]:
     """Returns (x_pre, y_pre, patch_reshape).
 
@@ -253,63 +253,45 @@ def dataset_sources(
         return list(random_split(ds, sizes, generator=generator))
 
     match task:
-        case MNISTTaskFamily(
-            patch_h,
-            patch_w,
-            label_last_only,
-            add_spurious_pixel_to_train,
-            domain,
-            pixel_transform,
-        ):
-            domain_list = sorted(domain)
-            seed_assign, seed_split = jax.random.split(seed)
-            assignments = jax.random.randint(seed_assign, shape=(num_tasks,), minval=0, maxval=len(domain_list))
-            split_keys = jax.random.split(seed_split, len(domain_list))
+        case (
+            MNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, pixel_transform)
+            | FashionMNISTTaskFamily(patch_h, patch_w, label_last_only, add_spurious_pixel_to_train, pixel_transform)
+        ) as t:
+            match t:
+                case MNISTTaskFamily():
+                    factory = torchvision.datasets.MNIST
+                    mean, std = MNIST_MEAN, MNIST_STD
+                case FashionMNISTTaskFamily():
+                    factory = torchvision.datasets.FashionMNIST
+                    mean, std = FASHION_MNIST_MEAN, FASHION_MNIST_STD
 
-            def make_domain_dataset(d: MNISTTaskFamily.Domain) -> DatasetWithReshape:
-                match d:
-                    case "mnist":
-                        factory = torchvision.datasets.MNIST
-                        mean, std = MNIST_MEAN, MNIST_STD
-                    case "fashion_mnist":
-                        factory = torchvision.datasets.FashionMNIST
-                        mean, std = FASHION_MNIST_MEAN, FASHION_MNIST_STD
+            x_pre, y_pre, patch_reshape_fn = image_transforms(
+                mean=mean,
+                std=std,
+                height=MNIST_HEIGHT,
+                width=MNIST_WIDTH,
+                channel=MNIST_CHANNEL,
+                patch_h=patch_h,
+                patch_w=patch_w,
+                y_mask=y_mask,
+                label_last_only=label_last_only,
+                pixel_transform=pixel_transform,
+            )
 
-                x_pre, y_pre, patch_reshape_fn = image_transforms(
-                    mean=mean,
-                    std=std,
-                    height=MNIST_HEIGHT,
-                    width=MNIST_WIDTH,
-                    channel=MNIST_CHANNEL,
-                    patch_h=patch_h,
-                    patch_w=patch_w,
-                    y_mask=y_mask,
-                    label_last_only=label_last_only,
-                    pixel_transform=pixel_transform,
+            if add_spurious_pixel_to_train and not is_test:
+                ds = factory(root=f"{root_dir}/data", train=not is_test, download=True)
+                ds = SpuriousMNISTDataset(ds)
+                ds = TransformedDataset(ds, x_pre, y_pre)
+            else:
+                ds = factory(
+                    root=f"{root_dir}/data",
+                    train=not is_test,
+                    download=True,
+                    transform=x_pre,
+                    target_transform=y_pre,
                 )
 
-                if add_spurious_pixel_to_train and not is_test:
-                    ds = factory(root=f"{root_dir}/data", train=not is_test, download=True)
-                    ds = SpuriousMNISTDataset(ds)
-                    ds = TransformedDataset(ds, x_pre, y_pre)
-                else:
-                    ds = factory(
-                        root=f"{root_dir}/data",
-                        train=not is_test,
-                        download=True,
-                        transform=x_pre,
-                        target_transform=y_pre,
-                    )
-
-                return ds, patch_reshape_fn
-
-            counts = [int((assignments == i).sum()) for i in range(len(domain_list))]
-            return [
-                (split, pr)
-                for d, c, k in zip(domain_list, counts, split_keys)
-                for ds, pr in [make_domain_dataset(d)]
-                for split in split_dataset(ds, c, k)
-            ]
+            return [(split, patch_reshape_fn) for split in split_dataset(ds, num_tasks, seed)]
 
         case CIFAR10TaskFamily(patch_h, patch_w, label_last_only) | CIFAR100TaskFamily(
             patch_h, patch_w, label_last_only

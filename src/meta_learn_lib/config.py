@@ -282,6 +282,37 @@ class VanillaRNNLayer(eqx.Module):
 
 
 @dataclass(frozen=True)
+class Conv2dLayer:
+    out_channels: int
+    kernel_size: int
+    stride: int
+    padding: int
+    use_bias: bool
+
+
+@dataclass(frozen=True)
+class ConvTranspose2dLayer:
+    out_channels: int
+    kernel_size: int
+    stride: int
+    padding: int
+    output_padding: int
+    use_bias: bool
+
+
+@dataclass(frozen=True)
+class MaxPool2dLayer:
+    kernel_size: int
+    stride: int
+
+
+@dataclass(frozen=True)
+class AvgPool2dLayer:
+    kernel_size: int
+    stride: int
+
+
+@dataclass(frozen=True)
 class GRULayer:
     n: int
     use_bias: bool
@@ -354,6 +385,10 @@ type Node = Union[
     VanillaRNNLayer,
     GRULayer,
     LSTMLayer,
+    Conv2dLayer,
+    ConvTranspose2dLayer,
+    MaxPool2dLayer,
+    AvgPool2dLayer,
     Scan,
     UnlabeledSource,
     LabeledSource,

@@ -106,16 +106,44 @@ def mlp_model(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.Sequential]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def norm_module(i: S_ID, level: int) -> Accessor[GodState, eqx.Module]:
-    def get(env: GodState) -> eqx.Module:
+def norm_module(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.LayerNorm | eqx.nn.GroupNorm]:
+    def get(env: GodState) -> eqx.nn.LayerNorm | eqx.nn.GroupNorm:
         t = env.meta_parameters[level].norms.get(i)
         return None if t is None else t.value
 
-    def put(env: GodState, val: eqx.Module) -> GodState:
+    def put(env: GodState, val: eqx.nn.LayerNorm | eqx.nn.GroupNorm) -> GodState:
         return env.transform(["meta_parameters", level, "norms", i, "value"], lambda _: val)
 
-    def put_tagged(env: GodState, tagged: Tagged[eqx.Module]) -> GodState:
+    def put_tagged(env: GodState, tagged: Tagged[eqx.nn.LayerNorm | eqx.nn.GroupNorm]) -> GodState:
         return env.transform(["meta_parameters", level, "norms", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
+
+
+def conv2d(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.Conv2d]:
+    def get(env: GodState) -> eqx.nn.Conv2d:
+        t = env.meta_parameters[level].convs.get(i)
+        return None if t is None else t.value
+
+    def put(env: GodState, val: eqx.nn.Conv2d) -> GodState:
+        return env.transform(["meta_parameters", level, "convs", i, "value"], lambda _: val)
+
+    def put_tagged(env: GodState, tagged: Tagged[eqx.nn.Conv2d]) -> GodState:
+        return env.transform(["meta_parameters", level, "convs", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
+
+
+def conv_transpose2d(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.ConvTranspose2d]:
+    def get(env: GodState) -> eqx.nn.ConvTranspose2d:
+        t = env.meta_parameters[level].conv_transposes.get(i)
+        return None if t is None else t.value
+
+    def put(env: GodState, val: eqx.nn.ConvTranspose2d) -> GodState:
+        return env.transform(["meta_parameters", level, "conv_transposes", i, "value"], lambda _: val)
+
+    def put_tagged(env: GodState, tagged: Tagged[eqx.nn.ConvTranspose2d]) -> GodState:
+        return env.transform(["meta_parameters", level, "conv_transposes", i], lambda _: tagged)
 
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
@@ -548,6 +576,26 @@ def build_interfaces(
                         logs=logs_acc,
                         norm_module=norm,
                         param=make_param_lens([norm]),
+                    )
+
+                case Conv2dLayer():
+                    conv = conv2d(pi, 0)
+                    interfaces[(name, level)] = copy.replace(
+                        default,
+                        prng=prng_accessor(si, level),
+                        logs=logs_acc,
+                        conv2d=conv,
+                        param=make_param_lens([conv]),
+                    )
+
+                case ConvTranspose2dLayer():
+                    conv_t = conv_transpose2d(pi, 0)
+                    interfaces[(name, level)] = copy.replace(
+                        default,
+                        prng=prng_accessor(si, level),
+                        logs=logs_acc,
+                        conv_transpose2d=conv_t,
+                        param=make_param_lens([conv_t]),
                     )
 
                 case _:

@@ -67,11 +67,29 @@ def get_output_shapes(
             case Reshape(target_shape):
                 node_features[node_name] = target_shape
             case Activation(_):
-                n_in = sum(math.prod(node_features[n]) for n in node_graph[node_name])
-                node_features[node_name] = (n_in,)
+                deps = [node_features[n] for n in node_graph[node_name]]
+                node_features[node_name] = deps[-1]
             case LayerNorm() | GroupNorm():
                 deps = [node_features[n] for n in node_graph[node_name]]
                 node_features[node_name] = deps[-1]
+            case Conv2dLayer(out_channels, kernel_size, stride, padding, _):
+                in_shape = [node_features[n] for n in node_graph[node_name]][-1]
+                _, h, w = in_shape
+                h_out = (h + 2 * padding - kernel_size) // stride + 1
+                w_out = (w + 2 * padding - kernel_size) // stride + 1
+                node_features[node_name] = (out_channels, h_out, w_out)
+            case ConvTranspose2dLayer(out_channels, kernel_size, stride, padding, output_padding, _):
+                in_shape = [node_features[n] for n in node_graph[node_name]][-1]
+                _, h, w = in_shape
+                h_out = (h - 1) * stride - 2 * padding + kernel_size + output_padding
+                w_out = (w - 1) * stride - 2 * padding + kernel_size + output_padding
+                node_features[node_name] = (out_channels, h_out, w_out)
+            case MaxPool2dLayer(kernel_size, stride) | AvgPool2dLayer(kernel_size, stride):
+                in_shape = [node_features[n] for n in node_graph[node_name]][-1]
+                c, h, w = in_shape
+                h_out = (h - kernel_size) // stride + 1
+                w_out = (w - kernel_size) // stride + 1
+                node_features[node_name] = (c, h_out, w_out)
             case _:
                 node_features[node_name] = ()
 
@@ -323,6 +341,61 @@ def create_inference_parameters[ENV](
                     ),
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
+
+            case Conv2dLayer(out_channels, kernel_size, stride, padding, use_bias):
+                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                c_in = in_shape[0]
+                k1, k2, prng = jax.random.split(prng, 3)
+                conv = eqx.nn.Conv2d(
+                    in_channels=c_in,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    use_bias=use_bias,
+                    key=k1,
+                )
+                env = interface.conv2d.put_tagged(
+                    env,
+                    Tagged(
+                        value=conv,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
+
+            case ConvTranspose2dLayer(out_channels, kernel_size, stride, padding, output_padding, use_bias):
+                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                c_in = in_shape[0]
+                k1, k2, prng = jax.random.split(prng, 3)
+                conv_t = eqx.nn.ConvTranspose2d(
+                    in_channels=c_in,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    output_padding=output_padding,
+                    use_bias=use_bias,
+                    key=k1,
+                )
+                env = interface.conv_transpose2d.put_tagged(
+                    env,
+                    Tagged(
+                        value=conv_t,
+                        meta=ParamMeta(
+                            learnable=is_learnable,
+                            min_value=-math.inf,
+                            max_value=math.inf,
+                            parametrizes_transition=is_transition,
+                        ),
+                    ),
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
             case _:
                 k1, prng = jax.random.split(prng, 2)
@@ -647,6 +720,8 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
                     grus=pmap({}),
                     lstms=pmap({}),
                     norms=pmap({}),
+                    convs=pmap({}),
+                    conv_transposes=pmap({}),
                     learning_rates=pmap({}),
                     weight_decays=pmap({}),
                     time_constants=pmap({}),

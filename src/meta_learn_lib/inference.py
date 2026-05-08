@@ -244,7 +244,7 @@ def get_inference[ENV](
                         *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
                         *[outputs[n] for n in node_graph[node_name] if n in outputs],
                     ]
-                    x = to_vector(deps).vector
+                    x = deps[-1].prediction
                     outputs = outputs.set(node_name, Outputs(prediction=get_activation_fn(activation_fn)(x)))
                 case LayerNorm() | GroupNorm():
                     deps = [
@@ -254,6 +254,38 @@ def get_inference[ENV](
                     x = deps[-1].prediction
                     norm = interface.norm_module.get(env)
                     outputs = outputs.set(node_name, Outputs(prediction=norm(x)))
+                case Conv2dLayer():
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = deps[-1].prediction
+                    conv = interface.conv2d.get(env)
+                    outputs = outputs.set(node_name, Outputs(prediction=conv(x)))
+                case ConvTranspose2dLayer():
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = deps[-1].prediction
+                    conv_t = interface.conv_transpose2d.get(env)
+                    outputs = outputs.set(node_name, Outputs(prediction=conv_t(x)))
+                case MaxPool2dLayer(kernel_size, stride):
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = deps[-1].prediction
+                    pool = eqx.nn.MaxPool2d(kernel_size=kernel_size, stride=stride)
+                    outputs = outputs.set(node_name, Outputs(prediction=pool(x)))
+                case AvgPool2dLayer(kernel_size, stride):
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = deps[-1].prediction
+                    pool = eqx.nn.AvgPool2d(kernel_size=kernel_size, stride=stride)
+                    outputs = outputs.set(node_name, Outputs(prediction=pool(x)))
                 case _:
                     outputs = outputs.set(node_name, Outputs())
         return env, outputs

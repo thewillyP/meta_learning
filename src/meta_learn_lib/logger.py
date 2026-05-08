@@ -122,18 +122,18 @@ class MatplotlibLogger:
         pass
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
-        fig, ax = plt.subplots()
         if image.ndim == 3 and image.shape[0] in (1, 3):
             image = np.transpose(image, (1, 2, 0))
         if image.ndim == 3 and image.shape[2] == 1:
             image = image.squeeze(2)
-        ax.imshow(image, cmap="gray" if image.ndim == 2 else None)
-        ax.set_title(f"{title} - {series}")
-        ax.axis("off")
+        fig = plt.figure()
+        plt.imshow(image, cmap="gray" if image.ndim == 2 else None)
+        plt.title(f"{title} - {series}")
+        plt.axis("off")
         safe_title = title.replace("/", "_")
         safe_series = series.replace("/", "_")
         save_path = self.save_dir / f"{safe_title}_{safe_series}_{iteration}.png"
-        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
     def log_scalar(

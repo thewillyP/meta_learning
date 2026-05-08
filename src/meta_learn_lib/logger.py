@@ -295,6 +295,15 @@ class ScalarLogger:
             plt.close(fig)
             self.logger.log_image(title, series, iteration, img)
 
+    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int) -> None:
+        for series, iteration, sub in self.for_each_entry(stats, ("batch",)):
+            if iteration % self.checkpoint_every != 0:
+                continue
+            tile = sub[0].reshape(rows, cols, *sub.shape[2:])
+            c, h, w = tile.shape[2], tile.shape[3], tile.shape[4]
+            grid_img = tile.transpose(0, 3, 1, 4, 2).reshape(rows * h, cols * w, c)
+            self.logger.log_image(title, series, iteration, grid_img)
+
     def log_umap_stats(self, stats: STAT, title: str) -> None:
         preds = {k.removesuffix("/prediction"): ns for k, ns in stats.items() if k.endswith("/prediction")}
         labels = {k.removesuffix("/label"): ns for k, ns in stats.items() if k.endswith("/label")}
@@ -306,8 +315,11 @@ class ScalarLogger:
                     continue
                 pred_flat = pred_sub.reshape(pred_sub.shape[0], -1)
                 label_flat = label_sub.reshape(-1)
-                n_neighbors = min(15, pred_flat.shape[0] - 1)
-                embedding = umap.UMAP(n_components=2, n_neighbors=n_neighbors).fit_transform(pred_flat)
+                if pred_flat.shape[-1] == 2:
+                    embedding = pred_flat
+                else:
+                    n_neighbors = min(15, pred_flat.shape[0] - 1)
+                    embedding = umap.UMAP(n_components=2, n_neighbors=n_neighbors).fit_transform(pred_flat)
                 fig, ax = plt.subplots(figsize=(8, 6))
                 scatter = ax.scatter(embedding[:, 0], embedding[:, 1], c=label_flat, cmap="tab10", s=10)
                 ax.set_title(f"{title} - {series}")
@@ -351,16 +363,23 @@ class ThreadedScalarLogger:
                 if item is None:
                     q.task_done()
                     break
-                kind, stats, title = item
+                kind, payload = item[0], item[1:]
                 match kind:
                     case "scalar":
+                        stats, _ = payload
                         self.scalar_logger.log(stats)
                     case "image":
+                        stats, title = payload
                         self.scalar_logger.log_image_stats(stats, title)
                     case "plot":
+                        stats, title = payload
                         self.scalar_logger.log_plot_stats(stats, title)
                     case "umap":
+                        stats, title = payload
                         self.scalar_logger.log_umap_stats(stats, title)
+                    case "grid":
+                        stats, title, rows, cols = payload
+                        self.scalar_logger.log_grid_stats(stats, title, rows, cols)
                 q.task_done()
             except queue.Empty:
                 continue
@@ -384,6 +403,11 @@ class ThreadedScalarLogger:
         if self.stop_event.is_set():
             return
         self.sample_queue.put(("umap", stats, title))
+
+    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int) -> None:
+        if self.stop_event.is_set():
+            return
+        self.sample_queue.put(("grid", stats, title, rows, cols))
 
     def flush(self) -> None:
         self.scalar_queue.join()

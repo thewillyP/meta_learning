@@ -89,6 +89,13 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
                 )
             case DataSampleInput():
                 dataset_source = level.dataset_source
+            case GridSampleInput(min_value, max_value, n_per_axis):
+                dataset_source = GridTaskFamily(
+                    dim=sg.input_shape[0],
+                    min_value=min_value,
+                    max_value=max_value,
+                    n_per_axis=n_per_axis,
+                )
 
         new_levels.append(
             dataclasses.replace(
@@ -162,3 +169,10 @@ def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger, confi
         case UMAPReporter(title):
             label_stats = {k: v for k, v in stats.items() if k.endswith("/label")}
             logger.log_umap_stats(prediction_stats | label_stats, title)
+        case GridReporter(title, rows, cols):
+            display_stats = {}
+            for k, ns in prediction_stats.items():
+                m = LEVEL_RE.search(k)
+                level = int(m.group(1))
+                display_stats[k] = display_ready(ns, config.levels[level].dataset_source)
+            logger.log_grid_stats(display_stats, title, rows, cols)

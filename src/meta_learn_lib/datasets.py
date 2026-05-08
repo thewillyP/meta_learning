@@ -80,6 +80,8 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return t_test if is_test else t_train
         case GaussianNoiseTaskFamily(_, _):
             return 1
+        case GridTaskFamily(_, _, _, _):
+            return 1
 
 
 def numpy_collate_fn(batch):
@@ -345,6 +347,18 @@ def dataset_sources(
                 return PyTreeDataset((xs, xs)), lambda x: x
 
             return [make_noise_task(k) for k in keys]
+
+        case GridTaskFamily(dim, min_value, max_value, n_per_axis):
+            keys = jax.random.split(seed, num_tasks)
+
+            def make_grid_task(key: PRNG) -> DatasetWithReshape:
+                n = n_per_axis**dim
+                axes = [jnp.linspace(min_value, max_value, n_per_axis)] * dim
+                grid = jnp.stack(jnp.meshgrid(*axes, indexing="ij"), axis=-1).reshape(n, dim)
+                xs = grid[:, None, :]
+                return PyTreeDataset((xs, xs)), lambda x: x
+
+            return [make_grid_task(k) for k in keys]
 
 
 def take_datasets(

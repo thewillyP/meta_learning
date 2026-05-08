@@ -249,9 +249,17 @@ def run(
             sample_interval = iterations_per_epoch * sg.every_n_epochs
             if sample_interval <= 0 or global_step % sample_interval != 0:
                 continue
+            match sg.reporter:
+                case GridReporter() if sg.input_shape != (2,):
+                    continue
+                case _:
+                    pass
             sample_cfg = make_sample_config(config, sg)
             s_iters, s_per_epoch, s_log_cap = get_iterations(0, sample_cfg, 1)
-            sample_step_prng, sample_prng = jax.random.split(sample_prng)
+            if sg.seed is None:
+                sample_step_prng, sample_prng = jax.random.split(sample_prng)
+            else:
+                sample_step_prng = jax.random.key(sg.seed)
             s_data_prng, s_task_prng, s_run_prng, s_env_prng = jax.random.split(sample_step_prng, 4)
             _, sample_stats = run(
                 sample_cfg,

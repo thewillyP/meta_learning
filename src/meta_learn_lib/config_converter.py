@@ -148,6 +148,7 @@ def make_converter() -> Converter:
             CIFAR100TaskFamily,
             DelayAddTaskFamily,
             GaussianNoiseTaskFamily,
+            GridTaskFamily,
         ],
     )
 
@@ -161,9 +162,9 @@ def make_converter() -> Converter:
     )
 
     # -- SampleInput --
-    setup_flattened_union(converter, Union[GaussianSampleInput, DataSampleInput])
+    setup_flattened_union(converter, Union[GaussianSampleInput, DataSampleInput, GridSampleInput])
 
     # -- SampleReporter --
-    setup_flattened_union(converter, Union[ImageReporter, PlotReporter, UMAPReporter])
+    setup_flattened_union(converter, Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter])
 
     return converter

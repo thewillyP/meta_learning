@@ -78,6 +78,14 @@ class GaussianNoiseTaskFamily:
     n: int
 
 
+@dataclass(frozen=True)
+class GridTaskFamily:
+    dim: int
+    min_value: float
+    max_value: float
+    n_per_axis: int
+
+
 type Task = Union[
     MNISTTaskFamily,
     FashionMNISTTaskFamily,
@@ -85,6 +93,7 @@ type Task = Union[
     CIFAR100TaskFamily,
     DelayAddTaskFamily,
     GaussianNoiseTaskFamily,
+    GridTaskFamily,
 ]
 
 
@@ -487,7 +496,14 @@ class GaussianSampleInput: ...
 class DataSampleInput: ...
 
 
-type SampleInput = Union[GaussianSampleInput, DataSampleInput]
+@dataclass(frozen=True)
+class GridSampleInput:
+    min_value: float
+    max_value: float
+    n_per_axis: int
+
+
+type SampleInput = Union[GaussianSampleInput, DataSampleInput, GridSampleInput]
 
 
 @dataclass(frozen=True)
@@ -505,7 +521,14 @@ class UMAPReporter:
     title: str
 
 
-type SampleReporter = Union[ImageReporter, PlotReporter, UMAPReporter]
+@dataclass(frozen=True)
+class GridReporter:
+    title: str
+    rows: int
+    cols: int
+
+
+type SampleReporter = Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter]
 
 
 class SampleGeneratorConfig(eqx.Module):
@@ -515,6 +538,7 @@ class SampleGeneratorConfig(eqx.Module):
     input_shape: tuple[int, ...]
     num_samples: int
     every_n_epochs: int
+    seed: int | None
     input: SampleInput
     reporter: SampleReporter
 

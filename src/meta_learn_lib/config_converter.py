@@ -146,7 +146,7 @@ def make_converter() -> Converter:
     # -- ObjectiveFn --
     setup_flattened_union(
         converter,
-        Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective],
+        Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective, NoopObjective],
     )
 
     # -- SampleInput --

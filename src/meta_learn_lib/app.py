@@ -16,7 +16,7 @@ import queue
 from meta_learn_lib.checkpoint import CheckpointManager, CheckpointMetadata, NullCheckpointManager
 from meta_learn_lib.config import *
 from meta_learn_lib.create_env import create_env, create_inference_axes, create_transition_fns
-from meta_learn_lib.create_interface import build_id_map, build_interfaces
+from meta_learn_lib.create_interface import build_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
 from meta_learn_lib.interface import GodInterface
@@ -120,7 +120,7 @@ def meta_step(
 ) -> tuple[GodState, STAT]:
     c, data = c__data
     env = eqx.combine(arr, static)
-    local_interfaces = build_interfaces(c, build_id_map(c))
+    local_interfaces = build_interfaces(c)
 
     local_inference_axes = [
         create_inference_axes(env, c, local_interfaces, shape, level) for level, shape in enumerate(shapes)
@@ -211,8 +211,22 @@ def run(
             shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
         ) -> GodState:
             fresh = create_env(cfg, shapes, env_prng)
-            params_copy = jax.tree.map(jnp.copy, trained_env.meta_parameters)
-            return fresh.set(meta_parameters=params_copy)
+
+            def freeze(t):
+                if isinstance(t, Tagged) and isinstance(t.meta, ParamMeta):
+                    return Tagged(
+                        value=jax.tree.map(jnp.copy, t.value),
+                        meta=ParamMeta(
+                            learnable=False,
+                            min_value=t.meta.min_value,
+                            max_value=t.meta.max_value,
+                            parametrizes_transition=t.meta.parametrizes_transition,
+                        ),
+                    )
+                return jax.tree.map(jnp.copy, t)
+
+            frozen_params = jax.tree.map(freeze, trained_env.meta_parameters, is_leaf=lambda x: isinstance(x, Tagged))
+            return fresh.set(meta_parameters=frozen_params)
 
         return factory
 

@@ -45,7 +45,7 @@ def make_param_lens(owned: list[Accessor[GodState, PyTree]]) -> Accessor[GodStat
 # ============================================================================
 
 
-def prng_accessor(key: int, level: int) -> Accessor[GodState, PRNG]:
+def prng_accessor(key: S_ID, level: int) -> Accessor[GodState, PRNG]:
     def get(env: GodState) -> PRNG:
         t = env.level_meta[level].prngs.get(key)
         return None if t is None else t.value
@@ -59,7 +59,7 @@ def prng_accessor(key: int, level: int) -> Accessor[GodState, PRNG]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def tick_accessor(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def tick_accessor(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.level_meta[level].ticks.get(i)
         return None if t is None else t.value
@@ -92,7 +92,7 @@ def logs_accessor(level: int) -> Accessor[GodState, Logs]:
 # ============================================================================
 
 
-def mlp_model(i: int, level: int) -> Accessor[GodState, eqx.nn.Sequential]:
+def mlp_model(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.Sequential]:
     def get(env: GodState) -> eqx.nn.Sequential:
         t = env.meta_parameters[level].mlps.get(i)
         return None if t is None else t.value
@@ -108,7 +108,7 @@ def mlp_model(i: int, level: int) -> Accessor[GodState, eqx.nn.Sequential]:
 
 def upsert_rnn[T](
     level: int,
-    i: int,
+    i: S_ID,
     set_field: Callable[[RNN, T], RNN],
 ) -> Callable[[GodState, T], GodState]:
     def fn(env: GodState, val: T) -> GodState:
@@ -121,7 +121,7 @@ def upsert_rnn[T](
     return fn
 
 
-def rnn_w_rec(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def rnn_w_rec(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         rnn = env.meta_parameters[level].rnns.get(i)
         if rnn is None or rnn.w_rec is None:
@@ -135,7 +135,7 @@ def rnn_w_rec(i: int, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def rnn_b_rec(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def rnn_b_rec(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         rnn = env.meta_parameters[level].rnns.get(i)
         if rnn is None or rnn.b_rec is None:
@@ -149,7 +149,7 @@ def rnn_b_rec(i: int, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def rnn_layer_norm(i: int, level: int) -> Accessor[GodState, eqx.Module]:
+def rnn_layer_norm(i: S_ID, level: int) -> Accessor[GodState, eqx.Module]:
     def get(env: GodState) -> eqx.Module:
         rnn = env.meta_parameters[level].rnns.get(i)
         if rnn is None or rnn.layer_norm is None:
@@ -163,7 +163,7 @@ def rnn_layer_norm(i: int, level: int) -> Accessor[GodState, eqx.Module]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def gru_cell(i: int, level: int) -> Accessor[GodState, eqx.nn.GRUCell]:
+def gru_cell(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.GRUCell]:
     def get(env: GodState) -> eqx.nn.GRUCell:
         t = env.meta_parameters[level].grus.get(i)
         return None if t is None else t.value
@@ -177,7 +177,7 @@ def gru_cell(i: int, level: int) -> Accessor[GodState, eqx.nn.GRUCell]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def lstm_cell(i: int, level: int) -> Accessor[GodState, eqx.nn.LSTMCell]:
+def lstm_cell(i: S_ID, level: int) -> Accessor[GodState, eqx.nn.LSTMCell]:
     def get(env: GodState) -> eqx.nn.LSTMCell:
         t = env.meta_parameters[level].lstms.get(i)
         return None if t is None else t.value
@@ -191,7 +191,7 @@ def lstm_cell(i: int, level: int) -> Accessor[GodState, eqx.nn.LSTMCell]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def learning_rate(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def learning_rate(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.meta_parameters[level].learning_rates.get(i)
         return None if t is None else t.value
@@ -205,7 +205,7 @@ def learning_rate(i: int, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def weight_decay(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def weight_decay(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.meta_parameters[level].weight_decays.get(i)
         return None if t is None else t.value
@@ -219,7 +219,7 @@ def weight_decay(i: int, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def momentum(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def momentum(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.meta_parameters[level].momentums.get(i)
         return None if t is None else t.value
@@ -233,7 +233,7 @@ def momentum(i: int, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def time_constant(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def time_constant(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.meta_parameters[level].time_constants.get(i)
         return None if t is None else t.value
@@ -247,7 +247,7 @@ def time_constant(i: int, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def kl_regularizer_beta(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def kl_regularizer_beta(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.meta_parameters[level].kl_regularizer_betas.get(i)
         return None if t is None else t.value
@@ -266,7 +266,7 @@ def kl_regularizer_beta(i: int, level: int) -> Accessor[GodState, jax.Array]:
 # ============================================================================
 
 
-def vanilla_rnn_state(i: int, level: int) -> Accessor[GodState, VanillaRecurrentState]:
+def vanilla_rnn_state(i: S_ID, level: int) -> Accessor[GodState, VanillaRecurrentState]:
     def get(env: GodState) -> VanillaRecurrentState:
         t = env.model_states[level].vanilla_recurrent_states.get(i)
         return None if t is None else t.value
@@ -280,7 +280,7 @@ def vanilla_rnn_state(i: int, level: int) -> Accessor[GodState, VanillaRecurrent
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def gru_activation(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def gru_activation(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.model_states[level].recurrent_states.get(i)
         return None if t is None else t.value
@@ -294,7 +294,7 @@ def gru_activation(i: int, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def lstm_state(i: int, level: int) -> Accessor[GodState, LSTMState]:
+def lstm_state(i: S_ID, level: int) -> Accessor[GodState, LSTMState]:
     def get(env: GodState) -> LSTMState:
         t = env.model_states[level].lstm_states.get(i)
         return None if t is None else t.value
@@ -308,7 +308,7 @@ def lstm_state(i: int, level: int) -> Accessor[GodState, LSTMState]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def autoregressive_predictions(i: int, level: int) -> Accessor[GodState, jax.Array]:
+def autoregressive_predictions(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     def get(env: GodState) -> jax.Array:
         t = env.model_states[level].autoregressive_predictions.get(i)
         return None if t is None else t.value
@@ -327,7 +327,7 @@ def autoregressive_predictions(i: int, level: int) -> Accessor[GodState, jax.Arr
 # ============================================================================
 
 
-def opt_state(i: int, level: int) -> Accessor[GodState, optax.OptState]:
+def opt_state(i: S_ID, level: int) -> Accessor[GodState, optax.OptState]:
     def get(env: GodState) -> optax.OptState:
         t = env.learning_states[level].opt_states.get(i)
         return None if t is None else t.value
@@ -341,7 +341,7 @@ def opt_state(i: int, level: int) -> Accessor[GodState, optax.OptState]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def forward_mode_jacobian(i: int, level: int) -> Accessor[GodState, JACOBIAN]:
+def forward_mode_jacobian(i: S_ID, level: int) -> Accessor[GodState, JACOBIAN]:
     def get(env: GodState) -> JACOBIAN:
         t = env.learning_states[level].influence_tensors.get(i)
         return None if t is None else t.value
@@ -355,7 +355,7 @@ def forward_mode_jacobian(i: int, level: int) -> Accessor[GodState, JACOBIAN]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def uoro_state(i: int, level: int) -> Accessor[GodState, UOROState]:
+def uoro_state(i: S_ID, level: int) -> Accessor[GodState, UOROState]:
     def get(env: GodState) -> UOROState:
         t = env.learning_states[level].uoros.get(i)
         return None if t is None else t.value
@@ -369,7 +369,7 @@ def uoro_state(i: int, level: int) -> Accessor[GodState, UOROState]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
-def midpoint_buffer(i: int, level: int) -> Accessor[GodState, MidpointBuffer]:
+def midpoint_buffer(i: S_ID, level: int) -> Accessor[GodState, MidpointBuffer]:
     def get(env: GodState) -> MidpointBuffer:
         t = env.learning_states[level].midpoint_buffers.get(i)
         return None if t is None else t.value
@@ -381,41 +381,6 @@ def midpoint_buffer(i: int, level: int) -> Accessor[GodState, MidpointBuffer]:
         return env.transform(["learning_states", level, "midpoint_buffers", i], lambda _: tagged)
 
     return Accessor(get=get, put=put, put_tagged=put_tagged)
-
-
-# ============================================================================
-# ID MAP
-# ============================================================================
-
-
-def build_id_map(config: GodConfig) -> dict[S_ID, int]:
-    keys: list[S_ID] = []
-
-    # shared params — one per node, level=None
-    keys.extend((name, None) for name in sorted(config.nodes))
-
-    # per-level states — one per (node, level)
-    for level in range(len(config.levels)):
-        keys.extend((name, level) for name in sorted(config.nodes))
-
-    # HPs — each at its own level
-    keys.extend((name, hp.level) for name, hp in sorted(config.hyperparameters.items()))
-
-    # per-level optimizers
-    for level, mc in enumerate(config.levels):
-        keys.extend((name, level) for name in sorted(mc.learner.optimizer))
-
-    # per-level learners and tasks
-    for level in range(len(config.levels)):
-        keys.extend(
-            [
-                (MODEL_LEARNER, level),
-                (OPTIMIZER_LEARNER, level),
-                (TASK, level),
-            ]
-        )
-
-    return {key: i for i, key in enumerate(keys)}
 
 
 # ============================================================================
@@ -476,7 +441,6 @@ def make_lens(model_states: slice, learning_states: slice, params: slice) -> Len
 
 def build_interfaces(
     config: GodConfig,
-    id_map: dict[S_ID, int],
 ) -> dict[S_ID, GodInterface[GodState]]:
 
     interfaces: dict[S_ID, GodInterface[GodState]] = {}
@@ -486,8 +450,8 @@ def build_interfaces(
     # 1. nodes
     for level in range(num_levels):
         for name, node in config.nodes.items():
-            pi = id_map[(name, None)]
-            si = id_map[(name, level)]
+            pi = (name, None)
+            si = (name, level)
             logs_acc = logs_accessor(level)
 
             match node:
@@ -503,7 +467,7 @@ def build_interfaces(
 
                 case VanillaRNNLayer(_, _, tc):
                     hp_cfg = config.hyperparameters[tc]
-                    hi = id_map[(tc, hp_cfg.level)]
+                    hi = (tc, hp_cfg.level)
                     w_rec = rnn_w_rec(pi, 0)
                     b_rec = rnn_b_rec(pi, 0)
                     ln = rnn_layer_norm(pi, 0)
@@ -521,7 +485,7 @@ def build_interfaces(
 
                 case GRULayer(_, _, _, tc):
                     hp_cfg = config.hyperparameters[tc]
-                    hi = id_map[(tc, hp_cfg.level)]
+                    hi = (tc, hp_cfg.level)
                     cell = gru_cell(pi, 0)
                     interfaces[(name, level)] = copy.replace(
                         default,
@@ -535,7 +499,7 @@ def build_interfaces(
 
                 case LSTMLayer(_, _, _, tc):
                     hp_cfg = config.hyperparameters[tc]
-                    hi = id_map[(tc, hp_cfg.level)]
+                    hi = (tc, hp_cfg.level)
                     cell = lstm_cell(pi, 0)
                     interfaces[(name, level)] = copy.replace(
                         default,
@@ -567,7 +531,7 @@ def build_interfaces(
 
     # 2. HPs
     for name, hp in config.hyperparameters.items():
-        hi = id_map[(name, hp.level)]
+        hi = (name, hp.level)
         logs_acc = logs_accessor(hp.level)
         base = copy.replace(
             default,
@@ -595,7 +559,7 @@ def build_interfaces(
     # 3. optimizers
     for level, mc in enumerate(config.levels):
         for name, assignment in mc.learner.optimizer.items():
-            oi = id_map[(name, level)]
+            oi = (name, level)
             logs_acc = logs_accessor(level)
 
             match assignment.optimizer:
@@ -614,9 +578,9 @@ def build_interfaces(
                         prng=prng_accessor(oi, level),
                         logs=logs_acc,
                         opt_state=opt_state(oi, level),
-                        learning_rate=learning_rate(id_map[(inner.learning_rate, hp_lr.level)], hp_lr.level),
-                        weight_decay=weight_decay(id_map[(inner.weight_decay, hp_wd.level)], hp_wd.level),
-                        momentum=momentum(id_map[(inner.momentum, hp_m.level)], hp_m.level),
+                        learning_rate=learning_rate((inner.learning_rate, hp_lr.level), hp_lr.level),
+                        weight_decay=weight_decay((inner.weight_decay, hp_wd.level), hp_wd.level),
+                        momentum=momentum((inner.momentum, hp_m.level), hp_m.level),
                     )
 
                 case _:
@@ -624,7 +588,7 @@ def build_interfaces(
 
     # 4. tasks
     for level, mc in enumerate(config.levels):
-        ti = id_map[(TASK, level)]
+        ti = (TASK, level)
         logs_acc = logs_accessor(level)
         base = copy.replace(
             default,
@@ -635,7 +599,7 @@ def build_interfaces(
         match mc.objective_fn:
             case ELBOObjective(beta, _):
                 hp_cfg = config.hyperparameters[beta]
-                hi = id_map[(beta, hp_cfg.level)]
+                hi = (beta, hp_cfg.level)
                 interfaces[(TASK, level)] = copy.replace(
                     base,
                     kl_regularizer_beta=kl_regularizer_beta(hi, hp_cfg.level),
@@ -649,7 +613,7 @@ def build_interfaces(
             (MODEL_LEARNER, mc.learner.model_learner),
             (OPTIMIZER_LEARNER, mc.learner.optimizer_learner),
         ]:
-            li = id_map[(slot_name, level)]
+            li = (slot_name, level)
             tick_acc = tick_accessor(li, level)
             logs_acc = logs_accessor(level)
             base = copy.replace(
@@ -675,7 +639,7 @@ def build_interfaces(
 
                 case RFLOConfig(tc):
                     hp_cfg = config.hyperparameters[tc]
-                    hi = id_map[(tc, hp_cfg.level)]
+                    hi = (tc, hp_cfg.level)
                     interfaces[(slot_name, level)] = copy.replace(
                         base,
                         forward_mode_jacobian=forward_mode_jacobian(li, level),

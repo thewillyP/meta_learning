@@ -10,7 +10,7 @@ from toposort import toposort_flatten
 
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
-from meta_learn_lib.create_interface import build_id_map, build_interfaces
+from meta_learn_lib.create_interface import build_interfaces
 from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
@@ -157,7 +157,8 @@ def create_inference_parameters[ENV](
 
     node_graph = transition_graph | readout_graph
 
-    for node_name, node in nodes.items():
+    for node_name in node_graph:
+        node = nodes[node_name]
         interface = interfaces[(node_name, level)]
         is_learnable = node_name in learnables
         is_transition = node_name not in readout_graph
@@ -636,7 +637,7 @@ def create_env(
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
     prng: PRNG,
 ) -> GodState:
-    interfaces = build_interfaces(config, build_id_map(config))
+    interfaces = build_interfaces(config)
     k1, k2, prng = jax.random.split(prng, 3)
     env = create_empty_env(config, k1)
     creator = env_creator(

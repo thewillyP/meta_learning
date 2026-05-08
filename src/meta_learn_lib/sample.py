@@ -69,11 +69,6 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
         add_clip=None,
         scale=1.0,
     )
-    identity_learner = LearnConfig(
-        model_learner=identity_grad,
-        optimizer_learner=identity_grad,
-        optimizer={},
-    )
     no_track = TrackLogs(
         gradient=False,
         hessian_contains_nans=False,
@@ -88,13 +83,17 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
     for level in config.levels:
         match sg.input:
             case GaussianSampleInput():
-                dataset_source: Task = GaussianNoiseTaskFamily(shape=sg.input_shape, n=sg.num_samples)
+                dataset_source: Task = GaussianNoiseTaskFamily(
+                    shape=sg.input_shape,
+                    n=sg.num_samples * len(config.levels),
+                )
             case DataSampleInput():
                 dataset_source = level.dataset_source
 
         new_levels.append(
             dataclasses.replace(
                 level,
+                objective_fn=NoopObjective(),
                 dataset_source=dataset_source,
                 dataset=DatasetConfig(
                     num_examples_in_minibatch=sg.num_samples,
@@ -108,7 +107,11 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
                     reset_t=None,
                     track_influence_in=level.nested.track_influence_in,
                 ),
-                learner=identity_learner,
+                learner=LearnConfig(
+                    model_learner=identity_grad,
+                    optimizer_learner=identity_grad,
+                    optimizer={},
+                ),
                 track_logs=no_track,
                 collect_predictions=True,
             )

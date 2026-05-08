@@ -411,6 +411,11 @@ class BernoulliObjective:
     reduction: Reduction
 
 
+@dataclass(frozen=True)
+class NoopObjective:
+    pass
+
+
 class ELBOObjective(eqx.Module):
     @dataclass(frozen=True)
     class GaussianPosterior: ...
@@ -428,7 +433,7 @@ class ELBOObjective(eqx.Module):
     prior: Prior
 
 
-type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective]
+type ObjectiveFn = Union[ELBOObjective, RegressionObjective, CrossEntropyObjective, BernoulliObjective, NoopObjective]
 
 
 @dataclass(frozen=True)

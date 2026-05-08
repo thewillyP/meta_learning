@@ -32,7 +32,7 @@ from meta_learn_lib.create_env import (
     env_validation_resetters,
     make_tick_advancer,
 )
-from meta_learn_lib.create_interface import build_id_map, build_interfaces
+from meta_learn_lib.create_interface import build_interfaces
 from meta_learn_lib.datasets import create_data_sources, create_dataloader, validate_dataloader_config
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
@@ -248,8 +248,7 @@ def setup_env_and_fns(config: GodConfig):
     data_sources, shapes = create_data_sources(config, dataset_prng)
     dataloader = create_dataloader(config, data_sources, data_loader_prng, task_prng)
 
-    id_map = build_id_map(config)
-    interfaces = build_interfaces(config, id_map)
+    interfaces = build_interfaces(config)
 
     env = create_env(config, shapes, interfaces, env_prng)
 

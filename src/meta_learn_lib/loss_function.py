@@ -154,7 +154,7 @@ def create_loss_fn[ENV](
                 x, target = data
                 recon_loss, stats = inner_loss_fn(env, outputs, (x, x))
 
-                beta = task_interface.kl_regularizer_beta.get(env)
+                beta = task_interface.kl_regularizer_beta.get(env)[0]
                 mask = target != label_mask_value
                 kl_value = kl(posterior, prior, outputs, mask)
 
@@ -162,6 +162,11 @@ def create_loss_fn[ENV](
                 stats["kl"] = scalar(jax.lax.stop_gradient(kl_value))
                 stats["elbo_loss"] = scalar(jax.lax.stop_gradient(loss))
                 return loss, stats
+
+        case NoopObjective():
+
+            def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
+                return LOSS(jnp.zeros(())), {}
 
     return loss_fn
 

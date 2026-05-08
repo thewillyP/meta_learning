@@ -5805,6 +5805,7 @@ OHO_RNN32_TEST = GodConfig(
             use_bias=True,
             layer_norm=None,
         ),
+        "softmax": Activation(activation_fn="softmax"),
     },
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
@@ -6071,6 +6072,7 @@ OHO_RNN32_TEST = GodConfig(
             },
             readout_graph={
                 "readout": frozenset({"rnn1"}),
+                "softmax": frozenset({"readout"}),
             },
             source_nodes={},
             input_shape=(1, 28),

@@ -325,6 +325,11 @@ class Reshape:
     shape: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class Activation:
+    activation_fn: ACTIVATION_FN
+
+
 type Node = Union[
     NNLayer,
     VanillaRNNLayer,
@@ -340,6 +345,7 @@ type Node = Union[
     MergeOutputs,
     ExtractZ,
     Reshape,
+    Activation,
 ]
 
 

@@ -90,6 +90,7 @@ def make_converter() -> Converter:
             MergeOutputs,
             ExtractZ,
             Reshape,
+            Activation,
         ],
     )
 

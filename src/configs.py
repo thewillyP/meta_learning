@@ -3083,7 +3083,7 @@ VAE_BETA_OHO = GodConfig(
     },
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
-            value=0.001,
+            value=0.0001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),

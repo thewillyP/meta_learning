@@ -80,7 +80,7 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return t_test if is_test else t_train
         case GaussianNoiseTaskFamily(_, _):
             return 1
-        case GridTaskFamily(_, _, _, _):
+        case GridTaskFamily(_, _, _, _, _):
             return 1
 
 
@@ -348,7 +348,7 @@ def dataset_sources(
 
             return [make_noise_task(k) for k in keys]
 
-        case GridTaskFamily(dim, min_value, max_value, n_per_axis):
+        case GridTaskFamily(dim, min_value, max_value, n_per_axis, _):
             keys = jax.random.split(seed, num_tasks)
 
             def make_grid_task(key: PRNG) -> DatasetWithReshape:

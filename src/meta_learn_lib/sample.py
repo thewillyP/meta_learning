@@ -80,7 +80,7 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
     )
 
     new_levels = []
-    for level in config.levels:
+    for level_idx, level in enumerate(config.levels):
         match sg.input:
             case GaussianSampleInput():
                 dataset_source: Task = GaussianNoiseTaskFamily(
@@ -95,6 +95,7 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
                     min_value=min_value,
                     max_value=max_value,
                     n_per_axis=n_per_axis,
+                    tag=level_idx,
                 )
 
         new_levels.append(

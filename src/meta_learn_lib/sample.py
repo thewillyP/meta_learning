@@ -1,8 +1,27 @@
 import dataclasses
+import re
+import numpy as np
 
 from meta_learn_lib.config import *
-from meta_learn_lib.lib_types import STAT
+from meta_learn_lib.constants import *
+from meta_learn_lib.lib_types import *
 from meta_learn_lib.logger import Logger
+
+
+def get_pixel_mean_std(task: Task) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
+    """Return per-channel (mean, std) used at dataset load time, so we can invert it
+    before display. None means no unnormalization needed (raw / binarize / non-image)."""
+    match task:
+        case MNISTTaskFamily(pixel_transform="normalize"):
+            return MNIST_MEAN, MNIST_STD
+        case FashionMNISTTaskFamily(pixel_transform="normalize"):
+            return FASHION_MNIST_MEAN, FASHION_MNIST_STD
+        case CIFAR10TaskFamily(_, _, _):
+            return CIFAR10_MEAN, CIFAR10_STD
+        case CIFAR100TaskFamily(_, _, _):
+            return CIFAR100_MEAN, CIFAR100_STD
+        case _:
+            return None
 
 
 def validate_sample_generators(config: GodConfig) -> list[str]:
@@ -106,12 +125,34 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
     )
 
 
-def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger) -> None:
+LEVEL_RE = re.compile(r"level(\d+)/prediction$")
+
+
+def display_ready(ns: NamedStat, task: Task) -> NamedStat:
+    """Invert the dataset-time normalization (if any) and clip to [0, 1] so the
+    NamedStat is ready for image display."""
+    data = np.asarray(ns.data)
+    mean_std = get_pixel_mean_std(task)
+    if mean_std is not None:
+        mean, std = mean_std
+        mean_arr = np.asarray(mean, dtype=data.dtype).reshape(-1, 1, 1)
+        std_arr = np.asarray(std, dtype=data.dtype).reshape(-1, 1, 1)
+        data = data * std_arr + mean_arr
+    data = np.clip(data, 0.0, 1.0)
+    return NamedStat(data, ns.axes)
+
+
+def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger, config: GodConfig) -> None:
     prediction_stats = {k: v for k, v in stats.items() if k.endswith("/prediction")}
     if not prediction_stats:
         return
     match sg.reporter:
         case ImageReporter(title):
-            logger.log_image_stats(prediction_stats, title)
+            display_stats = {}
+            for k, ns in prediction_stats.items():
+                m = LEVEL_RE.search(k)
+                level = int(m.group(1))
+                display_stats[k] = display_ready(ns, config.levels[level].dataset_source)
+            logger.log_image_stats(display_stats, title)
         case PlotReporter(title):
             logger.log_plot_stats(prediction_stats, title)

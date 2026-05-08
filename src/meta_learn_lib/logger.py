@@ -268,7 +268,6 @@ class ScalarLogger:
                 img = np.transpose(sub[t], (1, 2, 0))
                 if img.shape[2] == 1:
                     img = img.squeeze(2)
-                img = np.clip(img, 0.0, 1.0)
                 t_series = f"{series}/t{t}" if sub.shape[0] > 1 else series
                 self.logger.log_image(title, t_series, iteration, img)
 

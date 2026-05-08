@@ -253,7 +253,7 @@ def run(
                 "sample",
                 NullCheckpointManager(),
             )
-            report_samples(sg, sample_stats[0], scalar_logger)
+            report_samples(sg, sample_stats[0], scalar_logger, config)
 
     scalar_logger.flush()
     scalar_logger.shutdown()

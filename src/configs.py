@@ -4483,7 +4483,7 @@ VAE_BASELINE = GodConfig(
         scalar_queue_size=0,
         sample_queue_size=0,
     ),
-    epochs=300,
+    epochs=1,
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=0,
     transition_graph={},
@@ -4606,7 +4606,7 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -4682,7 +4682,7 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -4739,7 +4739,7 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=100,
@@ -4789,16 +4789,15 @@ VAE_BASELINE = GodConfig(
         SampleGeneratorConfig(
             transition_graph={},
             readout_graph={
-                "z_input": {},
-                "decoder_hidden1": {"z_input"},
-                "decoder_hidden2": {"decoder_hidden1"},
-                "decoder_out": {"decoder_hidden2"},
-                "decoder_reshape": {"decoder_out"},
+                "z_input": frozenset(),
+                "decoder_hidden1": frozenset({"z_input"}),
+                "decoder_out": frozenset({"decoder_hidden1"}),
+                "decoder_reshape": frozenset({"decoder_out"}),
             },
             source_nodes={"z_input": UnlabeledSource()},
             input_shape=(2,),
             num_samples=16,
-            every_n_epochs=10,
+            every_n_epochs=1,
             input=GaussianSampleInput(),
             reporter=ImageReporter(title="vae_samples"),
         ),
@@ -6058,11 +6057,11 @@ OHO_RNN32_TEST = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        # ("VAE_BASELINE", VAE_BASELINE),
+        ("VAE_BASELINE", VAE_BASELINE),
         # ("VAE_BETA_OHO", VAE_BETA_OHO),
         # ("VAE_LR_OHO", VAE_LR_OHO),
         # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
-        ("OHO_RNN32_TEST", OHO_RNN32_TEST),
+        # ("OHO_RNN32_TEST", OHO_RNN32_TEST),
     ]:
         upload_config(name, config)
 

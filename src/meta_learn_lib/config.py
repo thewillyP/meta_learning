@@ -87,6 +87,12 @@ class GridTaskFamily:
     tag: int
 
 
+@dataclass(frozen=True)
+class MNISTSequenceTaskFamily:
+    time_series_length: int
+    pixel_transform: PixelTransform
+
+
 type Task = Union[
     MNISTTaskFamily,
     FashionMNISTTaskFamily,
@@ -95,6 +101,7 @@ type Task = Union[
     DelayAddTaskFamily,
     GaussianNoiseTaskFamily,
     GridTaskFamily,
+    MNISTSequenceTaskFamily,
 ]
 
 

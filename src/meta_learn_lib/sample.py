@@ -16,6 +16,8 @@ def get_pixel_mean_std(task: Task) -> tuple[tuple[float, ...], tuple[float, ...]
             return MNIST_MEAN, MNIST_STD
         case FashionMNISTTaskFamily(pixel_transform="normalize"):
             return FASHION_MNIST_MEAN, FASHION_MNIST_STD
+        case MNISTSequenceTaskFamily(pixel_transform="normalize"):
+            return MNIST_MEAN, MNIST_STD
         case CIFAR10TaskFamily(_, _, _):
             return CIFAR10_MEAN, CIFAR10_STD
         case CIFAR100TaskFamily(_, _, _):

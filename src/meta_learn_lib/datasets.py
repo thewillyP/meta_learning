@@ -82,6 +82,8 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return 1
         case GridTaskFamily(_, _, _, _, _):
             return 1
+        case MNISTSequenceTaskFamily(_, _):
+            return 1
 
 
 def numpy_collate_fn(batch):
@@ -186,6 +188,23 @@ def make_patch_reshape(
     return reshape
 
 
+def make_image_preprocessor(mean: tuple[float, ...], std: tuple[float, ...], pixel_transform: PixelTransform) -> Lambda:
+    """Returns a torchvision pipeline: PIL image -> normalized (C, H, W) tensor."""
+    match pixel_transform:
+        case "normalize":
+            tv_transform = torchvision.transforms.Normalize(mean, std)
+        case "binarize":
+            tv_transform = torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
+        case "raw":
+            tv_transform = torchvision.transforms.Lambda(lambda x: x)
+    return torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            tv_transform,
+        ]
+    )
+
+
 def image_transforms(
     mean: tuple[float, ...],
     std: tuple[float, ...],
@@ -206,20 +225,7 @@ def image_transforms(
     """
     seq_len = (height // patch_h) * (width // patch_w)
 
-    match pixel_transform:
-        case "normalize":
-            tv_transform = torchvision.transforms.Normalize(mean, std)
-        case "binarize":
-            tv_transform = torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
-        case "raw":
-            tv_transform = torchvision.transforms.Lambda(lambda x: x)
-
-    x_pre = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.ToTensor(),
-            tv_transform,
-        ]
-    )
+    x_pre = make_image_preprocessor(mean, std, pixel_transform)
 
     def make_targets(y):
         y_val = torch.tensor(y)
@@ -359,6 +365,26 @@ def dataset_sources(
                 return PyTreeDataset((xs, xs)), lambda x: x
 
             return [make_grid_task(k) for k in keys]
+
+        case MNISTSequenceTaskFamily(time_series_length, pixel_transform):
+            x_pre = make_image_preprocessor(MNIST_MEAN, MNIST_STD, pixel_transform)
+            base = torchvision.datasets.MNIST(
+                root=f"{root_dir}/data", train=not is_test, download=True, transform=x_pre
+            )
+            splits = split_dataset(base, num_tasks, seed)
+            keys = jax.random.split(seed, num_tasks)
+
+            def make_seq_task(split: Dataset, key: PRNG) -> DatasetWithReshape:
+                images, labels = jax_collate_fn(numpy_collate_fn([split[i] for i in range(len(split))]))
+                n_seq = len(split) // time_series_length
+                perm = jax.random.permutation(key, len(split))[: n_seq * time_series_length]
+                image_seqs = images[perm].reshape(n_seq, time_series_length, MNIST_CHANNEL, MNIST_HEIGHT, MNIST_WIDTH)
+                label_seqs = labels[perm].reshape(n_seq, time_series_length)
+                xs = image_seqs[:, None, ...]
+                ys = label_seqs[:, None, :]
+                return PyTreeDataset((xs, ys)), lambda x: x
+
+            return [make_seq_task(s, k) for s, k in zip(splits, keys)]
 
 
 def take_datasets(

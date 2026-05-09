@@ -149,6 +149,7 @@ def make_converter() -> Converter:
             DelayAddTaskFamily,
             GaussianNoiseTaskFamily,
             GridTaskFamily,
+            MNISTSequenceTaskFamily,
         ],
     )
 

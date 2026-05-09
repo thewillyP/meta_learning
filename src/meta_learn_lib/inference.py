@@ -76,6 +76,8 @@ def get_reader[ENV](
                 | MergeOutputs()
                 | ExtractZ()
                 | Reshape()
+                | Take()
+                | Interpolate()
             ):
                 from_env = from_env.set(node_name, lambda env: Outputs())
             case _:
@@ -239,6 +241,23 @@ def get_inference[ENV](
                     ]
                     x = to_vector(deps).vector
                     outputs = outputs.set(node_name, Outputs(prediction=x.reshape(target_shape)))
+                case Take(start, length):
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x = to_vector(deps).vector
+                    outputs = outputs.set(node_name, Outputs(prediction=x[start : start + length]))
+                case Interpolate(n_steps):
+                    deps_list = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    z_prev = deps_list[0].prediction
+                    z_curr = deps_list[1].prediction
+                    alphas = jnp.linspace(0.0, 1.0, n_steps).reshape((n_steps,) + (1,) * z_prev.ndim)
+                    interp = (1 - alphas) * z_prev + alphas * z_curr
+                    outputs = outputs.set(node_name, Outputs(prediction=interp))
                 case Activation(activation_fn):
                     deps = [
                         *[from_env[n](env) for n in node_graph[node_name] if n in from_env],

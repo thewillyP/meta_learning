@@ -66,6 +66,11 @@ def get_output_shapes(
                 node_features[node_name] = (n,)
             case Reshape(target_shape):
                 node_features[node_name] = target_shape
+            case Take(_, length):
+                node_features[node_name] = (length,)
+            case Interpolate(n_steps):
+                dep_shape = [node_features[n] for n in node_graph[node_name]][0]
+                node_features[node_name] = (n_steps,) + dep_shape
             case Activation(_):
                 deps = [node_features[n] for n in node_graph[node_name]]
                 node_features[node_name] = deps[-1]

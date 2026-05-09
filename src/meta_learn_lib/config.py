@@ -397,6 +397,17 @@ class Activation:
     activation_fn: ACTIVATION_FN
 
 
+@dataclass(frozen=True)
+class Take:
+    start: int
+    length: int
+
+
+@dataclass(frozen=True)
+class Interpolate:
+    n_steps: int
+
+
 type Node = Union[
     NNLayer,
     VanillaRNNLayer,
@@ -419,6 +430,8 @@ type Node = Union[
     Activation,
     LayerNorm,
     GroupNorm,
+    Take,
+    Interpolate,
 ]
 
 

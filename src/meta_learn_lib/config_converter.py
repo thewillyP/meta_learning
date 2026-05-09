@@ -97,6 +97,8 @@ def make_converter() -> Converter:
             Activation,
             LayerNorm,
             GroupNorm,
+            Take,
+            Interpolate,
         ],
     )
 

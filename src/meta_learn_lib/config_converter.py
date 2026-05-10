@@ -165,7 +165,15 @@ def make_converter() -> Converter:
     )
 
     # -- SampleInput --
-    setup_flattened_union(converter, Union[GaussianSampleInput, DataSampleInput, GridSampleInput])
+    setup_flattened_union(
+        converter,
+        Union[
+            GaussianSampleInput,
+            DataSampleInput,
+            GridSampleInput,
+            InterpolationSampleInput,
+        ],
+    )
 
     # -- SampleReporter --
     setup_flattened_union(converter, Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter])

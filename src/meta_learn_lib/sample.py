@@ -31,16 +31,14 @@ def validate_sample_generators(config: GodConfig) -> list[str]:
     for i, sg in enumerate(config.sample_generators):
         all_graph_nodes = set(sg.transition_graph.keys()) | set(sg.readout_graph.keys())
         merged_nodes = set(config.nodes) | set(sg.source_nodes)
+        merged_aliases = config.aliases | sg.aliases
 
         for node_name in all_graph_nodes:
-            if node_name in sg.source_nodes:
-                node = sg.source_nodes[node_name]
-                if not isinstance(node, (UnlabeledSource, LabeledSource)):
-                    errors.append(
-                        f"Sample generator {i}: source_nodes['{node_name}'] must be UnlabeledSource or LabeledSource"
-                    )
-            elif node_name not in merged_nodes:
-                errors.append(f"Sample generator {i}: node '{node_name}' not found in config.nodes or source_nodes")
+            canon = merged_aliases.get(node_name, node_name)
+            if canon not in merged_nodes:
+                errors.append(
+                    f"Sample generator {i}: node '{node_name}' (canonical '{canon}') not found in config.nodes or source_nodes"
+                )
 
         for node_name in sg.source_nodes:
             if node_name in config.nodes:
@@ -99,6 +97,11 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
                     n_per_axis=n_per_axis,
                     tag=level_idx,
                 )
+            case InterpolationSampleInput(pixel_transform):
+                dataset_source = MNISTSequenceTaskFamily(
+                    time_series_length=2,
+                    pixel_transform=pixel_transform,
+                )
 
         new_levels.append(
             dataclasses.replace(
@@ -132,6 +135,7 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
         transition_graph=sg.transition_graph,
         readout_graph=sg.readout_graph,
         nodes=config.nodes | sg.source_nodes,
+        aliases=config.aliases | sg.aliases,
         levels=new_levels,
         sample_generators=[],
         epochs=1,

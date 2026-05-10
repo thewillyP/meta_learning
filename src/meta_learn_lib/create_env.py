@@ -20,101 +20,108 @@ from meta_learn_lib.util import filter_cond, get_activation_fn, hyperparameter_r
 
 
 def get_output_shapes(
-    node_features: dict[str, tuple[int, ...]],
-    node_graph: dict[str, set[str]],
-    nodes: dict[str, Node],
+    node_features: dict[Canon, tuple[int, ...]],
+    node_graph: dict[Uncanon, set[Uncanon]],
+    nodes: dict[Canon, Node],
+    aliases: dict[Uncanon, Canon],
     data_shape: tuple[tuple[int, ...], tuple[int, ...]],
-) -> dict[str, tuple[int, ...]]:
+) -> dict[Canon, tuple[int, ...]]:
     x_shape, y_shape = data_shape
     for node_name in toposort_flatten(node_graph):
-        match nodes[node_name]:
+        canon = aliases.get(node_name, node_name)
+        match nodes[canon]:
             case NNLayer(n, activation_fn, use_bias):
-                node_features[node_name] = (n,)
+                node_features[canon] = (n,)
             case VanillaRNNLayer(nn_layer, layer_norm, use_random_init, time_constant):
-                node_features[node_name] = (nn_layer.n,)
+                node_features[canon] = (nn_layer.n,)
             case GRULayer(n, use_bias, use_random_init):
-                node_features[node_name] = (n,)
+                node_features[canon] = (n,)
             case LSTMLayer(n, use_bias, use_random_init):
-                node_features[node_name] = (n,)
-            case Scan(graph, autoregressive_mask, pred_source, start_token):
+                node_features[canon] = (n,)
+            case Scan(graph, autoregressive_mask, carry_transform, pred_source, start_token):
                 # Because I dont know how to concatenate your multiple dependencies, im just going to take the last one
-                scan_x_shape = [node_features[n] for n in node_graph[node_name] if n != pred_source][-1]
-                scan_y_shape = node_features[pred_source]
+                scan_x_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name] if n != pred_source][-1]
+                scan_y_shape = node_features[aliases.get(pred_source, pred_source)]
                 last_sub_node = toposort_flatten(graph)[-1]
-                node_features = get_output_shapes(node_features, graph, nodes, (scan_x_shape[1:], scan_y_shape[1:]))
-                n_out = (scan_x_shape[0],) + node_features[last_sub_node]
-                node_features[node_name] = n_out
+                node_features = get_output_shapes(
+                    node_features, graph, nodes, aliases, (scan_x_shape[1:], scan_y_shape[1:])
+                )
+                n_out = (scan_x_shape[0],) + node_features[aliases.get(last_sub_node, last_sub_node)]
+                node_features[canon] = n_out
             case Repeat(n):
                 # same issue as scan, just take the last one
-                n_in = [node_features[n] for n in node_graph[node_name]][-1]
-                node_features[node_name] = (n,) + n_in
+                n_in = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
+                node_features[canon] = (n,) + n_in
             case Concat():
-                n_in = sum([math.prod(node_features[n]) for n in node_graph[node_name]])
-                node_features[node_name] = (n_in,)
+                n_in = sum([math.prod(node_features[aliases.get(n, n)]) for n in node_graph[node_name]])
+                node_features[canon] = (n_in,)
             case ToEmpty():
-                node_features[node_name] = ()
+                node_features[canon] = ()
             case UnlabeledSource():
-                node_features[node_name] = x_shape
+                node_features[canon] = x_shape
             case LabeledSource():
-                node_features[node_name] = y_shape
+                node_features[canon] = y_shape
             case ReparameterizeLayer():
-                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
-                node_features[node_name] = (n_in // 2,)
+                n_in = sum(math.prod(node_features[aliases.get(c, c)]) for c in node_graph[node_name])
+                node_features[canon] = (n_in // 2,)
             case MergeOutputs():
-                node_features[node_name] = (0,)  # is an end node
+                node_features[canon] = (0,)  # is an end node
             case ExtractZ(n):
-                node_features[node_name] = (n,)
+                node_features[canon] = (n,)
             case Reshape(target_shape):
-                node_features[node_name] = target_shape
+                node_features[canon] = target_shape
             case Take(_, length):
-                node_features[node_name] = (length,)
+                node_features[canon] = (length,)
             case Interpolate(n_steps):
-                dep_shape = [node_features[n] for n in node_graph[node_name]][0]
-                node_features[node_name] = (n_steps,) + dep_shape
+                dep_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][0]
+                node_features[canon] = (n_steps,) + dep_shape
             case Activation(_):
-                deps = [node_features[n] for n in node_graph[node_name]]
-                node_features[node_name] = deps[-1]
+                deps = [node_features[aliases.get(n, n)] for n in node_graph[node_name]]
+                node_features[canon] = deps[-1]
             case LayerNorm() | GroupNorm():
-                deps = [node_features[n] for n in node_graph[node_name]]
-                node_features[node_name] = deps[-1]
+                deps = [node_features[aliases.get(n, n)] for n in node_graph[node_name]]
+                node_features[canon] = deps[-1]
             case Conv2dLayer(out_channels, kernel_size, stride, padding, _):
-                in_shape = [node_features[n] for n in node_graph[node_name]][-1]
+                in_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
                 _, h, w = in_shape
                 h_out = (h + 2 * padding - kernel_size) // stride + 1
                 w_out = (w + 2 * padding - kernel_size) // stride + 1
-                node_features[node_name] = (out_channels, h_out, w_out)
+                node_features[canon] = (out_channels, h_out, w_out)
             case ConvTranspose2dLayer(out_channels, kernel_size, stride, padding, output_padding, _):
-                in_shape = [node_features[n] for n in node_graph[node_name]][-1]
+                in_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
                 _, h, w = in_shape
                 h_out = (h - 1) * stride - 2 * padding + kernel_size + output_padding
                 w_out = (w - 1) * stride - 2 * padding + kernel_size + output_padding
-                node_features[node_name] = (out_channels, h_out, w_out)
+                node_features[canon] = (out_channels, h_out, w_out)
             case MaxPool2dLayer(kernel_size, stride) | AvgPool2dLayer(kernel_size, stride):
-                in_shape = [node_features[n] for n in node_graph[node_name]][-1]
+                in_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
                 c, h, w = in_shape
                 h_out = (h - kernel_size) // stride + 1
                 w_out = (w - kernel_size) // stride + 1
-                node_features[node_name] = (c, h_out, w_out)
+                node_features[canon] = (c, h_out, w_out)
             case _:
-                node_features[node_name] = ()
+                node_features[canon] = ()
 
     return node_features
 
 
 def create_inference_state[ENV](
-    nodes: dict[str, Node],
+    nodes: dict[Canon, Node],
+    node_graph: dict[Uncanon, set[Uncanon]],
+    aliases: dict[Uncanon, Canon],
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
-    node_features: dict[str, tuple[int, ...]],
+    node_features: dict[Canon, tuple[int, ...]],
     track_influence_in: frozenset[int],
     is_init: bool,
     env: ENV,
     prng: PRNG,
 ) -> ENV:
 
-    for node_name, node in nodes.items():
-        interface = interfaces[(node_name, level)]
-        match node:
+    for node_name in node_graph:
+        canon = aliases.get(node_name, node_name)
+        interface = interfaces[(canon, level)]
+        match nodes[canon]:
             case VanillaRNNLayer(nn_layer, layer_norm, use_random_init, time_constant):
                 k1, k2, prng = jax.random.split(prng, 3)
                 if use_random_init:
@@ -152,9 +159,18 @@ def create_inference_state[ENV](
                     env, Tagged(value=lstm_state, meta=StateMeta(is_stateful=track_influence_in))
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k3, meta=StateMeta(is_stateful=frozenset())))
-            case Scan(graph, autoregressive_mask, pred_source, start_token):
+            case Scan(graph, autoregressive_mask, carry_transform, pred_source, start_token):
                 k1, prng = jax.random.split(prng, 2)
-                shape = node_features[node_name][1:]
+                match autoregressive_mask:
+                    case "teacher_forcing":
+                        source_shape = node_features[aliases.get(pred_source, pred_source)][1:]
+                    case _:
+                        source_shape = node_features[canon][1:]
+                match carry_transform:
+                    case "identity":
+                        shape = source_shape
+                    case "take_last" | "take_first":
+                        shape = source_shape[1:]
                 match start_token:
                     case "zeros":
                         token = jnp.zeros(shape)
@@ -170,13 +186,14 @@ def create_inference_state[ENV](
 
 
 def create_inference_parameters[ENV](
-    nodes: dict[str, Node],
-    transition_graph: dict[str, set[str]],
-    readout_graph: dict[str, set[str]],
+    nodes: dict[Canon, Node],
+    transition_graph: dict[Uncanon, set[Uncanon]],
+    readout_graph: dict[Uncanon, set[Uncanon]],
+    aliases: dict[Uncanon, Canon],
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
-    node_features: dict[str, tuple[int, ...]],
-    learnables: frozenset[str],
+    node_features: dict[Canon, tuple[int, ...]],
+    learnables: frozenset[Canon],
     env: ENV,
     prng: PRNG,
 ) -> ENV:
@@ -184,13 +201,14 @@ def create_inference_parameters[ENV](
     node_graph = transition_graph | readout_graph
 
     for node_name in node_graph:
-        node = nodes[node_name]
-        interface = interfaces[(node_name, level)]
-        is_learnable = node_name in learnables
+        canon = aliases.get(node_name, node_name)
+        node = nodes[canon]
+        interface = interfaces[(canon, level)]
+        is_learnable = canon in learnables
         is_transition = node_name not in readout_graph
         match node:
             case NNLayer(n, activation_fn, use_bias):
-                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                n_in = sum(math.prod(node_features[aliases.get(c, c)]) for c in node_graph[node_name])
                 k1, k2, prng = jax.random.split(prng, 3)
 
                 linear = eqx.nn.Linear(n_in, n, use_bias=use_bias, key=k1)
@@ -215,7 +233,7 @@ def create_inference_parameters[ENV](
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
             case VanillaRNNLayer(nn_layer, layer_norm, use_random_init, time_constant):
-                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                n_in = sum(math.prod(node_features[aliases.get(c, c)]) for c in node_graph[node_name])
                 k1, k2, k3, prng = jax.random.split(prng, 4)
 
                 W_in = jax.random.normal(k1, (nn_layer.n, n_in)) * jnp.sqrt(1 / n_in)
@@ -272,7 +290,7 @@ def create_inference_parameters[ENV](
                 env = interface.prng.put_tagged(env, Tagged(value=k3, meta=StateMeta(is_stateful=frozenset())))
 
             case GRULayer(n, use_bias, use_random_init):
-                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                n_in = sum(math.prod(node_features[aliases.get(c, c)]) for c in node_graph[node_name])
                 k1, k2, prng = jax.random.split(prng, 3)
 
                 gru = eqx.nn.GRUCell(n_in, n, use_bias=use_bias, key=k1)
@@ -291,7 +309,7 @@ def create_inference_parameters[ENV](
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
             case LSTMLayer(n, use_bias, use_random_init):
-                n_in = sum(math.prod(node_features[c]) for c in node_graph[node_name])
+                n_in = sum(math.prod(node_features[aliases.get(c, c)]) for c in node_graph[node_name])
                 k1, k2, prng = jax.random.split(prng, 3)
 
                 lstm = eqx.nn.LSTMCell(n_in, n, use_bias=use_bias, key=k1)
@@ -310,7 +328,7 @@ def create_inference_parameters[ENV](
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
             case LayerNorm(epsilon, use_weight, use_bias):
-                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                in_shape = [node_features[aliases.get(c, c)] for c in node_graph[node_name]][-1]
                 k1, prng = jax.random.split(prng, 2)
                 layer = eqx.nn.LayerNorm(in_shape, eps=epsilon, use_weight=use_weight, use_bias=use_bias)
                 env = interface.norm_module.put_tagged(
@@ -328,7 +346,7 @@ def create_inference_parameters[ENV](
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
 
             case GroupNorm(groups, epsilon, channelwise_affine):
-                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                in_shape = [node_features[aliases.get(c, c)] for c in node_graph[node_name]][-1]
                 k1, prng = jax.random.split(prng, 2)
                 layer = eqx.nn.GroupNorm(
                     groups=groups, channels=in_shape[0], eps=epsilon, channelwise_affine=channelwise_affine
@@ -348,7 +366,7 @@ def create_inference_parameters[ENV](
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
 
             case Conv2dLayer(out_channels, kernel_size, stride, padding, use_bias):
-                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                in_shape = [node_features[aliases.get(c, c)] for c in node_graph[node_name]][-1]
                 c_in = in_shape[0]
                 k1, k2, prng = jax.random.split(prng, 3)
                 conv = eqx.nn.Conv2d(
@@ -375,7 +393,7 @@ def create_inference_parameters[ENV](
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
             case ConvTranspose2dLayer(out_channels, kernel_size, stride, padding, output_padding, use_bias):
-                in_shape = [node_features[c] for c in node_graph[node_name]][-1]
+                in_shape = [node_features[aliases.get(c, c)] for c in node_graph[node_name]][-1]
                 c_in = in_shape[0]
                 k1, k2, prng = jax.random.split(prng, 3)
                 conv_t = eqx.nn.ConvTranspose2d(
@@ -560,8 +578,10 @@ def reset_validation[ENV](
     interfaces: dict[S_ID, GodInterface[ENV]],
     meta_config: MetaConfig,
     level: int,
-    nodes: dict[str, Node],
-    node_features: dict[str, tuple[int, ...]],
+    nodes: dict[Canon, Node],
+    node_graph: dict[Uncanon, set[Uncanon]],
+    aliases: dict[Uncanon, Canon],
+    node_features: dict[Canon, tuple[int, ...]],
     is_init: bool,
 ) -> Callable[[ENV, PRNG], ENV]:
 
@@ -570,7 +590,7 @@ def reset_validation[ENV](
     def create_env(env: ENV, prng: PRNG) -> ENV:
         k1, prng = jax.random.split(prng, 2)
         f1 = lambda e, k: create_inference_state(
-            nodes, interfaces, level, node_features, track_influence_in, is_init, e, k
+            nodes, node_graph, aliases, interfaces, level, node_features, track_influence_in, is_init, e, k
         )
         batch_size = [
             meta_config.validation.batch,
@@ -601,10 +621,11 @@ def reset_params_hyperparams_optimizer[ENV](
     meta_config: MetaConfig,
     level: int,
     hyperparameters: dict[HP, HyperparameterConfig],
-    nodes: dict[str, Node],
-    transition_graph: dict[str, set[str]],
-    readout_graph: dict[str, set[str]],
-    node_features: dict[str, tuple[int, ...]],
+    nodes: dict[Canon, Node],
+    transition_graph: dict[Uncanon, set[Uncanon]],
+    readout_graph: dict[Uncanon, set[Uncanon]],
+    aliases: dict[Uncanon, Canon],
+    node_features: dict[Canon, tuple[int, ...]],
     create_inference_param: bool,
 ) -> Callable[[ENV, PRNG], ENV]:
 
@@ -619,6 +640,7 @@ def reset_params_hyperparams_optimizer[ENV](
                 nodes,
                 transition_graph,
                 readout_graph,
+                aliases,
                 interfaces,
                 level,
                 node_features,
@@ -786,7 +808,8 @@ def env_validation_resetters[ENV](
             is_inits,
         )
     ):
-        node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+        node_graph = config.readout_graph | config.transition_graph
+        node_features = get_output_shapes({}, node_graph, config.nodes, config.aliases, shape)
 
         resetter = reset_validation(
             lambda e, k: e,
@@ -794,6 +817,8 @@ def env_validation_resetters[ENV](
             meta_config,
             level,
             config.nodes,
+            node_graph,
+            config.aliases,
             node_features,
             is_init,
         )
@@ -819,7 +844,8 @@ def env_resetters[ENV](
         create_inference_param: bool,
         is_init: bool,
     ) -> tuple[Callable[[ENV, PRNG], ENV], Callable[[ENV, PRNG], ENV]]:
-        node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+        node_graph = config.readout_graph | config.transition_graph
+        node_features = get_output_shapes({}, node_graph, config.nodes, config.aliases, shape)
 
         _reset_validation = reset_validation(
             accum,
@@ -827,6 +853,8 @@ def env_resetters[ENV](
             meta_config,
             level,
             config.nodes,
+            node_graph,
+            config.aliases,
             node_features,
             is_init,
         )
@@ -849,6 +877,7 @@ def env_resetters[ENV](
             config.nodes,
             config.transition_graph,
             config.readout_graph,
+            config.aliases,
             node_features,
             create_inference_param,
         )
@@ -972,9 +1001,10 @@ def create_inference_axes[ENV](
     shape: tuple[tuple[int, ...], tuple[int, ...]],
     level: int,
 ) -> ENV:
-    node_features = get_output_shapes({}, config.readout_graph | config.transition_graph, config.nodes, shape)
+    node_graph = config.readout_graph | config.transition_graph
+    node_features = get_output_shapes({}, node_graph, config.nodes, config.aliases, shape)
     track_influence_in = config.levels[level].validation.track_influence_in
     f = lambda e, k: create_inference_state(
-        config.nodes, interfaces, level, node_features, track_influence_in, False, e, k
+        config.nodes, node_graph, config.aliases, interfaces, level, node_features, track_influence_in, False, e, k
     )
     return diff_axes(env, f(env, jax.random.key(0)))

@@ -4,7 +4,7 @@ from typing import Literal, Optional, Union
 import equinox as eqx
 import jax
 
-from meta_learn_lib.lib_types import ACTIVATION_FN, PixelTransform
+from meta_learn_lib.lib_types import ACTIVATION_FN, Canon, CarryTransform, PixelTransform, Uncanon
 
 
 @dataclass(frozen=True)
@@ -188,7 +188,7 @@ type Optimizer = Union[
 
 
 class OptimizerAssignment(eqx.Module):
-    target: frozenset[str]
+    target: frozenset[Canon]
     optimizer: Optimizer
 
 
@@ -347,9 +347,10 @@ class LSTMLayer:
 
 @dataclass(frozen=True)
 class Scan:  # Wraps around a layer and repeats it in an unfold manner
-    graph: dict[str, frozenset[str]]
+    graph: dict[Uncanon, frozenset[Uncanon]]
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
-    pred_source: str  # which node in the graph to source teacher predictions.
+    carry_transform: CarryTransform
+    pred_source: Uncanon  # which node in the graph to source teacher predictions.
     start_token: Literal["zeros"]
 
 
@@ -524,7 +525,12 @@ class GridSampleInput:
     n_per_axis: int
 
 
-type SampleInput = Union[GaussianSampleInput, DataSampleInput, GridSampleInput]
+@dataclass(frozen=True)
+class InterpolationSampleInput:
+    pixel_transform: PixelTransform
+
+
+type SampleInput = Union[GaussianSampleInput, DataSampleInput, GridSampleInput, InterpolationSampleInput]
 
 
 @dataclass(frozen=True)
@@ -553,9 +559,10 @@ type SampleReporter = Union[ImageReporter, PlotReporter, UMAPReporter, GridRepor
 
 
 class SampleGeneratorConfig(eqx.Module):
-    transition_graph: dict[str, frozenset[str]]
-    readout_graph: dict[str, frozenset[str]]
-    source_nodes: dict[str, Node]
+    transition_graph: dict[Uncanon, frozenset[Uncanon]]
+    readout_graph: dict[Uncanon, frozenset[Uncanon]]
+    source_nodes: dict[Canon, Node]
+    aliases: dict[Uncanon, Canon]
     input_shape: tuple[int, ...]
     num_samples: int
     every_n_epochs: int
@@ -614,9 +621,10 @@ class GodConfig(eqx.Module):
     checkpoint_every_n_minibatches: int
     checkpoint_every_n_epochs: int
 
-    transition_graph: dict[str, frozenset[str]]
-    readout_graph: dict[str, frozenset[str]]
-    nodes: dict[str, Node]
+    transition_graph: dict[Uncanon, frozenset[Uncanon]]
+    readout_graph: dict[Uncanon, frozenset[Uncanon]]
+    nodes: dict[Canon, Node]
+    aliases: dict[Uncanon, Canon]
     hyperparameters: dict[HP, HyperparameterConfig]
 
     levels: list[MetaConfig]

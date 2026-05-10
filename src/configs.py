@@ -47,6 +47,7 @@ OHO_RNN32 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -355,6 +356,7 @@ OHO_RNN32_ADAM = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -674,6 +676,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -992,6 +995,7 @@ OHO_RNN256_V2 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -1300,6 +1304,7 @@ OHO_RNN256_V3 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -1605,6 +1610,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -1904,6 +1910,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -2216,6 +2223,7 @@ RNN256_CIFAR10 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -2467,6 +2475,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_lstm1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -2762,6 +2771,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_gru1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -3081,6 +3091,7 @@ VAE_BETA_OHO = GodConfig(
         ),
         "merge": MergeOutputs(),
     },
+    aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
             value=0.0001,
@@ -3387,6 +3398,7 @@ VAE_BETA_OHO = GodConfig(
                 "decoder_convT2": frozenset({"decoder_relu1"}),
             },
             source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
             input_shape=(2,),
             num_samples=16,
             every_n_epochs=10,
@@ -3411,6 +3423,7 @@ VAE_BETA_OHO = GodConfig(
                 "latent_z": frozenset({"latent"}),
             },
             source_nodes={},
+            aliases={},
             input_shape=(1, 28, 28),
             num_samples=512,
             every_n_epochs=10,
@@ -3430,6 +3443,7 @@ VAE_BETA_OHO = GodConfig(
                 "decoder_convT2": frozenset({"decoder_relu1"}),
             },
             source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
             input_shape=(2,),
             num_samples=100,
             every_n_epochs=10,
@@ -3491,6 +3505,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
         "decoder_reshape": Reshape(shape=(1, 28, 28)),
         "merge": MergeOutputs(),
     },
+    aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
             value=0.001,
@@ -3801,6 +3816,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 "decoder_reshape": {"decoder_out"},
             },
             source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
             input_shape=(2,),
             num_samples=16,
             every_n_epochs=10,
@@ -3862,6 +3878,7 @@ VAE_LR_OHO = GodConfig(
         "decoder_reshape": Reshape(shape=(1, 28, 28)),
         "merge": MergeOutputs(),
     },
+    aliases={},
     hyperparameters={
         "meta1_enc_lr": HyperparameterConfig(
             value=0.001,
@@ -4204,6 +4221,7 @@ VAE_LR_OHO = GodConfig(
                 "decoder_reshape": {"decoder_out"},
             },
             source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
             input_shape=(2,),
             num_samples=16,
             every_n_epochs=10,
@@ -4263,6 +4281,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -4585,6 +4604,7 @@ VAE_BASELINE = GodConfig(
         ),
         "merge": MergeOutputs(),
     },
+    aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
             value=0.001,
@@ -4877,6 +4897,7 @@ VAE_BASELINE = GodConfig(
                 "decoder_convT2": frozenset({"decoder_relu1"}),
             },
             source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
             input_shape=(2,),
             num_samples=16,
             every_n_epochs=10,
@@ -4901,6 +4922,7 @@ VAE_BASELINE = GodConfig(
                 "latent_z": frozenset({"latent"}),
             },
             source_nodes={},
+            aliases={},
             input_shape=(1, 28, 28),
             num_samples=512,
             every_n_epochs=10,
@@ -4920,6 +4942,7 @@ VAE_BASELINE = GodConfig(
                 "decoder_convT2": frozenset({"decoder_relu1"}),
             },
             source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
             input_shape=(2,),
             num_samples=100,
             every_n_epochs=10,
@@ -4927,6 +4950,113 @@ VAE_BASELINE = GodConfig(
             input=GridSampleInput(min_value=-3.0, max_value=3.0, n_per_axis=10),
             reporter=GridReporter(title="vae_grid", rows=10, cols=10),
         ),
+        # SampleGeneratorConfig(
+        #     transition_graph={},
+        #     readout_graph={
+        #         "x_seq": frozenset(),
+        #         "x_pred": frozenset(),
+        #         "outer_scan": frozenset({"x_seq", "x_pred"}),
+        #         "tiles": frozenset({"outer_scan"}),
+        #     },
+        #     source_nodes={
+        #         "x_seq": UnlabeledSource(),
+        #         "x_pred": UnlabeledSource(),
+        #         "outer_scan": Scan(
+        #             graph={
+        #                 "z_in": frozenset(),
+        #                 "take_prev": frozenset({"z_in"}),
+        #                 "take_curr": frozenset({"z_in"}),
+        #                 "reshape_prev": frozenset({"take_prev"}),
+        #                 "reshape_curr": frozenset({"take_curr"}),
+        #                 "encoder_a_conv1": frozenset({"reshape_prev"}),
+        #                 "encoder_a_norm1": frozenset({"encoder_a_conv1"}),
+        #                 "encoder_a_relu1": frozenset({"encoder_a_norm1"}),
+        #                 "encoder_a_pool1": frozenset({"encoder_a_relu1"}),
+        #                 "encoder_a_conv2": frozenset({"encoder_a_pool1"}),
+        #                 "encoder_a_norm2": frozenset({"encoder_a_conv2"}),
+        #                 "encoder_a_relu2": frozenset({"encoder_a_norm2"}),
+        #                 "encoder_a_pool2": frozenset({"encoder_a_relu2"}),
+        #                 "encoder_a_out": frozenset({"encoder_a_pool2"}),
+        #                 "encoder_a_latent": frozenset({"encoder_a_out"}),
+        #                 "encoder_a_latent_z": frozenset({"encoder_a_latent"}),
+        #                 "encoder_b_conv1": frozenset({"reshape_curr"}),
+        #                 "encoder_b_norm1": frozenset({"encoder_b_conv1"}),
+        #                 "encoder_b_relu1": frozenset({"encoder_b_norm1"}),
+        #                 "encoder_b_pool1": frozenset({"encoder_b_relu1"}),
+        #                 "encoder_b_conv2": frozenset({"encoder_b_pool1"}),
+        #                 "encoder_b_norm2": frozenset({"encoder_b_conv2"}),
+        #                 "encoder_b_relu2": frozenset({"encoder_b_norm2"}),
+        #                 "encoder_b_pool2": frozenset({"encoder_b_relu2"}),
+        #                 "encoder_b_out": frozenset({"encoder_b_pool2"}),
+        #                 "encoder_b_latent": frozenset({"encoder_b_out"}),
+        #                 "encoder_b_latent_z": frozenset({"encoder_b_latent"}),
+        #                 "interp": frozenset({"encoder_a_latent_z", "encoder_b_latent_z"}),
+        #                 "interp_y": frozenset({"interp"}),
+        #                 "decoder_scan": frozenset({"interp", "interp_y"}),
+        #             },
+        #             autoregressive_mask="teacher_forcing",
+        #             carry_transform="identity",
+        #             pred_source="x_pred",
+        #             start_token="zeros",
+        #         ),
+        #         "z_in": UnlabeledSource(),
+        #         "take_prev": Take(start=0, length=1 * 28 * 28),
+        #         "take_curr": Take(start=1 * 28 * 28, length=1 * 28 * 28),
+        #         "reshape_prev": Reshape(shape=(1, 28, 28)),
+        #         "reshape_curr": Reshape(shape=(1, 28, 28)),
+        #         "interp": Interpolate(n_steps=10),
+        #         "interp_y": Reshape(shape=(10, 2)),
+        #         "decoder_scan": Scan(
+        #             graph={
+        #                 "z_dec_in": frozenset(),
+        #                 "take_z": frozenset({"z_dec_in"}),
+        #                 "decoder_proj": frozenset({"take_z"}),
+        #                 "decoder_reshape_in": frozenset({"decoder_proj"}),
+        #                 "decoder_convT1": frozenset({"decoder_reshape_in"}),
+        #                 "decoder_norm1": frozenset({"decoder_convT1"}),
+        #                 "decoder_relu1": frozenset({"decoder_norm1"}),
+        #                 "decoder_convT2": frozenset({"decoder_relu1"}),
+        #             },
+        #             autoregressive_mask="teacher_forcing",
+        #             carry_transform="identity",
+        #             pred_source="interp_y",
+        #             start_token="zeros",
+        #         ),
+        #         "z_dec_in": UnlabeledSource(),
+        #         "take_z": Take(start=2, length=2),
+        #         "tiles": Reshape(shape=(2 * 10, 1, 28, 28)),
+        #     },
+        #     aliases={
+        #         "encoder_a_conv1": "encoder_conv1",
+        #         "encoder_a_norm1": "encoder_norm1",
+        #         "encoder_a_relu1": "encoder_relu1",
+        #         "encoder_a_pool1": "encoder_pool1",
+        #         "encoder_a_conv2": "encoder_conv2",
+        #         "encoder_a_norm2": "encoder_norm2",
+        #         "encoder_a_relu2": "encoder_relu2",
+        #         "encoder_a_pool2": "encoder_pool2",
+        #         "encoder_a_out": "encoder_out",
+        #         "encoder_a_latent": "latent",
+        #         "encoder_a_latent_z": "latent_z",
+        #         "encoder_b_conv1": "encoder_conv1",
+        #         "encoder_b_norm1": "encoder_norm1",
+        #         "encoder_b_relu1": "encoder_relu1",
+        #         "encoder_b_pool1": "encoder_pool1",
+        #         "encoder_b_conv2": "encoder_conv2",
+        #         "encoder_b_norm2": "encoder_norm2",
+        #         "encoder_b_relu2": "encoder_relu2",
+        #         "encoder_b_pool2": "encoder_pool2",
+        #         "encoder_b_out": "encoder_out",
+        #         "encoder_b_latent": "latent",
+        #         "encoder_b_latent_z": "latent_z",
+        #     },
+        #     input_shape=(2, 1, 28, 28),
+        #     num_samples=4,
+        #     every_n_epochs=10,
+        #     seed=42,
+        #     input=InterpolationSampleInput(pixel_transform="normalize"),
+        #     reporter=GridReporter(title="vae_interp", rows=2, cols=10),
+        # ),
     ],
     label_mask_value=-1.0,
     unlabeled_mask_value=-1.0,
@@ -4979,6 +5109,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -5282,6 +5413,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -5594,6 +5726,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             use_bias=True,
         ),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -5898,6 +6031,7 @@ OHO_RNN32_TEST = GodConfig(
         ),
         "softmax": Activation(activation_fn="softmax"),
     },
+    aliases={},
     hyperparameters={
         "meta1_rnn1_time_constant": HyperparameterConfig(
             value=1.0,
@@ -6163,6 +6297,7 @@ OHO_RNN32_TEST = GodConfig(
                 "softmax": frozenset({"readout"}),
             },
             source_nodes={},
+            aliases={},
             input_shape=(1, 28),
             num_samples=8,
             every_n_epochs=1,

@@ -32,4 +32,9 @@ type PixelTransform = Literal["normalize", "binarize", "raw"]
 
 type Category = Literal["param", "state", "learning_state"]
 
-type S_ID = tuple[str, int | None]
+type Canon = str
+type Uncanon = str
+
+type CarryTransform = Literal["identity", "take_last", "take_first"]
+
+type S_ID = tuple[Canon, int | None]

@@ -99,6 +99,8 @@ class SOSTaskFamily:
     sigma_x: float
     sigma_y: float
     n: int
+    patch_h: int
+    patch_w: int
     region: tuple[float, float, float, float]  # (x_min, x_max, y_min, y_max); ignored when region_mode="full"
     region_mode: Literal["full", "exclude_region", "only_region"]
 

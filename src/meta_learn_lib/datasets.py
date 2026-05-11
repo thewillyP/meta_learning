@@ -85,8 +85,8 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return 1
         case MNISTSequenceTaskFamily(_, _):
             return 1
-        case SOSTaskFamily(_, _, _, _, _, _):
-            return 1
+        case SOSTaskFamily(grid_size, _, _, _, ph, pw, _, _):
+            return (grid_size // ph) * (grid_size // pw)
 
 
 def get_pixel_mean_std(task: Task) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
@@ -209,20 +209,15 @@ def make_patch_reshape(
 
 
 def make_image_preprocessor(mean: tuple[float, ...], std: tuple[float, ...], pixel_transform: PixelTransform) -> Lambda:
-    """Returns a torchvision pipeline: PIL image -> normalized (C, H, W) tensor."""
+    """Returns a torchvision transform applied to an already-tensor (C, H, W) image.
+    Callers are responsible for getting the input into tensor form first (e.g. ToTensor for PIL)."""
     match pixel_transform:
         case "normalize":
-            tv_transform = torchvision.transforms.Normalize(mean, std)
+            return torchvision.transforms.Normalize(mean, std)
         case "binarize":
-            tv_transform = torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
+            return torchvision.transforms.Lambda(lambda x: (x > 0.5).float())
         case "raw":
-            tv_transform = torchvision.transforms.Lambda(lambda x: x)
-    return torchvision.transforms.Compose(
-        [
-            torchvision.transforms.ToTensor(),
-            tv_transform,
-        ]
-    )
+            return torchvision.transforms.Lambda(lambda x: x)
 
 
 def image_transforms(
@@ -248,9 +243,11 @@ def image_transforms(
     x_pre = make_image_preprocessor(mean, std, pixel_transform)
 
     def make_targets(y):
-        y_val = torch.tensor(y)
-        fill = y_val if not label_last_only else torch.tensor(float(y_mask), dtype=y_val.dtype)
-        arr = torch.full((seq_len,), fill)
+        y_val = torch.as_tensor(y)
+        if label_last_only:
+            arr = torch.full((seq_len, *y_val.shape), float(y_mask), dtype=y_val.dtype)
+        else:
+            arr = y_val.unsqueeze(0).expand(seq_len, *y_val.shape).clone()
         arr[-1] = y_val
         return arr
 
@@ -305,17 +302,18 @@ def dataset_sources(
                 label_last_only=label_last_only,
                 pixel_transform=pixel_transform,
             )
+            pil_x_pre = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), x_pre])
 
             if add_spurious_pixel_to_train and not is_test:
                 ds = factory(root=f"{root_dir}/data", train=not is_test, download=True)
                 ds = SpuriousMNISTDataset(ds)
-                ds = TransformedDataset(ds, x_pre, y_pre)
+                ds = TransformedDataset(ds, pil_x_pre, y_pre)
             else:
                 ds = factory(
                     root=f"{root_dir}/data",
                     train=not is_test,
                     download=True,
-                    transform=x_pre,
+                    transform=pil_x_pre,
                     target_transform=y_pre,
                 )
 
@@ -344,8 +342,9 @@ def dataset_sources(
                 label_last_only=label_last_only,
                 pixel_transform="normalize",
             )
+            pil_x_pre = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), x_pre])
             ds = factory(
-                root=f"{root_dir}/data", train=not is_test, download=True, transform=x_pre, target_transform=y_pre
+                root=f"{root_dir}/data", train=not is_test, download=True, transform=pil_x_pre, target_transform=y_pre
             )
             return [(split, patch_reshape_fn) for split in split_dataset(ds, num_tasks, seed)]
 
@@ -388,8 +387,9 @@ def dataset_sources(
 
         case MNISTSequenceTaskFamily(time_series_length, pixel_transform):
             x_pre = make_image_preprocessor(MNIST_MEAN, MNIST_STD, pixel_transform)
+            pil_x_pre = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), x_pre])
             base = torchvision.datasets.MNIST(
-                root=f"{root_dir}/data", train=not is_test, download=True, transform=x_pre
+                root=f"{root_dir}/data", train=not is_test, download=True, transform=pil_x_pre
             )
             splits = split_dataset(base, num_tasks, seed)
             keys = jax.random.split(seed, num_tasks)
@@ -406,20 +406,29 @@ def dataset_sources(
 
             return [make_seq_task(s, k) for s, k in zip(splits, keys)]
 
-        case SOSTaskFamily(grid_size, sigma_x, sigma_y, n, region, region_mode):
+        case SOSTaskFamily(grid_size, sigma_x, sigma_y, n, patch_h, patch_w, region, region_mode):
             keys = jax.random.split(seed, num_tasks)
             x_min, x_max, y_min, y_max = region
+
+            x_pre, y_pre, patch_reshape_fn = image_transforms(
+                mean=(0.0,),  # unused for "raw"
+                std=(1.0,),
+                height=grid_size,
+                width=grid_size,
+                channel=1,
+                patch_h=patch_h,
+                patch_w=patch_w,
+                y_mask=y_mask,
+                label_last_only=False,
+                pixel_transform="raw",
+            )
 
             def in_region(cx: jax.Array, cy: jax.Array) -> jax.Array:
                 return (x_min <= cx) & (cx <= x_max) & (y_min <= cy) & (cy <= y_max)
 
             def make_sos_task(key: PRNG) -> DatasetWithReshape:
-                # Rejection-sample (cx, cy) until we have n that satisfy the region constraint.
-                k_sample, k_perm = jax.random.split(key)
-
                 def sample_n_acceptable(k: PRNG, want: int) -> jax.Array:
-                    # Oversample then mask. Loop until enough accepted (rare for typical region).
-                    pool: list[jax.Array] = []
+                    pool: list[np.ndarray] = []
                     accepted = 0
                     while accepted < want:
                         k, k_batch = jax.random.split(k)
@@ -436,21 +445,22 @@ def dataset_sources(
                         accepted += kept.shape[0]
                     return jnp.asarray(np.concatenate(pool, axis=0)[:want])
 
-                centers = sample_n_acceptable(k_sample, n)
+                centers = sample_n_acceptable(key, n)
                 cxs, cys = centers[:, 0], centers[:, 1]
 
                 xv, yv = jnp.meshgrid(jnp.arange(grid_size), jnp.arange(grid_size), indexing="xy")
 
-                # vmap over samples — output shape (n, 1, grid_size, grid_size)
                 def render(cx: jax.Array, cy: jax.Array) -> jax.Array:
                     return 0.5 * jnp.exp(-((xv - cx) ** 2) / (4 * sigma_x**2)) + 0.5 * jnp.exp(
                         -((yv - cy) ** 2) / (4 * sigma_y**2)
                     )
 
-                images = jax.vmap(render)(cxs, cys)[:, None, :, :]  # (n, 1, H, W)
-                xs = images[:, None, ...]  # add time axis: (n, 1, 1, H, W)
-                ys = jnp.stack([cxs, cys], axis=-1)[:, None, :]  # (n, 1, 2)
-                return PyTreeDataset((xs, ys)), lambda x: x
+                # (n, 1, H, W) images and (n, 2) labels, both as torch tensors so they flow through
+                # the same TransformedDataset(x_pre, y_pre) pipeline as MNIST/CIFAR.
+                images_np = np.asarray(jax.vmap(render)(cxs, cys)[:, None, :, :])
+                labels_np = np.asarray(jnp.stack([cxs, cys], axis=-1))
+                raw_ds = PyTreeDataset((torch.from_numpy(images_np), torch.from_numpy(labels_np)))
+                return TransformedDataset(raw_ds, x_pre, y_pre), patch_reshape_fn
 
             return [make_sos_task(k) for k in keys]
 

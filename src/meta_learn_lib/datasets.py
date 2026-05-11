@@ -10,6 +10,7 @@ from toolz import mapcat
 import math
 import numpy as np
 from torchvision.transforms.transforms import Lambda
+from jaxtyping import PyTree
 from PIL import Image
 
 from meta_learn_lib.config import *
@@ -546,6 +547,160 @@ def create_data_sources(
     return level_datasets, shapes
 
 
+def regroup_leading(arr: jax.Array, outer: int, inner: int) -> jax.Array:
+    """Take arr of shape (outer*inner, A0, A1, *rest). Split the leading axis into
+    (outer, inner), move `inner` from axis 1 to axis 3, then flatten (outer, A0)
+    into a single leading axis. Returns shape (outer*A0, A1, inner, *rest).
+
+    Used to convert a "minibatch * group" leading axis into a "yields * group"
+    leading axis where each yield carries `inner` as a feature dim.
+    """
+    arr = arr.reshape(outer, inner, *arr.shape[1:])
+    perm = (0, 2, 3, 1) + tuple(range(4, arr.ndim))
+    arr = arr.transpose(perm)
+    return arr.reshape(outer * arr.shape[1], *arr.shape[2:])
+
+
+def task_epoch_tensor(
+    task: PrematerializedTask,
+    batch: int,
+    x_mask: float,
+    y_mask: float,
+    key: PRNG,
+) -> tuple[jax.Array, jax.Array]:
+    """Eager equivalent of task_iterator's per-epoch yield stream.
+
+    Returns (xs, ys) each of shape (Y_task, time, batch, *features), where
+    Y_task = num_mb * num_vb. Slicing arr[i] gives the i-th yield equivalent.
+    """
+    shuffle_key, k1, k2 = jax.random.split(key, 3)
+    xs = jax.vmap(task.x_epoch)(task.xs, jax.random.split(k1, task.xs.shape[0]))
+    ys = jax.vmap(task.y_epoch)(task.ys, jax.random.split(k2, task.ys.shape[0]))
+
+    perm = jax.random.permutation(shuffle_key, xs.shape[0])
+    xs, ys = xs[perm], ys[perm]
+
+    N = xs.shape[0]
+    num_mb = math.ceil(N / batch)
+    pad_size = num_mb * batch - N
+    if pad_size > 0:
+        x_pad = jnp.full((pad_size, *xs.shape[1:]), x_mask, dtype=xs.dtype)
+        y_pad = jnp.full((pad_size, *ys.shape[1:]), y_mask, dtype=ys.dtype)
+        xs = jnp.concatenate([xs, x_pad])
+        ys = jnp.concatenate([ys, y_pad])
+
+    return regroup_leading(xs, num_mb, batch), regroup_leading(ys, num_mb, batch)
+
+
+def task_loader_eager(
+    task_indices: jax.Array,
+    level: MetaConfig,
+    datasets: list[PrematerializedTask],
+    key: PRNG,
+    x_mask: float,
+    y_mask: float,
+) -> tuple[jax.Array, jax.Array]:
+    """Eager equivalent of make_task_loader = batch_iterator(task_iters, tasks_per_stream, axis=1).
+
+    Returns (xs, ys) each of shape (Y_loader, time, tasks_per_stream, batch_per_task, *features).
+    Y_loader = (chunk_size / tasks_per_stream) * Y_task.
+    """
+    tasks_per_stream = level.validation.batch
+    batch_per_task = level.dataset.num_examples_in_minibatch
+    chunk_size = len(task_indices)
+    num_groups = chunk_size // tasks_per_stream
+    task_keys = jax.random.split(key, chunk_size)
+
+    per_task_x, per_task_y = zip(
+        *[
+            task_epoch_tensor(datasets[idx], batch_per_task, x_mask, y_mask, tkey)
+            for idx, tkey in zip(task_indices.tolist(), task_keys)
+        ]
+    )
+
+    return (
+        regroup_leading(jnp.stack(per_task_x, axis=0), num_groups, tasks_per_stream),
+        regroup_leading(jnp.stack(per_task_y, axis=0), num_groups, tasks_per_stream),
+    )
+
+
+def rechunk_pytrees[T: PyTree](iterator: Iterator[T], chunk_size: int) -> Iterator[T]:
+    """Rechunk a stream of pytrees (whose leaves are tensors with a leading axis)
+    into a stream of pytrees where every leaf's leading axis is exactly `chunk_size`.
+    Leftover state lives in the frame across yields — every item is visited before
+    reshuffling (mirrors original lazy mapcat continuation)."""
+    buffer: list[PyTree] = []
+    buffered = 0
+    for pytree in iterator:
+        buffer.append(pytree)
+        buffered += jax.tree.leaves(pytree)[0].shape[0]
+        while buffered >= chunk_size:
+            combined = (
+                buffer[0] if len(buffer) == 1 else jax.tree.map(lambda *arrs: jnp.concatenate(arrs, axis=0), *buffer)
+            )
+            yield jax.tree.map(lambda x: x[:chunk_size], combined)
+            buffered -= chunk_size
+            buffer = [jax.tree.map(lambda x: x[chunk_size:], combined)] if buffered > 0 else []
+
+
+def nest_val_eager[T: PyTree](val: T, lower_levels: list[tuple[MetaConfig, list[PrematerializedTask]]]) -> T:
+    """Eager equivalent of nest_validation: add one leading-axis split (Y, ...) -> (Y // B, B, ...)
+    per lower level. Caller invariant: every leaf's leading axis is divisible by every lower B."""
+    for lower_meta, _ in reversed(lower_levels):
+        b = lower_meta.nested.batch
+        val = jax.tree.map(lambda x: x.reshape(x.shape[0] // b, b, *x.shape[1:]), val)
+    return val
+
+
+def level_eager_gen(
+    levels: list[tuple[MetaConfig, list[PrematerializedTask]]],
+    task_indices: jax.Array,
+    key: PRNG,
+    K: int,
+    x_mask: float,
+    y_mask: float,
+) -> Iterator:
+    """Eager recursive equivalent of make_level_loader. Returns an iterator yielding
+    one (K, *yield_shape) batch per next(). Setup runs once; state (val streams,
+    leftover partial chunks, child generators) lives in the underlying iterators.
+    Composed via map/zip — no manual yield loop."""
+    if len(levels) == 0:
+        return itertools.repeat(None)
+
+    (meta, datasets), *rest = levels
+    batch = meta.nested.batch
+    num_steps = meta.nested.num_steps
+    is_test = meta.dataset.is_test
+
+    chunks = jnp.split(task_indices, batch)
+    child_key, val_key = jax.random.split(key)
+    val_key = jax.random.key(meta.test_seed) if is_test else val_key
+    val_keys = jax.random.split(val_key, batch)
+    child_keys = jax.random.split(child_key, batch)
+    lower_consumption = math.prod(lower_meta.nested.batch for lower_meta, _ in rest)
+
+    K_child = K * num_steps
+    raw_val_per_chunk = K_child * lower_consumption
+
+    def make_val_stream(chunk: jax.Array, vk: PRNG) -> Iterator[tuple[jax.Array, jax.Array]]:
+        return map(lambda k: task_loader_eager(chunk, meta, datasets, k, x_mask, y_mask), infinite_keys(vk))
+
+    def batch_step(chunk_pairs: tuple) -> PyTree:
+        chunks_pytree = [(c, ((val := nest_val_eager(v, rest)), val)) for c, v in chunk_pairs]
+        stacked = jax.tree.map(lambda *xs: jnp.stack(xs, axis=1), *chunks_pytree)
+        return jax.tree.map(lambda arr: arr.reshape(K, num_steps, *arr.shape[1:]), stacked)
+
+    chunk_streams = [
+        zip(
+            level_eager_gen(rest, chunk, ck, K_child, x_mask, y_mask),
+            rechunk_pytrees(make_val_stream(chunk, vk), raw_val_per_chunk),
+        )
+        for chunk, ck, vk in zip(chunks, child_keys, val_keys)
+    ]
+
+    return map(batch_step, zip(*chunk_streams))
+
+
 def create_dataloader(
     config: GodConfig,
     data_sources: list[list[PrematerializedTask]],
@@ -553,74 +708,25 @@ def create_dataloader(
     task_distribution_prng: PRNG,
 ) -> Iterator:
     k1, prng = jax.random.split(prng, 2)
-
     global_perm = jax.random.permutation(task_distribution_prng, config.num_tasks)
-
-    def make_task_loader(
-        task_indices: jax.Array,
-        level: MetaConfig,
-        datasets: list[PrematerializedTask],
-        key: PRNG,
-    ) -> Iterator[tuple[jax.Array, jax.Array]]:
-        tasks_per_stream = level.validation.batch
-        task_keys = jax.random.split(key, len(task_indices))
-        task_iters = [
-            task_iterator(
-                datasets[idx],
-                level.dataset.num_examples_in_minibatch,
-                config.unlabeled_mask_value,
-                config.label_mask_value,
-                tkey,
-            )
-            for idx, tkey in zip(task_indices.tolist(), task_keys)
-        ]
-        return batch_iterator(task_iters, tasks_per_stream, axis=1)
-
-    def make_nil_loader() -> Iterator:
-        while True:
-            yield None
-
-    def make_level_loader(
-        levels: list[tuple[MetaConfig, list[PrematerializedTask]]],
-        task_indices: jax.Array,
-        key: PRNG,
-    ) -> Iterator:
-        if len(levels) == 0:
-            return make_nil_loader()
-
-        (meta_config, datasets), *rest = levels
-
-        batch = meta_config.nested.batch
-        num_steps = meta_config.nested.num_steps
-        is_test = meta_config.dataset.is_test
-        child_key, val_key = jax.random.split(key)
-        val_key = jax.random.key(meta_config.test_seed) if is_test else val_key
-
-        chunks = jnp.split(task_indices, batch)
-        child_keys = jax.random.split(child_key, batch)
-        val_keys_per_child = [infinite_keys(vk) for vk in jax.random.split(val_key, batch)]
-
-        def f_val(c: jax.Array, k: PRNG) -> Iterator[tuple[jax.Array, jax.Array]]:
-            return make_task_loader(c, meta_config, datasets, k)
-
-        def nest_validation(
-            val_stream: Iterator[tuple[jax.Array, jax.Array]],
-            lower_levels: list[tuple[MetaConfig, list[PrematerializedTask]]],
-        ) -> Iterator:
-            for lower_meta, _ in reversed(lower_levels):
-                val_stream = stack_batches(val_stream, lower_meta.nested.batch)
-            return val_stream
-
-        children = [
-            zip(
-                make_level_loader(rest, chunk, ckey),
-                map(lambda v: (v, v), nest_validation(mapcat(lambda k, c=chunk: f_val(c, k), vks), rest)),
-            )
-            for chunk, ckey, vks in zip(chunks, child_keys, val_keys_per_child)
-        ]
-        train_loader = batch_iterator(children, len(children), axis=0)
-
-        return stack_batches(train_loader, num_steps)
-
     levels_with_data = list(reversed(list(zip(config.levels, data_sources))))
-    return make_level_loader(levels_with_data, global_perm, k1)
+
+    outermost_level = levels_with_data[0][0]
+    seq_len = get_seq_len(outermost_level.dataset_source, outermost_level.dataset.is_test)
+    num_vb = math.ceil(seq_len / outermost_level.validation.num_steps)
+    num_mb = math.ceil(outermost_level.dataset.num_examples_total / outermost_level.dataset.num_examples_in_minibatch)
+    consumption = math.prod(meta.nested.num_steps for meta, _ in levels_with_data)
+    full_epoch_yields = (num_mb * num_vb) // consumption
+    K = config.dataloader_chunk_size if config.dataloader_chunk_size is not None else full_epoch_yields
+
+    return mapcat(
+        lambda batch: (jax.tree.map(lambda leaf: leaf[i], batch) for i in range(K)),
+        level_eager_gen(
+            levels_with_data,
+            global_perm,
+            k1,
+            K,
+            config.unlabeled_mask_value,
+            config.label_mask_value,
+        ),
+    )

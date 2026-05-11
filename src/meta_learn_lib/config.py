@@ -635,3 +635,4 @@ class GodConfig(eqx.Module):
     unlabeled_mask_value: jax.Array
     num_tasks: int
     prefetch_buffer_size: int
+    dataloader_chunk_size: int | None

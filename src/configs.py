@@ -309,6 +309,7 @@ OHO_RNN32 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -618,6 +619,7 @@ OHO_RNN32_ADAM = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -948,6 +950,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -1257,6 +1260,7 @@ OHO_RNN256_V2 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -1563,6 +1567,7 @@ OHO_RNN256_V3 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -1863,6 +1868,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -2176,6 +2182,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -2432,6 +2439,7 @@ RNN256_CIFAR10 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -2728,6 +2736,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -3024,6 +3033,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -3456,6 +3466,7 @@ VAE_BETA_OHO = GodConfig(
     unlabeled_mask_value=-1.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -3829,6 +3840,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
     unlabeled_mask_value=-1.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -4234,6 +4246,7 @@ VAE_LR_OHO = GodConfig(
     unlabeled_mask_value=-1.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -4537,6 +4550,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -4950,189 +4964,190 @@ VAE_BASELINE = GodConfig(
             input=GridSampleInput(min_value=-3.0, max_value=3.0, n_per_axis=10),
             reporter=GridReporter(title="vae_grid", rows=10, cols=10),
         ),
-        SampleGeneratorConfig(
-            transition_graph={},
-            readout_graph={
-                "x_seq": frozenset(),
-                "x_pred": frozenset(),
-                "outer_scan": frozenset({"x_seq", "x_pred"}),
-                "tiles": frozenset({"outer_scan"}),
-            },
-            source_nodes={
-                "x_seq": UnlabeledSource(),
-                "x_pred": UnlabeledSource(),
-                "outer_scan": Scan(
-                    graph={
-                        "z_in": frozenset(),
-                        "take_prev": frozenset({"z_in"}),
-                        "take_curr": frozenset({"z_in"}),
-                        "reshape_prev": frozenset({"take_prev"}),
-                        "reshape_curr": frozenset({"take_curr"}),
-                        "encoder_a_conv1": frozenset({"reshape_prev"}),
-                        "encoder_a_norm1": frozenset({"encoder_a_conv1"}),
-                        "encoder_a_relu1": frozenset({"encoder_a_norm1"}),
-                        "encoder_a_pool1": frozenset({"encoder_a_relu1"}),
-                        "encoder_a_conv2": frozenset({"encoder_a_pool1"}),
-                        "encoder_a_norm2": frozenset({"encoder_a_conv2"}),
-                        "encoder_a_relu2": frozenset({"encoder_a_norm2"}),
-                        "encoder_a_pool2": frozenset({"encoder_a_relu2"}),
-                        "encoder_a_out": frozenset({"encoder_a_pool2"}),
-                        "encoder_a_latent": frozenset({"encoder_a_out"}),
-                        "encoder_a_latent_z": frozenset({"encoder_a_latent"}),
-                        "encoder_b_conv1": frozenset({"reshape_curr"}),
-                        "encoder_b_norm1": frozenset({"encoder_b_conv1"}),
-                        "encoder_b_relu1": frozenset({"encoder_b_norm1"}),
-                        "encoder_b_pool1": frozenset({"encoder_b_relu1"}),
-                        "encoder_b_conv2": frozenset({"encoder_b_pool1"}),
-                        "encoder_b_norm2": frozenset({"encoder_b_conv2"}),
-                        "encoder_b_relu2": frozenset({"encoder_b_norm2"}),
-                        "encoder_b_pool2": frozenset({"encoder_b_relu2"}),
-                        "encoder_b_out": frozenset({"encoder_b_pool2"}),
-                        "encoder_b_latent": frozenset({"encoder_b_out"}),
-                        "encoder_b_latent_z": frozenset({"encoder_b_latent"}),
-                        "interp": frozenset({"encoder_a_latent_z", "encoder_b_latent_z"}),
-                        "interp_y": frozenset({"interp"}),
-                        "decoder_scan": frozenset({"interp", "interp_y"}),
-                    },
-                    autoregressive_mask="teacher_forcing",
-                    carry_transform="identity",
-                    pred_source="x_pred",
-                    start_token="zeros",
-                ),
-                "z_in": UnlabeledSource(),
-                "take_prev": Take(start=0, length=1 * 28 * 28),
-                "take_curr": Take(start=1 * 28 * 28, length=1 * 28 * 28),
-                "reshape_prev": Reshape(shape=(1, 28, 28)),
-                "reshape_curr": Reshape(shape=(1, 28, 28)),
-                "interp": Interpolate(n_steps=10),
-                "interp_y": Reshape(shape=(10, 2)),
-                "decoder_scan": Scan(
-                    graph={
-                        "z_dec_in": frozenset(),
-                        "take_z": frozenset({"z_dec_in"}),
-                        "decoder_proj": frozenset({"take_z"}),
-                        "decoder_reshape_in": frozenset({"decoder_proj"}),
-                        "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                        "decoder_norm1": frozenset({"decoder_convT1"}),
-                        "decoder_relu1": frozenset({"decoder_norm1"}),
-                        "decoder_convT2": frozenset({"decoder_relu1"}),
-                    },
-                    autoregressive_mask="teacher_forcing",
-                    carry_transform="identity",
-                    pred_source="interp_y",
-                    start_token="zeros",
-                ),
-                "z_dec_in": UnlabeledSource(),
-                "take_z": Take(start=2, length=2),
-                "tiles": Reshape(shape=(2 * 10, 1, 28, 28)),
-            },
-            aliases={
-                "encoder_a_conv1": "encoder_conv1",
-                "encoder_a_norm1": "encoder_norm1",
-                "encoder_a_relu1": "encoder_relu1",
-                "encoder_a_pool1": "encoder_pool1",
-                "encoder_a_conv2": "encoder_conv2",
-                "encoder_a_norm2": "encoder_norm2",
-                "encoder_a_relu2": "encoder_relu2",
-                "encoder_a_pool2": "encoder_pool2",
-                "encoder_a_out": "encoder_out",
-                "encoder_a_latent": "latent",
-                "encoder_a_latent_z": "latent_z",
-                "encoder_b_conv1": "encoder_conv1",
-                "encoder_b_norm1": "encoder_norm1",
-                "encoder_b_relu1": "encoder_relu1",
-                "encoder_b_pool1": "encoder_pool1",
-                "encoder_b_conv2": "encoder_conv2",
-                "encoder_b_norm2": "encoder_norm2",
-                "encoder_b_relu2": "encoder_relu2",
-                "encoder_b_pool2": "encoder_pool2",
-                "encoder_b_out": "encoder_out",
-                "encoder_b_latent": "latent",
-                "encoder_b_latent_z": "latent_z",
-            },
-            input_shape=(2, 1, 28, 28),
-            num_samples=4,
-            every_n_epochs=10,
-            seed=42,
-            input=InterpolationSampleInput(pixel_transform="normalize"),
-            reporter=GridReporter(title="vae_interp", rows=2, cols=10),
-        ),
-        SampleGeneratorConfig(
-            transition_graph={},
-            readout_graph={
-                "x_seq": frozenset(),
-                "y_seq": frozenset(),
-                "encoder_scan": frozenset({"x_seq", "y_seq"}),
-                "z_prev": frozenset({"encoder_scan"}),
-                "z_curr": frozenset({"encoder_scan"}),
-                "interp": frozenset({"z_prev", "z_curr"}),
-                "interp_y": frozenset({"interp"}),
-                "decoder_scan": frozenset({"interp", "interp_y"}),
-            },
-            source_nodes={
-                "x_seq": UnlabeledSource(),
-                "y_seq": LabeledSource(),
-                "encoder_scan": Scan(
-                    graph={
-                        "z_in": frozenset(),
-                        "take_x": frozenset({"z_in"}),
-                        "reshape_x": frozenset({"take_x"}),
-                        "encoder_conv1": frozenset({"reshape_x"}),
-                        "encoder_norm1": frozenset({"encoder_conv1"}),
-                        "encoder_relu1": frozenset({"encoder_norm1"}),
-                        "encoder_pool1": frozenset({"encoder_relu1"}),
-                        "encoder_conv2": frozenset({"encoder_pool1"}),
-                        "encoder_norm2": frozenset({"encoder_conv2"}),
-                        "encoder_relu2": frozenset({"encoder_norm2"}),
-                        "encoder_pool2": frozenset({"encoder_relu2"}),
-                        "encoder_out": frozenset({"encoder_pool2"}),
-                        "latent": frozenset({"encoder_out"}),
-                        "latent_z": frozenset({"latent"}),
-                    },
-                    autoregressive_mask="erase",
-                    carry_transform="identity",
-                    pred_source="y_seq",
-                    start_token="zeros",
-                ),
-                "z_in": UnlabeledSource(),
-                "take_x": Take(start=2, length=1 * 28 * 28),
-                "reshape_x": Reshape(shape=(1, 28, 28)),
-                "z_prev": Take(start=0, length=2),
-                "z_curr": Take(start=2, length=2),
-                "interp": Interpolate(n_steps=10),
-                "interp_y": Reshape(shape=(10, 2)),
-                "decoder_scan": Scan(
-                    graph={
-                        "z_dec_in": frozenset(),
-                        "take_z": frozenset({"z_dec_in"}),
-                        "decoder_proj": frozenset({"take_z"}),
-                        "decoder_reshape_in": frozenset({"decoder_proj"}),
-                        "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                        "decoder_norm1": frozenset({"decoder_convT1"}),
-                        "decoder_relu1": frozenset({"decoder_norm1"}),
-                        "decoder_convT2": frozenset({"decoder_relu1"}),
-                    },
-                    autoregressive_mask="teacher_forcing",
-                    carry_transform="identity",
-                    pred_source="interp_y",
-                    start_token="zeros",
-                ),
-                "z_dec_in": UnlabeledSource(),
-                "take_z": Take(start=2, length=2),
-            },
-            aliases={},
-            input_shape=(2, 1, 28, 28),
-            num_samples=4,
-            every_n_epochs=10,
-            seed=42,
-            input=InterpolationSampleInput(pixel_transform="normalize"),
-            reporter=GridReporter(title="vae_interp_scan", rows=1, cols=10),
-        ),
+        # SampleGeneratorConfig(
+        #     transition_graph={},
+        #     readout_graph={
+        #         "x_seq": frozenset(),
+        #         "x_pred": frozenset(),
+        #         "outer_scan": frozenset({"x_seq", "x_pred"}),
+        #         "tiles": frozenset({"outer_scan"}),
+        #     },
+        #     source_nodes={
+        #         "x_seq": UnlabeledSource(),
+        #         "x_pred": UnlabeledSource(),
+        #         "outer_scan": Scan(
+        #             graph={
+        #                 "z_in": frozenset(),
+        #                 "take_prev": frozenset({"z_in"}),
+        #                 "take_curr": frozenset({"z_in"}),
+        #                 "reshape_prev": frozenset({"take_prev"}),
+        #                 "reshape_curr": frozenset({"take_curr"}),
+        #                 "encoder_a_conv1": frozenset({"reshape_prev"}),
+        #                 "encoder_a_norm1": frozenset({"encoder_a_conv1"}),
+        #                 "encoder_a_relu1": frozenset({"encoder_a_norm1"}),
+        #                 "encoder_a_pool1": frozenset({"encoder_a_relu1"}),
+        #                 "encoder_a_conv2": frozenset({"encoder_a_pool1"}),
+        #                 "encoder_a_norm2": frozenset({"encoder_a_conv2"}),
+        #                 "encoder_a_relu2": frozenset({"encoder_a_norm2"}),
+        #                 "encoder_a_pool2": frozenset({"encoder_a_relu2"}),
+        #                 "encoder_a_out": frozenset({"encoder_a_pool2"}),
+        #                 "encoder_a_latent": frozenset({"encoder_a_out"}),
+        #                 "encoder_a_latent_z": frozenset({"encoder_a_latent"}),
+        #                 "encoder_b_conv1": frozenset({"reshape_curr"}),
+        #                 "encoder_b_norm1": frozenset({"encoder_b_conv1"}),
+        #                 "encoder_b_relu1": frozenset({"encoder_b_norm1"}),
+        #                 "encoder_b_pool1": frozenset({"encoder_b_relu1"}),
+        #                 "encoder_b_conv2": frozenset({"encoder_b_pool1"}),
+        #                 "encoder_b_norm2": frozenset({"encoder_b_conv2"}),
+        #                 "encoder_b_relu2": frozenset({"encoder_b_norm2"}),
+        #                 "encoder_b_pool2": frozenset({"encoder_b_relu2"}),
+        #                 "encoder_b_out": frozenset({"encoder_b_pool2"}),
+        #                 "encoder_b_latent": frozenset({"encoder_b_out"}),
+        #                 "encoder_b_latent_z": frozenset({"encoder_b_latent"}),
+        #                 "interp": frozenset({"encoder_a_latent_z", "encoder_b_latent_z"}),
+        #                 "interp_y": frozenset({"interp"}),
+        #                 "decoder_scan": frozenset({"interp", "interp_y"}),
+        #             },
+        #             autoregressive_mask="teacher_forcing",
+        #             carry_transform="identity",
+        #             pred_source="x_pred",
+        #             start_token="zeros",
+        #         ),
+        #         "z_in": UnlabeledSource(),
+        #         "take_prev": Take(start=0, length=1 * 28 * 28),
+        #         "take_curr": Take(start=1 * 28 * 28, length=1 * 28 * 28),
+        #         "reshape_prev": Reshape(shape=(1, 28, 28)),
+        #         "reshape_curr": Reshape(shape=(1, 28, 28)),
+        #         "interp": Interpolate(n_steps=10),
+        #         "interp_y": Reshape(shape=(10, 2)),
+        #         "decoder_scan": Scan(
+        #             graph={
+        #                 "z_dec_in": frozenset(),
+        #                 "take_z": frozenset({"z_dec_in"}),
+        #                 "decoder_proj": frozenset({"take_z"}),
+        #                 "decoder_reshape_in": frozenset({"decoder_proj"}),
+        #                 "decoder_convT1": frozenset({"decoder_reshape_in"}),
+        #                 "decoder_norm1": frozenset({"decoder_convT1"}),
+        #                 "decoder_relu1": frozenset({"decoder_norm1"}),
+        #                 "decoder_convT2": frozenset({"decoder_relu1"}),
+        #             },
+        #             autoregressive_mask="teacher_forcing",
+        #             carry_transform="identity",
+        #             pred_source="interp_y",
+        #             start_token="zeros",
+        #         ),
+        #         "z_dec_in": UnlabeledSource(),
+        #         "take_z": Take(start=2, length=2),
+        #         "tiles": Reshape(shape=(2 * 10, 1, 28, 28)),
+        #     },
+        #     aliases={
+        #         "encoder_a_conv1": "encoder_conv1",
+        #         "encoder_a_norm1": "encoder_norm1",
+        #         "encoder_a_relu1": "encoder_relu1",
+        #         "encoder_a_pool1": "encoder_pool1",
+        #         "encoder_a_conv2": "encoder_conv2",
+        #         "encoder_a_norm2": "encoder_norm2",
+        #         "encoder_a_relu2": "encoder_relu2",
+        #         "encoder_a_pool2": "encoder_pool2",
+        #         "encoder_a_out": "encoder_out",
+        #         "encoder_a_latent": "latent",
+        #         "encoder_a_latent_z": "latent_z",
+        #         "encoder_b_conv1": "encoder_conv1",
+        #         "encoder_b_norm1": "encoder_norm1",
+        #         "encoder_b_relu1": "encoder_relu1",
+        #         "encoder_b_pool1": "encoder_pool1",
+        #         "encoder_b_conv2": "encoder_conv2",
+        #         "encoder_b_norm2": "encoder_norm2",
+        #         "encoder_b_relu2": "encoder_relu2",
+        #         "encoder_b_pool2": "encoder_pool2",
+        #         "encoder_b_out": "encoder_out",
+        #         "encoder_b_latent": "latent",
+        #         "encoder_b_latent_z": "latent_z",
+        #     },
+        #     input_shape=(2, 1, 28, 28),
+        #     num_samples=4,
+        #     every_n_epochs=10,
+        #     seed=42,
+        #     input=InterpolationSampleInput(pixel_transform="normalize"),
+        #     reporter=GridReporter(title="vae_interp", rows=2, cols=10),
+        # ),
+        # SampleGeneratorConfig(
+        #     transition_graph={},
+        #     readout_graph={
+        #         "x_seq": frozenset(),
+        #         "y_seq": frozenset(),
+        #         "encoder_scan": frozenset({"x_seq", "y_seq"}),
+        #         "z_prev": frozenset({"encoder_scan"}),
+        #         "z_curr": frozenset({"encoder_scan"}),
+        #         "interp": frozenset({"z_prev", "z_curr"}),
+        #         "interp_y": frozenset({"interp"}),
+        #         "decoder_scan": frozenset({"interp", "interp_y"}),
+        #     },
+        #     source_nodes={
+        #         "x_seq": UnlabeledSource(),
+        #         "y_seq": LabeledSource(),
+        #         "encoder_scan": Scan(
+        #             graph={
+        #                 "z_in": frozenset(),
+        #                 "take_x": frozenset({"z_in"}),
+        #                 "reshape_x": frozenset({"take_x"}),
+        #                 "encoder_conv1": frozenset({"reshape_x"}),
+        #                 "encoder_norm1": frozenset({"encoder_conv1"}),
+        #                 "encoder_relu1": frozenset({"encoder_norm1"}),
+        #                 "encoder_pool1": frozenset({"encoder_relu1"}),
+        #                 "encoder_conv2": frozenset({"encoder_pool1"}),
+        #                 "encoder_norm2": frozenset({"encoder_conv2"}),
+        #                 "encoder_relu2": frozenset({"encoder_norm2"}),
+        #                 "encoder_pool2": frozenset({"encoder_relu2"}),
+        #                 "encoder_out": frozenset({"encoder_pool2"}),
+        #                 "latent": frozenset({"encoder_out"}),
+        #                 "latent_z": frozenset({"latent"}),
+        #             },
+        #             autoregressive_mask="erase",
+        #             carry_transform="identity",
+        #             pred_source="y_seq",
+        #             start_token="zeros",
+        #         ),
+        #         "z_in": UnlabeledSource(),
+        #         "take_x": Take(start=2, length=1 * 28 * 28),
+        #         "reshape_x": Reshape(shape=(1, 28, 28)),
+        #         "z_prev": Take(start=0, length=2),
+        #         "z_curr": Take(start=2, length=2),
+        #         "interp": Interpolate(n_steps=10),
+        #         "interp_y": Reshape(shape=(10, 2)),
+        #         "decoder_scan": Scan(
+        #             graph={
+        #                 "z_dec_in": frozenset(),
+        #                 "take_z": frozenset({"z_dec_in"}),
+        #                 "decoder_proj": frozenset({"take_z"}),
+        #                 "decoder_reshape_in": frozenset({"decoder_proj"}),
+        #                 "decoder_convT1": frozenset({"decoder_reshape_in"}),
+        #                 "decoder_norm1": frozenset({"decoder_convT1"}),
+        #                 "decoder_relu1": frozenset({"decoder_norm1"}),
+        #                 "decoder_convT2": frozenset({"decoder_relu1"}),
+        #             },
+        #             autoregressive_mask="teacher_forcing",
+        #             carry_transform="identity",
+        #             pred_source="interp_y",
+        #             start_token="zeros",
+        #         ),
+        #         "z_dec_in": UnlabeledSource(),
+        #         "take_z": Take(start=2, length=2),
+        #     },
+        #     aliases={},
+        #     input_shape=(2, 1, 28, 28),
+        #     num_samples=4,
+        #     every_n_epochs=10,
+        #     seed=42,
+        #     input=InterpolationSampleInput(pixel_transform="normalize"),
+        #     reporter=GridReporter(title="vae_interp_scan", rows=1, cols=10),
+        # ),
     ],
     label_mask_value=-1.0,
     unlabeled_mask_value=-1.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -5437,6 +5452,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -5750,6 +5766,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -6054,6 +6071,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=2,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 
@@ -6381,6 +6399,7 @@ OHO_RNN32_TEST = GodConfig(
     unlabeled_mask_value=-100.0,
     num_tasks=1,
     prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
 )
 
 

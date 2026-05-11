@@ -554,7 +554,12 @@ class GridReporter:
     cols: int
 
 
-type SampleReporter = Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter]
+@dataclass(frozen=True)
+class PerSampleGridReporter:
+    grid: GridReporter
+
+
+type SampleReporter = Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter]
 
 
 class SampleGeneratorConfig(eqx.Module):

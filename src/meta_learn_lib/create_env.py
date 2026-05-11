@@ -160,7 +160,7 @@ def create_inference_state[ENV](
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k3, meta=StateMeta(is_stateful=frozenset())))
             case Scan(graph, autoregressive_mask, carry_transform, pred_source, start_token):
-                k1, prng = jax.random.split(prng, 2)
+                k1, k2, prng = jax.random.split(prng, 3)
                 match autoregressive_mask:
                     case "teacher_forcing":
                         source_shape = node_features[aliases.get(pred_source, pred_source)][1:]
@@ -178,6 +178,18 @@ def create_inference_state[ENV](
                     env, Tagged(value=token, meta=StateMeta(is_stateful=track_influence_in))
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
+                env = create_inference_state(
+                    nodes,
+                    graph,
+                    aliases,
+                    interfaces,
+                    level,
+                    node_features,
+                    track_influence_in,
+                    is_init,
+                    env,
+                    k2,
+                )
             case _:
                 k1, prng = jax.random.split(prng, 2)
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
@@ -419,6 +431,23 @@ def create_inference_parameters[ENV](
                     ),
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
+
+            case Scan(graph, _, _, _, _):
+                k1, k2, prng = jax.random.split(prng, 3)
+                env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
+                sub_transition, sub_readout = (graph, {}) if is_transition else ({}, graph)
+                env = create_inference_parameters(
+                    nodes,
+                    sub_transition,
+                    sub_readout,
+                    aliases,
+                    interfaces,
+                    level,
+                    node_features,
+                    learnables,
+                    env,
+                    k2,
+                )
 
             case _:
                 k1, prng = jax.random.split(prng, 2)

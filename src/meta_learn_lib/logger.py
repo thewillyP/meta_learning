@@ -295,8 +295,8 @@ class ScalarLogger:
             plt.close(fig)
             self.logger.log_image(title, series, iteration, img)
 
-    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int) -> None:
-        for series, iteration, sub in self.for_each_entry(stats, ("batch",)):
+    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int, iterate_tags: tuple[Tag, ...]) -> None:
+        for series, iteration, sub in self.for_each_entry(stats, iterate_tags):
             if iteration % self.checkpoint_every != 0:
                 continue
             tile = sub[0].reshape(rows, cols, *sub.shape[2:])
@@ -378,8 +378,8 @@ class ThreadedScalarLogger:
                         stats, title = payload
                         self.scalar_logger.log_umap_stats(stats, title)
                     case "grid":
-                        stats, title, rows, cols = payload
-                        self.scalar_logger.log_grid_stats(stats, title, rows, cols)
+                        stats, title, rows, cols, iterate_tags = payload
+                        self.scalar_logger.log_grid_stats(stats, title, rows, cols, iterate_tags)
                 q.task_done()
             except queue.Empty:
                 continue
@@ -404,10 +404,10 @@ class ThreadedScalarLogger:
             return
         self.sample_queue.put(("umap", stats, title))
 
-    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int) -> None:
+    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int, iterate_tags: tuple[Tag, ...]) -> None:
         if self.stop_event.is_set():
             return
-        self.sample_queue.put(("grid", stats, title, rows, cols))
+        self.sample_queue.put(("grid", stats, title, rows, cols, iterate_tags))
 
     def flush(self) -> None:
         self.scalar_queue.join()

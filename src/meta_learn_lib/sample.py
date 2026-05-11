@@ -163,23 +163,24 @@ def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger, confi
     prediction_stats = {k: v for k, v in stats.items() if k.endswith("/prediction")}
     if not prediction_stats:
         return
+
+    def display_ready_stats() -> dict[str, NamedStat]:
+        out = {}
+        for k, ns in prediction_stats.items():
+            m = LEVEL_RE.search(k)
+            level = int(m.group(1))
+            out[k] = display_ready(ns, config.levels[level].dataset_source)
+        return out
+
     match sg.reporter:
         case ImageReporter(title):
-            display_stats = {}
-            for k, ns in prediction_stats.items():
-                m = LEVEL_RE.search(k)
-                level = int(m.group(1))
-                display_stats[k] = display_ready(ns, config.levels[level].dataset_source)
-            logger.log_image_stats(display_stats, title)
+            logger.log_image_stats(display_ready_stats(), title)
         case PlotReporter(title):
             logger.log_plot_stats(prediction_stats, title)
         case UMAPReporter(title):
             label_stats = {k: v for k, v in stats.items() if k.endswith("/label")}
             logger.log_umap_stats(prediction_stats | label_stats, title)
         case GridReporter(title, rows, cols):
-            display_stats = {}
-            for k, ns in prediction_stats.items():
-                m = LEVEL_RE.search(k)
-                level = int(m.group(1))
-                display_stats[k] = display_ready(ns, config.levels[level].dataset_source)
-            logger.log_grid_stats(display_stats, title, rows, cols)
+            logger.log_grid_stats(display_ready_stats(), title, rows, cols, iterate_tags=("batch",))
+        case PerSampleGridReporter(GridReporter(title, rows, cols)):
+            logger.log_grid_stats(display_ready_stats(), title, rows, cols, iterate_tags=("batch", "minibatch"))

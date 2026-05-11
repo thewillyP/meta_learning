@@ -93,6 +93,16 @@ class MNISTSequenceTaskFamily:
     pixel_transform: PixelTransform
 
 
+@dataclass(frozen=True)
+class SOSTaskFamily:
+    grid_size: int
+    sigma_x: float
+    sigma_y: float
+    n: int
+    region: tuple[float, float, float, float]  # (x_min, x_max, y_min, y_max); ignored when region_mode="full"
+    region_mode: Literal["full", "exclude_region", "only_region"]
+
+
 type Task = Union[
     MNISTTaskFamily,
     FashionMNISTTaskFamily,
@@ -102,6 +112,7 @@ type Task = Union[
     GaussianNoiseTaskFamily,
     GridTaskFamily,
     MNISTSequenceTaskFamily,
+    SOSTaskFamily,
 ]
 
 

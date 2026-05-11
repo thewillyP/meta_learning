@@ -152,6 +152,7 @@ def make_converter() -> Converter:
             GaussianNoiseTaskFamily,
             GridTaskFamily,
             MNISTSequenceTaskFamily,
+            SOSTaskFamily,
         ],
     )
 
@@ -176,6 +177,8 @@ def make_converter() -> Converter:
     )
 
     # -- SampleReporter --
-    setup_flattened_union(converter, Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter])
+    setup_flattened_union(
+        converter, Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter]
+    )
 
     return converter

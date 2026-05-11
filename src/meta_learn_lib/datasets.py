@@ -85,6 +85,8 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return 1
         case MNISTSequenceTaskFamily(_, _):
             return 1
+        case SOSTaskFamily(_, _, _, _, _, _):
+            return 1
 
 
 def get_pixel_mean_std(task: Task) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
@@ -403,6 +405,54 @@ def dataset_sources(
                 return PyTreeDataset((xs, ys)), lambda x: x
 
             return [make_seq_task(s, k) for s, k in zip(splits, keys)]
+
+        case SOSTaskFamily(grid_size, sigma_x, sigma_y, n, region, region_mode):
+            keys = jax.random.split(seed, num_tasks)
+            x_min, x_max, y_min, y_max = region
+
+            def in_region(cx: jax.Array, cy: jax.Array) -> jax.Array:
+                return (x_min <= cx) & (cx <= x_max) & (y_min <= cy) & (cy <= y_max)
+
+            def make_sos_task(key: PRNG) -> DatasetWithReshape:
+                # Rejection-sample (cx, cy) until we have n that satisfy the region constraint.
+                k_sample, k_perm = jax.random.split(key)
+
+                def sample_n_acceptable(k: PRNG, want: int) -> jax.Array:
+                    # Oversample then mask. Loop until enough accepted (rare for typical region).
+                    pool: list[jax.Array] = []
+                    accepted = 0
+                    while accepted < want:
+                        k, k_batch = jax.random.split(k)
+                        candidates = jax.random.uniform(k_batch, (want * 2, 2), minval=0.0, maxval=float(grid_size))
+                        match region_mode:
+                            case "full":
+                                mask = jnp.ones((candidates.shape[0],), dtype=bool)
+                            case "exclude_region":
+                                mask = ~in_region(candidates[:, 0], candidates[:, 1])
+                            case "only_region":
+                                mask = in_region(candidates[:, 0], candidates[:, 1])
+                        kept = np.asarray(candidates[np.asarray(mask)])
+                        pool.append(kept)
+                        accepted += kept.shape[0]
+                    return jnp.asarray(np.concatenate(pool, axis=0)[:want])
+
+                centers = sample_n_acceptable(k_sample, n)
+                cxs, cys = centers[:, 0], centers[:, 1]
+
+                xv, yv = jnp.meshgrid(jnp.arange(grid_size), jnp.arange(grid_size), indexing="xy")
+
+                # vmap over samples — output shape (n, 1, grid_size, grid_size)
+                def render(cx: jax.Array, cy: jax.Array) -> jax.Array:
+                    return 0.5 * jnp.exp(-((xv - cx) ** 2) / (4 * sigma_x**2)) + 0.5 * jnp.exp(
+                        -((yv - cy) ** 2) / (4 * sigma_y**2)
+                    )
+
+                images = jax.vmap(render)(cxs, cys)[:, None, :, :]  # (n, 1, H, W)
+                xs = images[:, None, ...]  # add time axis: (n, 1, 1, H, W)
+                ys = jnp.stack([cxs, cys], axis=-1)[:, None, :]  # (n, 1, 2)
+                return PyTreeDataset((xs, ys)), lambda x: x
+
+            return [make_sos_task(k) for k in keys]
 
 
 def take_datasets(

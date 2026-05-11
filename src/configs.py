@@ -3039,7 +3039,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
 
 VAE_BETA_OHO = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=True,
+    clearml_run=False,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="vae_beta_oho",
@@ -4627,7 +4627,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
 
 VAE_BASELINE = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=True,
+    clearml_run=False,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="vae_baseline",

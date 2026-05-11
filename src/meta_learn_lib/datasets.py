@@ -711,10 +711,10 @@ def create_dataloader(
     global_perm = jax.random.permutation(task_distribution_prng, config.num_tasks)
     levels_with_data = list(reversed(list(zip(config.levels, data_sources))))
 
-    outermost_level = levels_with_data[0][0]
-    seq_len = get_seq_len(outermost_level.dataset_source, outermost_level.dataset.is_test)
-    num_vb = math.ceil(seq_len / outermost_level.validation.num_steps)
-    num_mb = math.ceil(outermost_level.dataset.num_examples_total / outermost_level.dataset.num_examples_in_minibatch)
+    innermost_level = levels_with_data[-1][0]
+    seq_len = get_seq_len(innermost_level.dataset_source, innermost_level.dataset.is_test)
+    num_vb = math.ceil(seq_len / innermost_level.validation.num_steps)
+    num_mb = math.ceil(innermost_level.dataset.num_examples_total / innermost_level.dataset.num_examples_in_minibatch)
     consumption = math.prod(meta.nested.num_steps for meta, _ in levels_with_data)
     full_epoch_yields = (num_mb * num_vb) // consumption
     K = config.dataloader_chunk_size if config.dataloader_chunk_size is not None else full_epoch_yields

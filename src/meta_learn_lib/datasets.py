@@ -87,6 +87,23 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return 1
 
 
+def get_pixel_mean_std(task: Task) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
+    """Return per-channel (mean, std) used at dataset load time. None means raw / non-image."""
+    match task:
+        case MNISTTaskFamily(pixel_transform="normalize"):
+            return MNIST_MEAN, MNIST_STD
+        case FashionMNISTTaskFamily(pixel_transform="normalize"):
+            return FASHION_MNIST_MEAN, FASHION_MNIST_STD
+        case MNISTSequenceTaskFamily(pixel_transform="normalize"):
+            return MNIST_MEAN, MNIST_STD
+        case CIFAR10TaskFamily(_, _, _):
+            return CIFAR10_MEAN, CIFAR10_STD
+        case CIFAR100TaskFamily(_, _, _):
+            return CIFAR100_MEAN, CIFAR100_STD
+        case _:
+            return None
+
+
 def numpy_collate_fn(batch):
     return jax.tree.map(lambda x: np.asarray(x), batch)
 

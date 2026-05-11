@@ -11,6 +11,7 @@ from toposort import toposort_flatten
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.create_interface import build_interfaces
+from meta_learn_lib.datasets import get_pixel_mean_std
 from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
@@ -114,6 +115,7 @@ def create_inference_state[ENV](
     node_features: dict[Canon, tuple[int, ...]],
     track_influence_in: frozenset[int],
     is_init: bool,
+    dataset_source: Task,
     env: ENV,
     prng: PRNG,
 ) -> ENV:
@@ -174,6 +176,15 @@ def create_inference_state[ENV](
                 match start_token:
                     case "zeros":
                         token = jnp.zeros(shape)
+                    case "input_zero":
+                        mean_std = get_pixel_mean_std(dataset_source)
+                        if mean_std is None:
+                            token = jnp.zeros(shape)
+                        else:
+                            mean, std = mean_std
+                            mean_arr = jnp.asarray(mean).reshape((-1,) + (1,) * (len(shape) - 1))
+                            std_arr = jnp.asarray(std).reshape((-1,) + (1,) * (len(shape) - 1))
+                            token = (jnp.zeros(shape) - mean_arr) / std_arr
                 env = interface.autoregressive_predictions.put_tagged(
                     env, Tagged(value=token, meta=StateMeta(is_stateful=track_influence_in))
                 )
@@ -187,6 +198,7 @@ def create_inference_state[ENV](
                     node_features,
                     track_influence_in,
                     is_init,
+                    dataset_source,
                     env,
                     k2,
                 )
@@ -619,7 +631,17 @@ def reset_validation[ENV](
     def create_env(env: ENV, prng: PRNG) -> ENV:
         k1, prng = jax.random.split(prng, 2)
         f1 = lambda e, k: create_inference_state(
-            nodes, node_graph, aliases, interfaces, level, node_features, track_influence_in, is_init, e, k
+            nodes,
+            node_graph,
+            aliases,
+            interfaces,
+            level,
+            node_features,
+            track_influence_in,
+            is_init,
+            meta_config.dataset_source,
+            e,
+            k,
         )
         batch_size = [
             meta_config.validation.batch,
@@ -1034,6 +1056,16 @@ def create_inference_axes[ENV](
     node_features = get_output_shapes({}, node_graph, config.nodes, config.aliases, shape)
     track_influence_in = config.levels[level].validation.track_influence_in
     f = lambda e, k: create_inference_state(
-        config.nodes, node_graph, config.aliases, interfaces, level, node_features, track_influence_in, False, e, k
+        config.nodes,
+        node_graph,
+        config.aliases,
+        interfaces,
+        level,
+        node_features,
+        track_influence_in,
+        False,
+        config.levels[level].dataset_source,
+        e,
+        k,
     )
     return diff_axes(env, f(env, jax.random.key(0)))

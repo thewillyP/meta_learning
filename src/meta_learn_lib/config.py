@@ -350,7 +350,7 @@ class Scan(eqx.Module):  # Wraps around a layer and repeats it in an unfold mann
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     carry_transform: CarryTransform
     pred_source: Uncanon  # which node in the graph to source teacher predictions.
-    start_token: Literal["zeros"]
+    start_token: Literal["zeros", "input_zero"]
 
 
 @dataclass(frozen=True)
@@ -406,6 +406,8 @@ class Take:
 @dataclass(frozen=True)
 class Interpolate:
     n_steps: int
+    start: Uncanon
+    end: Uncanon
 
 
 type Node = Union[

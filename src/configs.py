@@ -3508,14 +3508,14 @@ VAE_BETA_OHO = GodConfig(
                     autoregressive_mask="teacher_forcing",
                     carry_transform="identity",
                     pred_source="x_pred",
-                    start_token="zeros",
+                    start_token="input_zero",
                 ),
                 "z_in": UnlabeledSource(),
                 "take_prev": Take(start=0, length=1 * 28 * 28),
                 "take_curr": Take(start=1 * 28 * 28, length=1 * 28 * 28),
                 "reshape_prev": Reshape(shape=(1, 28, 28)),
                 "reshape_curr": Reshape(shape=(1, 28, 28)),
-                "interp": Interpolate(n_steps=10),
+                "interp": Interpolate(n_steps=10, start="encoder_a_latent_z", end="encoder_b_latent_z"),
                 "interp_y": Reshape(shape=(10, 2)),
                 "decoder_scan": Scan(
                     graph={
@@ -5118,14 +5118,14 @@ VAE_BASELINE = GodConfig(
                     autoregressive_mask="teacher_forcing",
                     carry_transform="identity",
                     pred_source="x_pred",
-                    start_token="zeros",
+                    start_token="input_zero",
                 ),
                 "z_in": UnlabeledSource(),
                 "take_prev": Take(start=0, length=1 * 28 * 28),
                 "take_curr": Take(start=1 * 28 * 28, length=1 * 28 * 28),
                 "reshape_prev": Reshape(shape=(1, 28, 28)),
                 "reshape_curr": Reshape(shape=(1, 28, 28)),
-                "interp": Interpolate(n_steps=10),
+                "interp": Interpolate(n_steps=10, start="encoder_a_latent_z", end="encoder_b_latent_z"),
                 "interp_y": Reshape(shape=(10, 2)),
                 "decoder_scan": Scan(
                     graph={
@@ -5220,7 +5220,7 @@ VAE_BASELINE = GodConfig(
                 "reshape_x": Reshape(shape=(1, 28, 28)),
                 "z_prev": Take(start=0, length=2),
                 "z_curr": Take(start=2, length=2),
-                "interp": Interpolate(n_steps=10),
+                "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
                 "interp_y": Reshape(shape=(10, 2)),
                 "decoder_scan": Scan(
                     graph={

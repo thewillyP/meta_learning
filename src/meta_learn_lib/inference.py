@@ -259,15 +259,11 @@ def get_inference[ENV](
                     ]
                     x = to_vector(deps).vector
                     outputs = outputs.set(node_name, Outputs(prediction=x[start : start + length]))
-                case Interpolate(n_steps):
-                    deps_list = [
-                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
-                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
-                    ]
-                    z_prev = deps_list[0].prediction
-                    z_curr = deps_list[1].prediction
-                    alphas = jnp.linspace(0.0, 1.0, n_steps).reshape((n_steps,) + (1,) * z_prev.ndim)
-                    interp = (1 - alphas) * z_prev + alphas * z_curr
+                case Interpolate(n_steps, start, end):
+                    z_start = (outputs[start] if start in outputs else from_env[start](env)).prediction
+                    z_end = (outputs[end] if end in outputs else from_env[end](env)).prediction
+                    alphas = jnp.linspace(0.0, 1.0, n_steps).reshape((n_steps,) + (1,) * z_start.ndim)
+                    interp = (1 - alphas) * z_start + alphas * z_end
                     outputs = outputs.set(node_name, Outputs(prediction=interp))
                 case Activation(activation_fn):
                     deps = [

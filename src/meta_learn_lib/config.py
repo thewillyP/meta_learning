@@ -15,6 +15,7 @@ class SlurmParams:
     gpu: int
     log_dir: str
     skip_python_env_install: bool
+    comment: str
 
 
 @dataclass(frozen=True)

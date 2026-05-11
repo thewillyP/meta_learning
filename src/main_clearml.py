@@ -76,6 +76,7 @@ def main(
         gpu=1,
         log_dir="/scratch/wlp9800/logs",
         skip_python_env_install=True,
+        comment="preemption=yes;requeue=true",
     )
 
     converter = make_converter()

@@ -345,8 +345,7 @@ class LSTMLayer:
     time_constant: HP
 
 
-@dataclass(frozen=True)
-class Scan:  # Wraps around a layer and repeats it in an unfold manner
+class Scan(eqx.Module):  # Wraps around a layer and repeats it in an unfold manner
     graph: dict[Uncanon, frozenset[Uncanon]]
     autoregressive_mask: Literal["teacher_forcing", "identity", "erase"]
     carry_transform: CarryTransform

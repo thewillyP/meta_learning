@@ -176,6 +176,6 @@ def make_converter() -> Converter:
     )
 
     # -- SampleReporter --
-    setup_flattened_union(converter, Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter])
+    setup_flattened_union(converter, Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter])
 
     return converter

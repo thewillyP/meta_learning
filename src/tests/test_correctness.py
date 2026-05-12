@@ -75,17 +75,19 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
             hdf5=HDF5LoggerConfig(enabled=False),
             console=ConsoleLoggerConfig(enabled=False),
             matplotlib=MatplotlibLoggerConfig(save_dir="/tmp", enabled=False),
+            scalar_queue_size=0,
+            sample_queue_size=0,
         ),
         epochs=1,
         checkpoint_every_n_minibatches=1,
         checkpoint_every_n_epochs=0,
         transition_graph={
-            "x": {},
-            "concat": {"x"},
-            "rnn1": {"concat"},
+            "x": frozenset(),
+            "concat": frozenset({"x"}),
+            "rnn1": frozenset({"concat"}),
         },
         readout_graph={
-            "readout": {"rnn1"},
+            "readout": frozenset({"rnn1"}),
         },
         nodes={
             "x": UnlabeledSource(),
@@ -95,8 +97,8 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     n=RNN_SIZE,
                     activation_fn="tanh",
                     use_bias=True,
-                    layer_norm=None,
                 ),
+                layer_norm=None,
                 use_random_init=False,
                 time_constant="hp_tc",
             ),
@@ -104,9 +106,9 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                 n=NUM_CLASSES,
                 activation_fn="identity",
                 use_bias=True,
-                layer_norm=None,
             ),
         },
+        aliases={},
         hyperparameters={
             "hp_tc": HyperparameterConfig(
                 value=1.0,
@@ -217,6 +219,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
         unlabeled_mask_value=-100.0,
         num_tasks=1,
         prefetch_buffer_size=1,
+        dataloader_chunk_size=None,
     )
 
 
@@ -250,7 +253,7 @@ def setup_env_and_fns(config: GodConfig):
 
     interfaces = build_interfaces(config)
 
-    env = create_env(config, shapes, interfaces, env_prng)
+    env = create_env(config, shapes, env_prng)
 
     inference_axes = [create_inference_axes(env, config, interfaces, s, lvl) for lvl, s in enumerate(shapes)]
 
@@ -312,8 +315,8 @@ def test_rtrl_vs_bptt_level0():
     # graphs (eqx.filter_grad vs the RTRL scan), so the meta-gradients can
     # legitimately differ. We check params instead — if model gradients match,
     # the SGD update is identical, so params after one step must match.
-    norm_bptt = stats_bptt["level0/meta_gradient_norm"]
-    norm_rtrl = stats_rtrl["level0/meta_gradient_norm"]
+    norm_bptt = stats_bptt["level0/meta_gradient_norm"].data
+    norm_rtrl = stats_rtrl["level0/meta_gradient_norm"].data
     norm_diff = jnp.abs(norm_bptt - norm_rtrl)
 
     print(f"  BPTT meta-gradient norm: {norm_bptt:.8f}")
@@ -547,7 +550,7 @@ def test_identity_learner():
     stuff = setup_env_and_fns(config)
 
     _, stats = stuff.meta_learner(stuff.env, stuff.data_sample)
-    grad_norm = stats["level0/meta_gradient_norm"]
+    grad_norm = stats["level0/meta_gradient_norm"].data
     print(f"  Gradient norm: {grad_norm:.2e}")
 
     assert grad_norm == 0.0, f"Identity learner gradient not zero, norm={grad_norm:.2e}"

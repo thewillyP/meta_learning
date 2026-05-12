@@ -3543,13 +3543,13 @@ VAE_BETA_OHO = GodConfig(
 
 SOS_BETA_OHO = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="sos_beta_oho",
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
-        hdf5=HDF5LoggerConfig(enabled=False),
+        hdf5=HDF5LoggerConfig(enabled=True),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=0,

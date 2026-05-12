@@ -314,21 +314,30 @@ class ScalarLogger:
                 if iteration % self.checkpoint_every != 0:
                     continue
                 pred_flat = pred_sub.reshape(pred_sub.shape[0], -1)
-                label_flat = label_sub.reshape(-1)
+                # label_sub may be (n,) scalar labels or (n, *F) vector labels.
+                label_per_sample = label_sub.reshape(label_sub.shape[0], -1)
                 if pred_flat.shape[-1] == 2:
                     embedding = pred_flat
                 else:
                     n_neighbors = min(15, pred_flat.shape[0] - 1)
                     embedding = umap.UMAP(n_components=2, n_neighbors=n_neighbors).fit_transform(pred_flat)
-                fig, ax = plt.subplots(figsize=(8, 6))
-                scatter = ax.scatter(embedding[:, 0], embedding[:, 1], c=label_flat, cmap="tab10", s=10)
-                ax.set_title(f"{title} - {series}")
-                ax.grid(True, alpha=0.3)
-                fig.colorbar(scatter, ax=ax)
-                fig.canvas.draw()
-                img = np.asarray(fig.canvas.renderer.buffer_rgba())[..., :3]
-                plt.close(fig)
-                self.logger.log_image(title, series, iteration, img)
+                # Scalar labels → one categorical plot. Vector labels → one continuous plot per component.
+                if label_per_sample.shape[1] == 1:
+                    components = [("", label_per_sample[:, 0], "tab10")]
+                else:
+                    components = [
+                        (f"/dim{i}", label_per_sample[:, i], "viridis") for i in range(label_per_sample.shape[1])
+                    ]
+                for suffix, color_values, cmap in components:
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    scatter = ax.scatter(embedding[:, 0], embedding[:, 1], c=color_values, cmap=cmap, s=10)
+                    ax.set_title(f"{title} - {series}{suffix}")
+                    ax.grid(True, alpha=0.3)
+                    fig.colorbar(scatter, ax=ax)
+                    fig.canvas.draw()
+                    img = np.asarray(fig.canvas.renderer.buffer_rgba())[..., :3]
+                    plt.close(fig)
+                    self.logger.log_image(title, f"{series}{suffix}", iteration, img)
 
 
 class ThreadedScalarLogger:

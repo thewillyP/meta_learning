@@ -457,8 +457,8 @@ def dataset_sources(
 
                 # (n, 1, H, W) images and (n, 2) labels, both as torch tensors so they flow through
                 # the same TransformedDataset(x_pre, y_pre) pipeline as MNIST/CIFAR.
-                images_np = np.asarray(jax.vmap(render)(cxs, cys)[:, None, :, :])
-                labels_np = np.asarray(jnp.stack([cxs, cys], axis=-1))
+                images_np = np.array(jax.vmap(render)(cxs, cys)[:, None, :, :])
+                labels_np = np.array(jnp.stack([cxs, cys], axis=-1))
                 raw_ds = PyTreeDataset((torch.from_numpy(images_np), torch.from_numpy(labels_np)))
                 return TransformedDataset(raw_ds, x_pre, y_pre), patch_reshape_fn
 

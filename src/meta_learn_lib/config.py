@@ -86,6 +86,7 @@ class GridTaskFamily:
     max_value: float
     n_per_axis: int
     tag: int
+    mode: Literal["uniform", "quantile"]
 
 
 @dataclass(frozen=True)
@@ -538,6 +539,7 @@ class GridSampleInput:
     min_value: float
     max_value: float
     n_per_axis: int
+    mode: Literal["uniform", "quantile"]
 
 
 @dataclass(frozen=True)

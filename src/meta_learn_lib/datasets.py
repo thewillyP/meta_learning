@@ -373,12 +373,18 @@ def dataset_sources(
 
             return [make_noise_task(k) for k in keys]
 
-        case GridTaskFamily(dim, min_value, max_value, n_per_axis, _):
+        case GridTaskFamily(dim, min_value, max_value, n_per_axis, _, mode):
             keys = jax.random.split(seed, num_tasks)
 
             def make_grid_task(key: PRNG) -> DatasetWithReshape:
                 n = n_per_axis**dim
-                axes = [jnp.linspace(min_value, max_value, n_per_axis)] * dim
+                probs = jnp.linspace(min_value, max_value, n_per_axis)
+                match mode:
+                    case "uniform":
+                        axis_values = probs
+                    case "quantile":
+                        axis_values = jax.scipy.stats.norm.ppf(probs)
+                axes = [axis_values] * dim
                 grid = jnp.stack(jnp.meshgrid(*axes, indexing="ij"), axis=-1).reshape(n, dim)
                 xs = grid[:, None, :]
                 return PyTreeDataset((xs, xs)), lambda x: x

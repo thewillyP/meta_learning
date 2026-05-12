@@ -72,13 +72,14 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
                 )
             case DataSampleInput():
                 dataset_source = level.dataset_source
-            case GridSampleInput(min_value, max_value, n_per_axis):
+            case GridSampleInput(min_value, max_value, n_per_axis, mode):
                 dataset_source = GridTaskFamily(
                     dim=sg.input_shape[0],
                     min_value=min_value,
                     max_value=max_value,
                     n_per_axis=n_per_axis,
                     tag=level_idx,
+                    mode=mode,
                 )
             case InterpolationSampleInput(pixel_transform):
                 dataset_source = MNISTSequenceTaskFamily(

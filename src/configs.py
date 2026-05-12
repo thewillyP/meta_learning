@@ -3,6 +3,184 @@ from meta_learn_lib.config import *
 from upload_configs import upload_config
 
 
+# ---------------------------------------------------------------------------
+# Architecture-building helpers
+# ---------------------------------------------------------------------------
+
+
+def conv_out_size(h_in: int, kernel: int, stride: int, padding: int) -> int:
+    """Spatial output of Conv2d. Formula: H_out = floor((H_in + 2*padding − kernel) / stride) + 1."""
+    return (h_in + 2 * padding - kernel) // stride + 1
+
+
+def convT_kernel_for_target(h_in: int, h_target: int, stride: int, padding: int) -> tuple[int, int]:
+    """Pick (kernel, output_padding) for ConvTranspose2d at the given stride/padding to land at h_target.
+    Inverts H_out = (H_in − 1) * stride − 2 * padding + kernel + output_padding to find kernel + op = diff."""
+    diff = h_target - (h_in - 1) * stride + 2 * padding
+    for k in (3, 4):
+        for op in range(stride):
+            if k + op == diff:
+                return k, op
+    raise ValueError(f"No valid (kernel, output_padding) for {h_in}→{h_target} with stride={stride}, padding={padding}")
+
+
+def make_strided_encoder(input_size: int, channels: list[int], latent_dim: int) -> dict:
+    """Strided-conv encoder for 2D images. Each layer: Conv2d(stride=2, kernel=3, padding=1) → GroupNorm → ReLU.
+    Final node is a Linear → 2*latent_dim (mu, log_var concatenated).
+    Returns: {nodes, graph, learnable, channels_out, spatial_out, spatial_sequence}.
+    """
+    KERNEL, STRIDE, PADDING = 3, 2, 1
+    nodes: dict = {"x": UnlabeledSource()}
+    graph: dict = {"x": set()}
+    learnable: set[str] = set()
+    prev = "x"
+    h = input_size
+    spatial_sequence = [h]
+    for i, ch in enumerate(channels, start=1):
+        c, n, r = f"encoder_conv{i}", f"encoder_norm{i}", f"encoder_relu{i}"
+        nodes[c] = Conv2dLayer(out_channels=ch, kernel_size=KERNEL, stride=STRIDE, padding=PADDING, use_bias=True)
+        nodes[n] = GroupNorm(groups=ch // 4, epsilon=1e-5, channelwise_affine=True)
+        nodes[r] = Activation(activation_fn="relu")
+        graph[c], graph[n], graph[r] = {prev}, {c}, {n}
+        learnable |= {c, n}
+        prev = r
+        h = conv_out_size(h, KERNEL, STRIDE, PADDING)
+        spatial_sequence.append(h)
+    nodes["encoder_out"] = NNLayer(n=latent_dim * 2, activation_fn="identity", use_bias=True)
+    graph["encoder_out"] = {prev}
+    learnable.add("encoder_out")
+    return {
+        "nodes": nodes,
+        "graph": graph,
+        "learnable": learnable,
+        "channels_out": channels[-1],
+        "spatial_out": h,
+        "spatial_sequence": spatial_sequence,
+    }
+
+
+def make_strided_decoder(
+    channels_in: int,
+    spatial_in: int,
+    channels: list[int],
+    out_channels: int,
+    target_spatial_sequence: list[int],
+) -> dict:
+    """ConvTranspose decoder mirroring a strided encoder.
+    `channels` = intermediate ConvT out_channels (excluding the final layer).
+    `out_channels` = channels of the final reconstructed image.
+    `target_spatial_sequence` = spatial sizes to land on after each ConvT layer (length = len(channels) + 1).
+    Each non-final ConvT is followed by GroupNorm + ReLU; the final ConvT is bare (output layer).
+    `decoder_proj` has empty input deps — caller wires it (e.g. {"latent_z"} for main VAE, {"z_input"} for sample gen).
+    Returns: {nodes, graph, learnable, output_node}.
+    """
+    STRIDE, PADDING = 2, 1
+    all_channels = list(channels) + [out_channels]
+    if len(all_channels) != len(target_spatial_sequence):
+        raise ValueError(
+            f"channels (+ out_channels) has {len(all_channels)} layers but target_spatial_sequence has "
+            f"{len(target_spatial_sequence)} entries; must match."
+        )
+    nodes: dict = {
+        "decoder_proj": NNLayer(n=channels_in * spatial_in * spatial_in, activation_fn="identity", use_bias=True),
+        "decoder_reshape_in": Reshape(shape=(channels_in, spatial_in, spatial_in)),
+    }
+    graph: dict = {
+        "decoder_proj": set(),  # caller wires input
+        "decoder_reshape_in": {"decoder_proj"},
+    }
+    learnable: set[str] = {"decoder_proj"}
+    prev = "decoder_reshape_in"
+    h = spatial_in
+    for i, (out_ch, target_h) in enumerate(zip(all_channels, target_spatial_sequence), start=1):
+        cT = f"decoder_convT{i}"
+        k, op = convT_kernel_for_target(h, target_h, STRIDE, PADDING)
+        nodes[cT] = ConvTranspose2dLayer(
+            out_channels=out_ch, kernel_size=k, stride=STRIDE, padding=PADDING, output_padding=op, use_bias=True
+        )
+        graph[cT] = {prev}
+        learnable.add(cT)
+        h = target_h
+        if i < len(all_channels):
+            n, r = f"decoder_norm{i}", f"decoder_relu{i}"
+            nodes[n] = GroupNorm(groups=out_ch // 4, epsilon=1e-5, channelwise_affine=True)
+            nodes[r] = Activation(activation_fn="relu")
+            graph[n], graph[r] = {cT}, {n}
+            learnable.add(n)
+            prev = r
+        else:
+            prev = cT
+    return {"nodes": nodes, "graph": graph, "learnable": learnable, "output_node": prev}
+
+
+def combine_vae(encoder: dict, decoder: dict, latent_dim: int) -> dict:
+    """Glue encoder + (Reparameterize → ExtractZ) + decoder + merge. Wires decoder_proj's input to latent_z."""
+    nodes = {
+        **encoder["nodes"],
+        "latent": ReparameterizeLayer(),
+        "latent_z": ExtractZ(n=latent_dim),
+        **decoder["nodes"],
+        "merge": MergeOutputs(),
+    }
+    graph = {
+        **encoder["graph"],
+        "latent": {"encoder_out"},
+        "latent_z": {"latent"},
+        **{**decoder["graph"], "decoder_proj": {"latent_z"}},
+        "merge": {decoder["output_node"], "latent"},
+    }
+    learnable = encoder["learnable"] | decoder["learnable"]
+    return {"readout_graph": graph, "nodes": nodes, "learnable": frozenset(learnable)}
+
+
+# --- Reusable strided-conv VAE architectures for 28x28 input ---
+# Usable by any 28x28-image VAE config (VAE_BASELINE, VAE_BETA_OHO, SOS_BETA_OHO, …).
+VAE_ENCODER_3CONV = make_strided_encoder(input_size=28, channels=[32, 64, 128], latent_dim=2)
+VAE_DECODER_3CONV = make_strided_decoder(
+    channels_in=VAE_ENCODER_3CONV["channels_out"],
+    spatial_in=VAE_ENCODER_3CONV["spatial_out"],
+    channels=list(reversed([32, 64])),
+    out_channels=1,
+    target_spatial_sequence=list(reversed(VAE_ENCODER_3CONV["spatial_sequence"][:-1])),
+)
+VAE_ARCH_3CONV = combine_vae(VAE_ENCODER_3CONV, VAE_DECODER_3CONV, latent_dim=2)
+
+VAE_ENCODER_2CONV = make_strided_encoder(input_size=28, channels=[32, 64], latent_dim=2)
+VAE_DECODER_2CONV = make_strided_decoder(
+    channels_in=VAE_ENCODER_2CONV["channels_out"],
+    spatial_in=VAE_ENCODER_2CONV["spatial_out"],
+    channels=list(reversed([32])),
+    out_channels=1,
+    target_spatial_sequence=list(reversed(VAE_ENCODER_2CONV["spatial_sequence"][:-1])),
+)
+VAE_ARCH_2CONV = combine_vae(VAE_ENCODER_2CONV, VAE_DECODER_2CONV, latent_dim=2)
+
+
+def encoder_sample_gen_graph(encoder: dict, source_chain: tuple[str, ...]) -> dict:
+    """Encoder + Reparameterize + ExtractZ, with `source_chain` linearly wired into encoder_conv1.
+    `source_chain[0]` is the no-dep source node; `source_chain[-1]` feeds encoder_conv1.
+    Use `("x",)` for the standard sampler readout; e.g. `("z_in", "take_x", "reshape_x")` for vae_interp's encoder_scan."""
+    rewired = {
+        k: {(source_chain[-1] if dep == "x" else dep) for dep in v} for k, v in encoder["graph"].items() if k != "x"
+    }
+    chain = {source_chain[0]: set()}
+    for i in range(1, len(source_chain)):
+        chain[source_chain[i]] = {source_chain[i - 1]}
+    g = {**chain, **rewired, "latent": {"encoder_out"}, "latent_z": {"latent"}}
+    return {k: frozenset(v) for k, v in g.items()}
+
+
+def decoder_sample_gen_graph(decoder: dict, source_chain: tuple[str, ...]) -> dict:
+    """Decoder with `source_chain` linearly wired into decoder_proj.
+    `source_chain[0]` is the no-dep source node; `source_chain[-1]` feeds decoder_proj.
+    Use `("z_input",)` for vae_samples / vae_grid; e.g. `("z_dec_in", "take_z")` for vae_interp's decoder_scan."""
+    chain = {source_chain[0]: set()}
+    for i in range(1, len(source_chain)):
+        chain[source_chain[i]] = {source_chain[i - 1]}
+    g = {**chain, **decoder["graph"], "decoder_proj": {source_chain[-1]}}
+    return {k: frozenset(v) for k, v in g.items()}
+
+
 OHO_RNN32 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
@@ -3039,7 +3217,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
 
 VAE_BETA_OHO = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="vae_beta_oho",
@@ -3055,56 +3233,12 @@ VAE_BETA_OHO = GodConfig(
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},
-    readout_graph={
-        "x": {},
-        "encoder_conv1": {"x"},
-        "encoder_norm1": {"encoder_conv1"},
-        "encoder_relu1": {"encoder_norm1"},
-        "encoder_pool1": {"encoder_relu1"},
-        "encoder_conv2": {"encoder_pool1"},
-        "encoder_norm2": {"encoder_conv2"},
-        "encoder_relu2": {"encoder_norm2"},
-        "encoder_pool2": {"encoder_relu2"},
-        "encoder_out": {"encoder_pool2"},
-        "latent": {"encoder_out"},
-        "latent_z": {"latent"},
-        "decoder_proj": {"latent_z"},
-        "decoder_reshape_in": {"decoder_proj"},
-        "decoder_convT1": {"decoder_reshape_in"},
-        "decoder_norm1": {"decoder_convT1"},
-        "decoder_relu1": {"decoder_norm1"},
-        "decoder_convT2": {"decoder_relu1"},
-        "merge": {"decoder_convT2", "latent"},
-    },
-    nodes={
-        "x": UnlabeledSource(),
-        "encoder_conv1": Conv2dLayer(out_channels=32, kernel_size=3, stride=1, padding=1, use_bias=True),
-        "encoder_norm1": GroupNorm(groups=8, epsilon=1e-5, channelwise_affine=True),
-        "encoder_relu1": Activation(activation_fn="relu"),
-        "encoder_pool1": AvgPool2dLayer(kernel_size=2, stride=2),
-        "encoder_conv2": Conv2dLayer(out_channels=64, kernel_size=3, stride=1, padding=1, use_bias=True),
-        "encoder_norm2": GroupNorm(groups=16, epsilon=1e-5, channelwise_affine=True),
-        "encoder_relu2": Activation(activation_fn="relu"),
-        "encoder_pool2": AvgPool2dLayer(kernel_size=2, stride=2),
-        "encoder_out": NNLayer(n=2 * 2, activation_fn="identity", use_bias=True),
-        "latent": ReparameterizeLayer(),
-        "latent_z": ExtractZ(n=2),
-        "decoder_proj": NNLayer(n=64 * 7 * 7, activation_fn="relu", use_bias=True),
-        "decoder_reshape_in": Reshape(shape=(64, 7, 7)),
-        "decoder_convT1": ConvTranspose2dLayer(
-            out_channels=32, kernel_size=4, stride=2, padding=1, output_padding=0, use_bias=True
-        ),
-        "decoder_norm1": GroupNorm(groups=8, epsilon=1e-5, channelwise_affine=True),
-        "decoder_relu1": Activation(activation_fn="relu"),
-        "decoder_convT2": ConvTranspose2dLayer(
-            out_channels=1, kernel_size=4, stride=2, padding=1, output_padding=0, use_bias=True
-        ),
-        "merge": MergeOutputs(),
-    },
+    readout_graph=VAE_ARCH_3CONV["readout_graph"],
+    nodes=VAE_ARCH_3CONV["nodes"],
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
-            value=0.0001,
+            value=0.001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3230,19 +3364,7 @@ VAE_BETA_OHO = GodConfig(
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
-                        target=frozenset(
-                            {
-                                "encoder_conv1",
-                                "encoder_norm1",
-                                "encoder_conv2",
-                                "encoder_norm2",
-                                "encoder_out",
-                                "decoder_proj",
-                                "decoder_convT1",
-                                "decoder_norm1",
-                                "decoder_convT2",
-                            }
-                        ),
+                        target=VAE_ARCH_3CONV["learnable"],
                         optimizer=SGDConfig(
                             learning_rate="meta1_sgd1_lr",
                             weight_decay="meta1_sgd1_wd",
@@ -3398,15 +3520,7 @@ VAE_BETA_OHO = GodConfig(
     sample_generators=[
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "z_input": frozenset(),
-                "decoder_proj": frozenset({"z_input"}),
-                "decoder_reshape_in": frozenset({"decoder_proj"}),
-                "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                "decoder_norm1": frozenset({"decoder_convT1"}),
-                "decoder_relu1": frozenset({"decoder_norm1"}),
-                "decoder_convT2": frozenset({"decoder_relu1"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -3418,20 +3532,7 @@ VAE_BETA_OHO = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "x": frozenset(),
-                "encoder_conv1": frozenset({"x"}),
-                "encoder_norm1": frozenset({"encoder_conv1"}),
-                "encoder_relu1": frozenset({"encoder_norm1"}),
-                "encoder_pool1": frozenset({"encoder_relu1"}),
-                "encoder_conv2": frozenset({"encoder_pool1"}),
-                "encoder_norm2": frozenset({"encoder_conv2"}),
-                "encoder_relu2": frozenset({"encoder_norm2"}),
-                "encoder_pool2": frozenset({"encoder_relu2"}),
-                "encoder_out": frozenset({"encoder_pool2"}),
-                "latent": frozenset({"encoder_out"}),
-                "latent_z": frozenset({"latent"}),
-            },
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",)),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -3443,15 +3544,7 @@ VAE_BETA_OHO = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "z_input": frozenset(),
-                "decoder_proj": frozenset({"z_input"}),
-                "decoder_reshape_in": frozenset({"decoder_proj"}),
-                "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                "decoder_norm1": frozenset({"decoder_convT1"}),
-                "decoder_relu1": frozenset({"decoder_norm1"}),
-                "decoder_convT2": frozenset({"decoder_relu1"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -3477,22 +3570,7 @@ VAE_BETA_OHO = GodConfig(
                 "x_seq": UnlabeledSource(),
                 "y_seq": LabeledSource(),
                 "encoder_scan": Scan(
-                    graph={
-                        "z_in": frozenset(),
-                        "take_x": frozenset({"z_in"}),
-                        "reshape_x": frozenset({"take_x"}),
-                        "encoder_conv1": frozenset({"reshape_x"}),
-                        "encoder_norm1": frozenset({"encoder_conv1"}),
-                        "encoder_relu1": frozenset({"encoder_norm1"}),
-                        "encoder_pool1": frozenset({"encoder_relu1"}),
-                        "encoder_conv2": frozenset({"encoder_pool1"}),
-                        "encoder_norm2": frozenset({"encoder_conv2"}),
-                        "encoder_relu2": frozenset({"encoder_norm2"}),
-                        "encoder_pool2": frozenset({"encoder_relu2"}),
-                        "encoder_out": frozenset({"encoder_pool2"}),
-                        "latent": frozenset({"encoder_out"}),
-                        "latent_z": frozenset({"latent"}),
-                    },
+                    graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("z_in", "take_x", "reshape_x")),
                     autoregressive_mask="erase",
                     carry_transform="identity",
                     pred_source="y_seq",
@@ -3506,16 +3584,7 @@ VAE_BETA_OHO = GodConfig(
                 "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
                 "interp_y": Reshape(shape=(10, 2)),
                 "decoder_scan": Scan(
-                    graph={
-                        "z_dec_in": frozenset(),
-                        "take_z": frozenset({"z_dec_in"}),
-                        "decoder_proj": frozenset({"take_z"}),
-                        "decoder_reshape_in": frozenset({"decoder_proj"}),
-                        "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                        "decoder_norm1": frozenset({"decoder_convT1"}),
-                        "decoder_relu1": frozenset({"decoder_norm1"}),
-                        "decoder_convT2": frozenset({"decoder_relu1"}),
-                    },
+                    graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_dec_in", "take_z")),
                     autoregressive_mask="teacher_forcing",
                     carry_transform="identity",
                     pred_source="interp_y",
@@ -3559,56 +3628,12 @@ SOS_BETA_OHO = GodConfig(
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},
-    readout_graph={
-        "x": {},
-        "encoder_conv1": {"x"},
-        "encoder_norm1": {"encoder_conv1"},
-        "encoder_relu1": {"encoder_norm1"},
-        "encoder_pool1": {"encoder_relu1"},
-        "encoder_conv2": {"encoder_pool1"},
-        "encoder_norm2": {"encoder_conv2"},
-        "encoder_relu2": {"encoder_norm2"},
-        "encoder_pool2": {"encoder_relu2"},
-        "encoder_out": {"encoder_pool2"},
-        "latent": {"encoder_out"},
-        "latent_z": {"latent"},
-        "decoder_proj": {"latent_z"},
-        "decoder_reshape_in": {"decoder_proj"},
-        "decoder_convT1": {"decoder_reshape_in"},
-        "decoder_norm1": {"decoder_convT1"},
-        "decoder_relu1": {"decoder_norm1"},
-        "decoder_convT2": {"decoder_relu1"},
-        "merge": {"decoder_convT2", "latent"},
-    },
-    nodes={
-        "x": UnlabeledSource(),
-        "encoder_conv1": Conv2dLayer(out_channels=32, kernel_size=3, stride=1, padding=1, use_bias=True),
-        "encoder_norm1": GroupNorm(groups=8, epsilon=1e-5, channelwise_affine=True),
-        "encoder_relu1": Activation(activation_fn="relu"),
-        "encoder_pool1": AvgPool2dLayer(kernel_size=2, stride=2),
-        "encoder_conv2": Conv2dLayer(out_channels=64, kernel_size=3, stride=1, padding=1, use_bias=True),
-        "encoder_norm2": GroupNorm(groups=16, epsilon=1e-5, channelwise_affine=True),
-        "encoder_relu2": Activation(activation_fn="relu"),
-        "encoder_pool2": AvgPool2dLayer(kernel_size=2, stride=2),
-        "encoder_out": NNLayer(n=2 * 2, activation_fn="identity", use_bias=True),
-        "latent": ReparameterizeLayer(),
-        "latent_z": ExtractZ(n=2),
-        "decoder_proj": NNLayer(n=64 * 7 * 7, activation_fn="relu", use_bias=True),
-        "decoder_reshape_in": Reshape(shape=(64, 7, 7)),
-        "decoder_convT1": ConvTranspose2dLayer(
-            out_channels=32, kernel_size=4, stride=2, padding=1, output_padding=0, use_bias=True
-        ),
-        "decoder_norm1": GroupNorm(groups=8, epsilon=1e-5, channelwise_affine=True),
-        "decoder_relu1": Activation(activation_fn="relu"),
-        "decoder_convT2": ConvTranspose2dLayer(
-            out_channels=1, kernel_size=4, stride=2, padding=1, output_padding=0, use_bias=True
-        ),
-        "merge": MergeOutputs(),
-    },
+    readout_graph=VAE_ARCH_3CONV["readout_graph"],
+    nodes=VAE_ARCH_3CONV["nodes"],
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
-            value=0.0001,
+            value=0.001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3737,19 +3762,7 @@ SOS_BETA_OHO = GodConfig(
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
-                        target=frozenset(
-                            {
-                                "encoder_conv1",
-                                "encoder_norm1",
-                                "encoder_conv2",
-                                "encoder_norm2",
-                                "encoder_out",
-                                "decoder_proj",
-                                "decoder_convT1",
-                                "decoder_norm1",
-                                "decoder_convT2",
-                            }
-                        ),
+                        target=VAE_ARCH_3CONV["learnable"],
                         optimizer=SGDConfig(
                             learning_rate="meta1_sgd1_lr",
                             weight_decay="meta1_sgd1_wd",
@@ -3815,7 +3828,7 @@ SOS_BETA_OHO = GodConfig(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=1e-4,
-                        beta=0.1,
+                        beta=0.5,
                         use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
@@ -3911,15 +3924,7 @@ SOS_BETA_OHO = GodConfig(
     sample_generators=[
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "z_input": frozenset(),
-                "decoder_proj": frozenset({"z_input"}),
-                "decoder_reshape_in": frozenset({"decoder_proj"}),
-                "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                "decoder_norm1": frozenset({"decoder_convT1"}),
-                "decoder_relu1": frozenset({"decoder_norm1"}),
-                "decoder_convT2": frozenset({"decoder_relu1"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -3931,20 +3936,7 @@ SOS_BETA_OHO = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "x": frozenset(),
-                "encoder_conv1": frozenset({"x"}),
-                "encoder_norm1": frozenset({"encoder_conv1"}),
-                "encoder_relu1": frozenset({"encoder_norm1"}),
-                "encoder_pool1": frozenset({"encoder_relu1"}),
-                "encoder_conv2": frozenset({"encoder_pool1"}),
-                "encoder_norm2": frozenset({"encoder_conv2"}),
-                "encoder_relu2": frozenset({"encoder_norm2"}),
-                "encoder_pool2": frozenset({"encoder_relu2"}),
-                "encoder_out": frozenset({"encoder_pool2"}),
-                "latent": frozenset({"encoder_out"}),
-                "latent_z": frozenset({"latent"}),
-            },
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",)),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -3956,15 +3948,364 @@ SOS_BETA_OHO = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "z_input": frozenset(),
-                "decoder_proj": frozenset({"z_input"}),
-                "decoder_reshape_in": frozenset({"decoder_proj"}),
-                "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                "decoder_norm1": frozenset({"decoder_convT1"}),
-                "decoder_relu1": frozenset({"decoder_norm1"}),
-                "decoder_convT2": frozenset({"decoder_relu1"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
+            source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
+            input_shape=(2,),
+            num_samples=100,
+            every_n_epochs=10,
+            seed=None,
+            input=GridSampleInput(min_value=-3.0, max_value=3.0, n_per_axis=10),
+            reporter=GridReporter(title="vae_grid", rows=10, cols=10),
+        ),
+    ],
+    label_mask_value=-1e10,
+    unlabeled_mask_value=-1e10,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
+)
+
+
+SOS_BETA_OHO_2CONV = GodConfig(
+    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="sos_beta_oho_2conv",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=True),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
+        scalar_queue_size=0,
+        sample_queue_size=2,
+    ),
+    epochs=1_000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=100,
+    transition_graph={},
+    readout_graph=VAE_ARCH_2CONV["readout_graph"],
+    nodes=VAE_ARCH_2CONV["nodes"],
+    aliases={},
+    hyperparameters={
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_beta": HyperparameterConfig(
+            value=1.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_beta": HyperparameterConfig(
+            value=0.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=False,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta1_beta",
+                likelihood=RegressionObjective(reduction="sum"),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
+            ),
+            dataset_source=SOSTaskFamily(
+                grid_size=28,
+                sigma_x=1.0,
+                sigma_y=1.0,
+                n=50_000,
+                patch_h=28,
+                patch_w=28,
+                region=(6.0, 22.0, 6.0, 22.0),
+                region_mode="exclude_region",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=VAE_ARCH_2CONV["learnable"],
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=RegressionObjective(reduction="sum"),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
+            ),
+            dataset_source=SOSTaskFamily(
+                grid_size=28,
+                sigma_x=1.0,
+                sigma_y=1.0,
+                n=10_000,
+                patch_h=28,
+                patch_w=28,
+                region=(6.0, 22.0, 6.0, 22.0),
+                region_mode="only_region",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-4,
+                        beta=0.5,
+                        use_finite_hvp=1e-3,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_beta"}),
+                        optimizer=AdamConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=RegressionObjective(reduction="sum"),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
+            ),
+            dataset_source=SOSTaskFamily(
+                grid_size=28,
+                sigma_x=1.0,
+                sigma_y=1.0,
+                n=10_000,
+                patch_h=28,
+                patch_w=28,
+                region=(0.0, 0.0, 0.0, 0.0),
+                region_mode="full",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=100,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=500,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+        ),
+    ],
+    sample_generators=[
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_2CONV, source_chain=("z_input",)),
+            source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
+            input_shape=(2,),
+            num_samples=16,
+            every_n_epochs=10,
+            seed=None,
+            input=GaussianSampleInput(),
+            reporter=ImageReporter(title="vae_samples"),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_2CONV, source_chain=("x",)),
+            source_nodes={},
+            aliases={},
+            input_shape=(1, 28, 28),
+            num_samples=512,
+            every_n_epochs=10,
+            seed=42,
+            input=DataSampleInput(),
+            reporter=UMAPReporter(title="vae_latent"),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_2CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -5069,7 +5410,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
 
 VAE_BASELINE = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="vae_baseline",
@@ -5085,52 +5426,8 @@ VAE_BASELINE = GodConfig(
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},
-    readout_graph={
-        "x": {},
-        "encoder_conv1": {"x"},
-        "encoder_norm1": {"encoder_conv1"},
-        "encoder_relu1": {"encoder_norm1"},
-        "encoder_pool1": {"encoder_relu1"},
-        "encoder_conv2": {"encoder_pool1"},
-        "encoder_norm2": {"encoder_conv2"},
-        "encoder_relu2": {"encoder_norm2"},
-        "encoder_pool2": {"encoder_relu2"},
-        "encoder_out": {"encoder_pool2"},
-        "latent": {"encoder_out"},
-        "latent_z": {"latent"},
-        "decoder_proj": {"latent_z"},
-        "decoder_reshape_in": {"decoder_proj"},
-        "decoder_convT1": {"decoder_reshape_in"},
-        "decoder_norm1": {"decoder_convT1"},
-        "decoder_relu1": {"decoder_norm1"},
-        "decoder_convT2": {"decoder_relu1"},
-        "merge": {"decoder_convT2", "latent"},
-    },
-    nodes={
-        "x": UnlabeledSource(),
-        "encoder_conv1": Conv2dLayer(out_channels=32, kernel_size=3, stride=1, padding=1, use_bias=True),
-        "encoder_norm1": GroupNorm(groups=8, epsilon=1e-5, channelwise_affine=True),
-        "encoder_relu1": Activation(activation_fn="relu"),
-        "encoder_pool1": AvgPool2dLayer(kernel_size=2, stride=2),
-        "encoder_conv2": Conv2dLayer(out_channels=64, kernel_size=3, stride=1, padding=1, use_bias=True),
-        "encoder_norm2": GroupNorm(groups=16, epsilon=1e-5, channelwise_affine=True),
-        "encoder_relu2": Activation(activation_fn="relu"),
-        "encoder_pool2": AvgPool2dLayer(kernel_size=2, stride=2),
-        "encoder_out": NNLayer(n=2 * 2, activation_fn="identity", use_bias=True),
-        "latent": ReparameterizeLayer(),
-        "latent_z": ExtractZ(n=2),
-        "decoder_proj": NNLayer(n=64 * 7 * 7, activation_fn="relu", use_bias=True),
-        "decoder_reshape_in": Reshape(shape=(64, 7, 7)),
-        "decoder_convT1": ConvTranspose2dLayer(
-            out_channels=32, kernel_size=4, stride=2, padding=1, output_padding=0, use_bias=True
-        ),
-        "decoder_norm1": GroupNorm(groups=8, epsilon=1e-5, channelwise_affine=True),
-        "decoder_relu1": Activation(activation_fn="relu"),
-        "decoder_convT2": ConvTranspose2dLayer(
-            out_channels=1, kernel_size=4, stride=2, padding=1, output_padding=0, use_bias=True
-        ),
-        "merge": MergeOutputs(),
-    },
+    readout_graph=VAE_ARCH_3CONV["readout_graph"],
+    nodes=VAE_ARCH_3CONV["nodes"],
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
@@ -5260,19 +5557,7 @@ VAE_BASELINE = GodConfig(
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
-                        target=frozenset(
-                            {
-                                "encoder_conv1",
-                                "encoder_norm1",
-                                "encoder_conv2",
-                                "encoder_norm2",
-                                "encoder_out",
-                                "decoder_proj",
-                                "decoder_convT1",
-                                "decoder_norm1",
-                                "decoder_convT2",
-                            }
-                        ),
+                        target=VAE_ARCH_3CONV["learnable"],
                         optimizer=AdamConfig(
                             learning_rate="meta1_sgd1_lr",
                             weight_decay="meta1_sgd1_wd",
@@ -5414,15 +5699,7 @@ VAE_BASELINE = GodConfig(
     sample_generators=[
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "z_input": frozenset(),
-                "decoder_proj": frozenset({"z_input"}),
-                "decoder_reshape_in": frozenset({"decoder_proj"}),
-                "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                "decoder_norm1": frozenset({"decoder_convT1"}),
-                "decoder_relu1": frozenset({"decoder_norm1"}),
-                "decoder_convT2": frozenset({"decoder_relu1"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -5434,20 +5711,7 @@ VAE_BASELINE = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "x": frozenset(),
-                "encoder_conv1": frozenset({"x"}),
-                "encoder_norm1": frozenset({"encoder_conv1"}),
-                "encoder_relu1": frozenset({"encoder_norm1"}),
-                "encoder_pool1": frozenset({"encoder_relu1"}),
-                "encoder_conv2": frozenset({"encoder_pool1"}),
-                "encoder_norm2": frozenset({"encoder_conv2"}),
-                "encoder_relu2": frozenset({"encoder_norm2"}),
-                "encoder_pool2": frozenset({"encoder_relu2"}),
-                "encoder_out": frozenset({"encoder_pool2"}),
-                "latent": frozenset({"encoder_out"}),
-                "latent_z": frozenset({"latent"}),
-            },
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",)),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -5459,15 +5723,7 @@ VAE_BASELINE = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                "z_input": frozenset(),
-                "decoder_proj": frozenset({"z_input"}),
-                "decoder_reshape_in": frozenset({"decoder_proj"}),
-                "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                "decoder_norm1": frozenset({"decoder_convT1"}),
-                "decoder_relu1": frozenset({"decoder_norm1"}),
-                "decoder_convT2": frozenset({"decoder_relu1"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -5493,22 +5749,7 @@ VAE_BASELINE = GodConfig(
                 "x_seq": UnlabeledSource(),
                 "y_seq": LabeledSource(),
                 "encoder_scan": Scan(
-                    graph={
-                        "z_in": frozenset(),
-                        "take_x": frozenset({"z_in"}),
-                        "reshape_x": frozenset({"take_x"}),
-                        "encoder_conv1": frozenset({"reshape_x"}),
-                        "encoder_norm1": frozenset({"encoder_conv1"}),
-                        "encoder_relu1": frozenset({"encoder_norm1"}),
-                        "encoder_pool1": frozenset({"encoder_relu1"}),
-                        "encoder_conv2": frozenset({"encoder_pool1"}),
-                        "encoder_norm2": frozenset({"encoder_conv2"}),
-                        "encoder_relu2": frozenset({"encoder_norm2"}),
-                        "encoder_pool2": frozenset({"encoder_relu2"}),
-                        "encoder_out": frozenset({"encoder_pool2"}),
-                        "latent": frozenset({"encoder_out"}),
-                        "latent_z": frozenset({"latent"}),
-                    },
+                    graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("z_in", "take_x", "reshape_x")),
                     autoregressive_mask="erase",
                     carry_transform="identity",
                     pred_source="y_seq",
@@ -5522,16 +5763,7 @@ VAE_BASELINE = GodConfig(
                 "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
                 "interp_y": Reshape(shape=(10, 2)),
                 "decoder_scan": Scan(
-                    graph={
-                        "z_dec_in": frozenset(),
-                        "take_z": frozenset({"z_dec_in"}),
-                        "decoder_proj": frozenset({"take_z"}),
-                        "decoder_reshape_in": frozenset({"decoder_proj"}),
-                        "decoder_convT1": frozenset({"decoder_reshape_in"}),
-                        "decoder_norm1": frozenset({"decoder_convT1"}),
-                        "decoder_relu1": frozenset({"decoder_norm1"}),
-                        "decoder_convT2": frozenset({"decoder_relu1"}),
-                    },
+                    graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_dec_in", "take_z")),
                     autoregressive_mask="teacher_forcing",
                     carry_transform="identity",
                     pred_source="interp_y",

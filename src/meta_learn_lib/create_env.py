@@ -67,7 +67,7 @@ def get_output_shapes(
                 node_features[canon] = (n_in // 2,)
             case MergeOutputs():
                 node_features[canon] = (0,)  # is an end node
-            case ExtractZ(n):
+            case ExtractZ(n) | ExtractMu(n):
                 node_features[canon] = (n,)
             case Reshape(target_shape):
                 node_features[canon] = target_shape

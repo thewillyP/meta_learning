@@ -114,11 +114,14 @@ def make_strided_decoder(
 
 
 def combine_vae(encoder: dict, decoder: dict, latent_dim: int) -> dict:
-    """Glue encoder + (Reparameterize → ExtractZ) + decoder + merge. Wires decoder_proj's input to latent_z."""
+    """Glue encoder + (Reparameterize → ExtractZ) + decoder + merge. Wires decoder_proj's input to latent_z.
+    Also registers a `latent_mu` node (ExtractMu) for sample generators that want the deterministic mean
+    instead of the sampled z; it is NOT wired into the main readout_graph."""
     nodes = {
         **encoder["nodes"],
         "latent": ReparameterizeLayer(),
         "latent_z": ExtractZ(n=latent_dim),
+        "latent_mu": ExtractMu(n=latent_dim),
         **decoder["nodes"],
         "merge": MergeOutputs(),
     }
@@ -156,17 +159,18 @@ VAE_DECODER_2CONV = make_strided_decoder(
 VAE_ARCH_2CONV = combine_vae(VAE_ENCODER_2CONV, VAE_DECODER_2CONV, latent_dim=2)
 
 
-def encoder_sample_gen_graph(encoder: dict, source_chain: tuple[str, ...]) -> dict:
-    """Encoder + Reparameterize + ExtractZ, with `source_chain` linearly wired into encoder_conv1.
+def encoder_sample_gen_graph(encoder: dict, source_chain: tuple[str, ...], extract: Literal["z", "mu"]) -> dict:
+    """Encoder + Reparameterize + (ExtractZ or ExtractMu), with `source_chain` linearly wired into encoder_conv1.
     `source_chain[0]` is the no-dep source node; `source_chain[-1]` feeds encoder_conv1.
-    Use `("x",)` for the standard sampler readout; e.g. `("z_in", "take_x", "reshape_x")` for vae_interp's encoder_scan."""
+    `extract="z"` reads the sampled latent (latent_z); `extract="mu"` reads the deterministic mean (latent_mu)."""
     rewired = {
         k: {(source_chain[-1] if dep == "x" else dep) for dep in v} for k, v in encoder["graph"].items() if k != "x"
     }
     chain = {source_chain[0]: set()}
     for i in range(1, len(source_chain)):
         chain[source_chain[i]] = {source_chain[i - 1]}
-    g = {**chain, **rewired, "latent": {"encoder_out"}, "latent_z": {"latent"}}
+    final = {"z": "latent_z", "mu": "latent_mu"}[extract]
+    g = {**chain, **rewired, "latent": {"encoder_out"}, final: {"latent"}}
     return {k: frozenset(v) for k, v in g.items()}
 
 
@@ -3238,7 +3242,7 @@ VAE_BETA_OHO = GodConfig(
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
-            value=0.001,
+            value=0.0002,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3436,6 +3440,7 @@ VAE_BETA_OHO = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_beta"}),
+                        # target=frozenset({"meta1_beta", "meta1_sgd1_lr", "meta1_sgd1_wd"}),
                         optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
@@ -3532,7 +3537,7 @@ VAE_BETA_OHO = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",)),
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",), extract="mu"),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -3570,7 +3575,9 @@ VAE_BETA_OHO = GodConfig(
                 "x_seq": UnlabeledSource(),
                 "y_seq": LabeledSource(),
                 "encoder_scan": Scan(
-                    graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("z_in", "take_x", "reshape_x")),
+                    graph=encoder_sample_gen_graph(
+                        VAE_ENCODER_3CONV, source_chain=("z_in", "take_x", "reshape_x"), extract="mu"
+                    ),
                     autoregressive_mask="erase",
                     carry_transform="identity",
                     pred_source="y_seq",
@@ -3936,7 +3943,7 @@ SOS_BETA_OHO = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",)),
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",), extract="mu"),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -4293,7 +4300,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_2CONV, source_chain=("x",)),
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_2CONV, source_chain=("x",), extract="mu"),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -5711,7 +5718,7 @@ VAE_BASELINE = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",)),
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",), extract="mu"),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -5749,7 +5756,9 @@ VAE_BASELINE = GodConfig(
                 "x_seq": UnlabeledSource(),
                 "y_seq": LabeledSource(),
                 "encoder_scan": Scan(
-                    graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("z_in", "take_x", "reshape_x")),
+                    graph=encoder_sample_gen_graph(
+                        VAE_ENCODER_3CONV, source_chain=("z_in", "take_x", "reshape_x"), extract="mu"
+                    ),
                     autoregressive_mask="erase",
                     carry_transform="identity",
                     pred_source="y_seq",

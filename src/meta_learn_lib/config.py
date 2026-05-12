@@ -403,6 +403,11 @@ class ExtractZ:
 
 
 @dataclass(frozen=True)
+class ExtractMu:
+    n: int
+
+
+@dataclass(frozen=True)
 class Reshape:
     shape: tuple[int, ...]
 
@@ -443,6 +448,7 @@ type Node = Union[
     ReparameterizeLayer,
     MergeOutputs,
     ExtractZ,
+    ExtractMu,
     Reshape,
     Activation,
     LayerNorm,

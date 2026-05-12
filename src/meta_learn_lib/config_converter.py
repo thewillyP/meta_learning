@@ -93,6 +93,7 @@ def make_converter() -> Converter:
             ReparameterizeLayer,
             MergeOutputs,
             ExtractZ,
+            ExtractMu,
             Reshape,
             Activation,
             LayerNorm,

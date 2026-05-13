@@ -5672,7 +5672,7 @@ VAE_BASELINE = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=500,
+                num_steps=49,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),

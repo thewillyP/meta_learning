@@ -304,6 +304,7 @@ class NNLayer(eqx.Module):
     n: int
     activation_fn: ACTIVATION_FN
     use_bias: bool
+    init: Literal["lecun_normal", "pytorch_default"]
 
 
 class VanillaRNNLayer(eqx.Module):

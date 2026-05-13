@@ -31,7 +31,7 @@ def get_output_shapes(
     for node_name in toposort_flatten(node_graph):
         canon = aliases.get(node_name, node_name)
         match nodes[canon]:
-            case NNLayer(n, activation_fn, use_bias):
+            case NNLayer(n, activation_fn, use_bias, init):
                 node_features[canon] = (n,)
             case VanillaRNNLayer(nn_layer, layer_norm, use_random_init, time_constant):
                 node_features[canon] = (nn_layer.n,)
@@ -231,13 +231,19 @@ def create_inference_parameters[ENV](
         is_learnable = canon in learnables
         is_transition = node_name not in readout_graph
         match node:
-            case NNLayer(n, activation_fn, use_bias):
+            case NNLayer(n, activation_fn, use_bias, init):
                 n_in = sum(math.prod(node_features[aliases.get(c, c)]) for c in node_graph[node_name])
-                k1, k2, prng = jax.random.split(prng, 3)
+                k1, k2, k_b, prng = jax.random.split(prng, 4)
 
                 linear = eqx.nn.Linear(n_in, n, use_bias=use_bias, key=k1)
-                new_weight = jax.random.normal(k1, (n, n_in)) * jnp.sqrt(1 / n_in)
-                new_bias = jnp.zeros((n,)) if use_bias else None
+                match init:
+                    case "lecun_normal":
+                        new_weight = jax.random.normal(k1, (n, n_in)) * jnp.sqrt(1 / n_in)
+                        new_bias = jnp.zeros((n,)) if use_bias else None
+                    case "pytorch_default":
+                        bound = 1.0 / jnp.sqrt(n_in)
+                        new_weight = jax.random.uniform(k1, (n, n_in), minval=-bound, maxval=bound)
+                        new_bias = jax.random.uniform(k_b, (n,), minval=-bound, maxval=bound) if use_bias else None
                 where = lambda l: (l.weight, l.bias)
                 new_linear: eqx.Module = eqx.tree_at(where, linear, (new_weight, new_bias))
 

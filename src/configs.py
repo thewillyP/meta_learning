@@ -46,7 +46,7 @@ def make_strided_encoder(input_size: int, channels: list[int], latent_dim: int) 
         prev = r
         h = conv_out_size(h, KERNEL, STRIDE, PADDING)
         spatial_sequence.append(h)
-    nodes["encoder_out"] = NNLayer(n=latent_dim * 2, activation_fn="identity", use_bias=True)
+    nodes["encoder_out"] = NNLayer(n=latent_dim * 2, activation_fn="identity", use_bias=True, init="lecun_normal")
     graph["encoder_out"] = {prev}
     learnable.add("encoder_out")
     return {
@@ -82,7 +82,9 @@ def make_strided_decoder(
             f"{len(target_spatial_sequence)} entries; must match."
         )
     nodes: dict = {
-        "decoder_proj": NNLayer(n=channels_in * spatial_in * spatial_in, activation_fn="identity", use_bias=True),
+        "decoder_proj": NNLayer(
+            n=channels_in * spatial_in * spatial_in, activation_fn="identity", use_bias=True, init="lecun_normal"
+        ),
         "decoder_reshape_in": Reshape(shape=(channels_in, spatial_in, spatial_in)),
     }
     graph: dict = {
@@ -159,7 +161,13 @@ VAE_DECODER_2CONV = make_strided_decoder(
 VAE_ARCH_2CONV = combine_vae(VAE_ENCODER_2CONV, VAE_DECODER_2CONV, latent_dim=2)
 
 
-def make_mlp_encoder(input_size: int, channels: int, hidden_layers: list[int], latent_dim: int) -> dict:
+def make_mlp_encoder(
+    input_size: int,
+    channels: int,
+    hidden_layers: list[int],
+    latent_dim: int,
+    init: Literal["lecun_normal", "pytorch_default"],
+) -> dict:
     """MLP encoder: Reshape → (Linear+ReLU) × len(hidden_layers) → Linear(2*latent_dim).
     `input_size` is per-side length of a (channels, input_size, input_size) image.
     Returns: {nodes, graph, learnable}. Source node is "x"."""
@@ -170,35 +178,41 @@ def make_mlp_encoder(input_size: int, channels: int, hidden_layers: list[int], l
     prev = "encoder_flatten"
     for i, h in enumerate(hidden_layers, start=1):
         name = f"encoder_linear{i}"
-        nodes[name] = NNLayer(n=h, activation_fn="relu", use_bias=True)
+        nodes[name] = NNLayer(n=h, activation_fn="relu", use_bias=True, init=init)
         graph[name] = {prev}
         learnable.add(name)
         prev = name
-    nodes["encoder_out"] = NNLayer(n=latent_dim * 2, activation_fn="identity", use_bias=True)
+    nodes["encoder_out"] = NNLayer(n=latent_dim * 2, activation_fn="identity", use_bias=True, init=init)
     graph["encoder_out"] = {prev}
     learnable.add("encoder_out")
     return {"nodes": nodes, "graph": graph, "learnable": learnable}
 
 
-def make_mlp_decoder(latent_dim: int, hidden_layers: list[int], output_size: int, output_channels: int) -> dict:
+def make_mlp_decoder(
+    latent_dim: int,
+    hidden_layers: list[int],
+    output_size: int,
+    output_channels: int,
+    init: Literal["lecun_normal", "pytorch_default"],
+) -> dict:
     """MLP decoder: Linear(hidden_layers[0]) → (Linear+ReLU) × rest → Linear(flat) → sigmoid → Reshape.
     First layer named "decoder_proj" (combine_vae wires its input). Final node is the reshape to image.
     Returns: {nodes, graph, learnable, output_node}."""
     if not hidden_layers:
         raise ValueError("hidden_layers must be non-empty")
     flat_size = output_channels * output_size * output_size
-    nodes: dict = {"decoder_proj": NNLayer(n=hidden_layers[0], activation_fn="relu", use_bias=True)}
+    nodes: dict = {"decoder_proj": NNLayer(n=hidden_layers[0], activation_fn="relu", use_bias=True, init=init)}
     graph: dict = {"decoder_proj": set()}
     learnable: set[str] = {"decoder_proj"}
     prev = "decoder_proj"
     for i, h in enumerate(hidden_layers[1:], start=2):
         name = f"decoder_linear{i}"
-        nodes[name] = NNLayer(n=h, activation_fn="relu", use_bias=True)
+        nodes[name] = NNLayer(n=h, activation_fn="relu", use_bias=True, init=init)
         graph[name] = {prev}
         learnable.add(name)
         prev = name
     final_linear = f"decoder_linear{len(hidden_layers) + 1}"
-    nodes[final_linear] = NNLayer(n=flat_size, activation_fn="identity", use_bias=True)
+    nodes[final_linear] = NNLayer(n=flat_size, activation_fn="identity", use_bias=True, init=init)
     nodes["decoder_sigmoid"] = Activation(activation_fn="sigmoid")
     nodes["decoder_reshape_out"] = Reshape(shape=(output_channels, output_size, output_size))
     graph[final_linear] = {prev}
@@ -208,8 +222,12 @@ def make_mlp_decoder(latent_dim: int, hidden_layers: list[int], output_size: int
     return {"nodes": nodes, "graph": graph, "learnable": learnable, "output_node": "decoder_reshape_out"}
 
 
-VAE_ENCODER_MLP = make_mlp_encoder(input_size=28, channels=1, hidden_layers=[784, 784], latent_dim=2)
-VAE_DECODER_MLP = make_mlp_decoder(latent_dim=2, hidden_layers=[784, 784], output_size=28, output_channels=1)
+VAE_ENCODER_MLP = make_mlp_encoder(
+    input_size=28, channels=1, hidden_layers=[784, 784], latent_dim=2, init="pytorch_default"
+)
+VAE_DECODER_MLP = make_mlp_decoder(
+    latent_dim=2, hidden_layers=[784, 784], output_size=28, output_channels=1, init="pytorch_default"
+)
 VAE_ARCH_MLP = combine_vae(VAE_ENCODER_MLP, VAE_DECODER_MLP, latent_dim=2)
 
 
@@ -272,6 +290,7 @@ OHO_RNN32 = GodConfig(
                 n=32,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -281,6 +300,7 @@ OHO_RNN32 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -585,6 +605,7 @@ OHO_RNN32_ADAM = GodConfig(
                 n=32,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -594,6 +615,7 @@ OHO_RNN32_ADAM = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -899,6 +921,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 n=32,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -909,6 +932,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 n=32,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -918,6 +942,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -1232,6 +1257,7 @@ OHO_RNN256_V2 = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -1241,6 +1267,7 @@ OHO_RNN256_V2 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -1545,6 +1572,7 @@ OHO_RNN256_V3 = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -1554,6 +1582,7 @@ OHO_RNN256_V3 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -1855,6 +1884,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -1864,6 +1894,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -2159,6 +2190,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -2168,6 +2200,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -2476,6 +2509,7 @@ RNN256_CIFAR10 = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -2485,6 +2519,7 @@ RNN256_CIFAR10 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -2741,6 +2776,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -3041,6 +3077,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -4469,14 +4506,14 @@ VAE_BETA_OHO_ADAM = GodConfig(
     nodes={
         "x": UnlabeledSource(),
         "concat": Concat(),
-        "encoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "encoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "encoder_out": NNLayer(n=2 * 2, activation_fn="identity", use_bias=True),
+        "encoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "encoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "encoder_out": NNLayer(n=2 * 2, activation_fn="identity", use_bias=True, init="lecun_normal"),
         "latent": ReparameterizeLayer(),
         "latent_z": ExtractZ(n=2),
-        "decoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "decoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True),
+        "decoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "decoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True, init="lecun_normal"),
         "decoder_reshape": Reshape(shape=(1, 28, 28)),
         "merge": MergeOutputs(),
     },
@@ -4847,14 +4884,14 @@ VAE_LR_OHO = GodConfig(
     nodes={
         "x": UnlabeledSource(),
         "concat": Concat(),
-        "encoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "encoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "encoder_out": NNLayer(n=2 * 2, activation_fn="identity", use_bias=True),
+        "encoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "encoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "encoder_out": NNLayer(n=2 * 2, activation_fn="identity", use_bias=True, init="lecun_normal"),
         "latent": ReparameterizeLayer(),
         "latent_z": ExtractZ(n=2),
-        "decoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "decoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True),
-        "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True),
+        "decoder_hidden1": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "decoder_hidden2": NNLayer(n=400, activation_fn="relu", use_bias=True, init="lecun_normal"),
+        "decoder_out": NNLayer(n=784, activation_fn="identity", use_bias=True, init="lecun_normal"),
         "decoder_reshape": Reshape(shape=(1, 28, 28)),
         "merge": MergeOutputs(),
     },
@@ -5255,6 +5292,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -5264,6 +5302,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -6377,6 +6416,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -6386,6 +6426,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -6685,6 +6726,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 n=32,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -6694,6 +6736,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -7002,6 +7045,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 n=256,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -7011,6 +7055,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
     },
     aliases={},
@@ -7310,6 +7355,7 @@ OHO_RNN32_TEST = GodConfig(
                 n=32,
                 activation_fn="tanh",
                 use_bias=True,
+                init="lecun_normal",
             ),
             layer_norm=None,
             use_random_init=False,
@@ -7319,6 +7365,7 @@ OHO_RNN32_TEST = GodConfig(
             n=10,
             activation_fn="identity",
             use_bias=True,
+            init="lecun_normal",
         ),
         "softmax": Activation(activation_fn="softmax"),
     },

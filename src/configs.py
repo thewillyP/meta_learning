@@ -5936,7 +5936,7 @@ VAE_BASELINE = GodConfig(
 
 
 VAE_BASELINE_MLP = GodConfig(
-    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
+    seed=SeedConfig(global_seed=7, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
@@ -5949,7 +5949,7 @@ VAE_BASELINE_MLP = GodConfig(
         scalar_queue_size=0,
         sample_queue_size=2,
     ),
-    epochs=50,
+    epochs=100,
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},
@@ -6092,7 +6092,7 @@ VAE_BASELINE_MLP = GodConfig(
                             momentum="meta1_sgd1_momentum",
                             second_momentum=0.999,
                             eps=1e-8,
-                            eps_root=1e-4,
+                            eps_root=0.0,
                         ),
                     ),
                 },

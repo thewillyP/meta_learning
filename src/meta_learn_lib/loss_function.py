@@ -155,15 +155,20 @@ def create_loss_fn[ENV](
                 return loss, {"loss": scalar(nan_if_masked(loss, has_label))}
 
         case ELBOObjective(beta_hp, likelihood, posterior, prior):
-            inner_loss_fn = create_loss_fn(likelihood, unlabeled_mask_value, unlabeled_mask_value, task_interface)
+            inner_loss_fn = create_loss_fn(likelihood, label_mask_value, label_mask_value, task_interface)
 
             def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 x, target = data
-                recon_loss, stats = inner_loss_fn(env, outputs, (x, x))
+                # Mask source = y (target); x may be padded with a safe value the encoder tolerates
+                # (e.g. 0.0). Synthesize a target where padded slots carry label_mask_value so the
+                # inner loss's `target != label_mask_value` mask still works.
+                example_mask = jnp.any(target != label_mask_value, axis=tuple(range(2, target.ndim)))
+                pixel_mask = example_mask.reshape(example_mask.shape + (1,) * (x.ndim - example_mask.ndim))
+                masked_x = jnp.where(pixel_mask, x, label_mask_value)
+                recon_loss, stats = inner_loss_fn(env, outputs, (x, masked_x))
 
                 beta = task_interface.kl_regularizer_beta.get(env)[0]
-                mask = jnp.any(target != label_mask_value, axis=tuple(range(2, target.ndim)))
-                kl_value = kl(posterior, prior, outputs, mask)
+                kl_value = kl(posterior, prior, outputs, example_mask)
 
                 loss = LOSS(recon_loss + beta * kl_value)
                 stats["kl"] = scalar(jax.lax.stop_gradient(kl_value))

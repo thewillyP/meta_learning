@@ -317,6 +317,7 @@ OHO_RNN32 = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -378,6 +379,7 @@ OHO_RNN32 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -447,6 +449,7 @@ OHO_RNN32 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -627,6 +630,7 @@ OHO_RNN32_ADAM = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -691,6 +695,7 @@ OHO_RNN32_ADAM = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -757,6 +762,7 @@ OHO_RNN32_ADAM = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -958,6 +964,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1019,6 +1026,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1088,6 +1096,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1268,6 +1277,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1329,6 +1339,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1398,6 +1409,7 @@ OHO_RNN256_V2 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1578,6 +1590,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1639,6 +1652,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1705,6 +1719,7 @@ OHO_RNN256_V3 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -1883,6 +1898,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -1942,6 +1958,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2006,6 +2023,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2194,6 +2212,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2253,6 +2272,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2320,6 +2340,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2468,6 +2489,7 @@ RNN256_CIFAR10 = GodConfig(
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2527,6 +2549,7 @@ RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2577,6 +2600,7 @@ RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2751,6 +2775,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2810,6 +2835,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -2874,6 +2900,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -3048,6 +3075,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -3107,6 +3135,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -3171,6 +3200,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -3342,6 +3372,7 @@ VAE_BETA_OHO = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -3408,6 +3439,7 @@ VAE_BETA_OHO = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -3483,6 +3515,7 @@ VAE_BETA_OHO = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -3532,6 +3565,7 @@ VAE_BETA_OHO = GodConfig(
             num_samples=16,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GaussianSampleInput(),
             reporter=ImageReporter(title="vae_samples"),
         ),
@@ -3544,6 +3578,7 @@ VAE_BETA_OHO = GodConfig(
             num_samples=512,
             every_n_epochs=10,
             seed=42,
+            shuffle=False,
             input=DataSampleInput(),
             reporter=UMAPReporter(title="vae_latent"),
         ),
@@ -3556,8 +3591,9 @@ VAE_BETA_OHO = GodConfig(
             num_samples=100,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
-            reporter=GridReporter(title="vae_grid", rows=10, cols=10),
+            reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
         ),
         SampleGeneratorConfig(
             transition_graph={},
@@ -3605,8 +3641,9 @@ VAE_BETA_OHO = GodConfig(
             num_samples=4,
             every_n_epochs=10,
             seed=42,
+            shuffle=False,
             input=InterpolationSampleInput(pixel_transform="normalize"),
-            reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10)),
+            reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10, show_z_labels=False)),
         ),
     ],
     label_mask_value=-1e10,
@@ -3743,6 +3780,7 @@ SOS_BETA_OHO = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -3812,6 +3850,7 @@ SOS_BETA_OHO = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -3889,6 +3928,7 @@ SOS_BETA_OHO = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -3938,6 +3978,7 @@ SOS_BETA_OHO = GodConfig(
             num_samples=16,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GaussianSampleInput(),
             reporter=ImageReporter(title="vae_samples"),
         ),
@@ -3950,6 +3991,7 @@ SOS_BETA_OHO = GodConfig(
             num_samples=512,
             every_n_epochs=10,
             seed=42,
+            shuffle=False,
             input=DataSampleInput(),
             reporter=UMAPReporter(title="vae_latent"),
         ),
@@ -3962,8 +4004,9 @@ SOS_BETA_OHO = GodConfig(
             num_samples=100,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
-            reporter=GridReporter(title="vae_grid", rows=10, cols=10),
+            reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
         ),
     ],
     label_mask_value=-1e10,
@@ -4100,6 +4143,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -4169,6 +4213,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -4246,6 +4291,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -4295,6 +4341,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
             num_samples=16,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GaussianSampleInput(),
             reporter=ImageReporter(title="vae_samples"),
         ),
@@ -4307,6 +4354,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
             num_samples=512,
             every_n_epochs=10,
             seed=42,
+            shuffle=False,
             input=DataSampleInput(),
             reporter=UMAPReporter(title="vae_latent"),
         ),
@@ -4319,8 +4367,9 @@ SOS_BETA_OHO_2CONV = GodConfig(
             num_samples=100,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
-            reporter=GridReporter(title="vae_grid", rows=10, cols=10),
+            reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
         ),
     ],
     label_mask_value=-1e10,
@@ -4480,6 +4529,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -4558,6 +4608,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -4638,6 +4689,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -4693,6 +4745,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
             num_samples=16,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GaussianSampleInput(),
             reporter=ImageReporter(title="vae_samples"),
         ),
@@ -4884,6 +4937,7 @@ VAE_LR_OHO = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -4970,6 +5024,7 @@ VAE_LR_OHO = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -5044,6 +5099,7 @@ VAE_LR_OHO = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -5099,6 +5155,7 @@ VAE_LR_OHO = GodConfig(
             num_samples=16,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GaussianSampleInput(),
             reporter=ImageReporter(title="vae_samples"),
         ),
@@ -5241,6 +5298,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -5300,6 +5358,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -5367,6 +5426,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -5433,8 +5493,15 @@ VAE_BASELINE = GodConfig(
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},
-    readout_graph=VAE_ARCH_3CONV["readout_graph"],
-    nodes=VAE_ARCH_3CONV["nodes"],
+    readout_graph={
+        **VAE_ARCH_3CONV["readout_graph"],
+        "decoder_sigmoid": {"decoder_convT3"},
+        "merge": {"decoder_sigmoid", "latent"},
+    },
+    nodes={
+        **VAE_ARCH_3CONV["nodes"],
+        "decoder_sigmoid": Activation(activation_fn="sigmoid"),
+    },
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
@@ -5448,7 +5515,7 @@ VAE_BASELINE = GodConfig(
             parametrizes_transition=True,
         ),
         "meta1_sgd1_wd": HyperparameterConfig(
-            value=0.0,
+            value=1e-2,
             kind="weight_decay",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -5538,6 +5605,7 @@ VAE_BASELINE = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -5607,6 +5675,7 @@ VAE_BASELINE = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -5664,6 +5733,7 @@ VAE_BASELINE = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=1,
@@ -5706,13 +5776,17 @@ VAE_BASELINE = GodConfig(
     sample_generators=[
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
+            readout_graph={
+                **decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
+                "decoder_sigmoid": frozenset({"decoder_convT3"}),
+            },
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
             num_samples=16,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GaussianSampleInput(),
             reporter=ImageReporter(title="vae_samples"),
         ),
@@ -5725,20 +5799,25 @@ VAE_BASELINE = GodConfig(
             num_samples=512,
             every_n_epochs=10,
             seed=42,
+            shuffle=False,
             input=DataSampleInput(),
             reporter=UMAPReporter(title="vae_latent"),
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
+            readout_graph={
+                **decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
+                "decoder_sigmoid": frozenset({"decoder_convT3"}),
+            },
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
             num_samples=100,
             every_n_epochs=10,
             seed=None,
+            shuffle=False,
             input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
-            reporter=GridReporter(title="vae_grid", rows=10, cols=10),
+            reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
         ),
         SampleGeneratorConfig(
             transition_graph={},
@@ -5772,7 +5851,10 @@ VAE_BASELINE = GodConfig(
                 "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
                 "interp_y": Reshape(shape=(10, 2)),
                 "decoder_scan": Scan(
-                    graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_dec_in", "take_z")),
+                    graph={
+                        **decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_dec_in", "take_z")),
+                        "decoder_sigmoid": frozenset({"decoder_convT3"}),
+                    },
                     autoregressive_mask="teacher_forcing",
                     carry_transform="identity",
                     pred_source="interp_y",
@@ -5786,8 +5868,9 @@ VAE_BASELINE = GodConfig(
             num_samples=4,
             every_n_epochs=10,
             seed=42,
+            shuffle=False,
             input=InterpolationSampleInput(pixel_transform="raw"),
-            reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10)),
+            reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10, show_z_labels=False)),
         ),
     ],
     label_mask_value=-1e10,
@@ -5928,6 +6011,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=40_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -5987,6 +6071,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -6055,6 +6140,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -6235,6 +6321,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -6296,6 +6383,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -6369,6 +6457,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -6547,6 +6636,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 num_examples_total=20_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -6606,6 +6696,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 num_examples_total=5_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -6674,6 +6765,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 num_examples_total=4_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=32,
@@ -6855,6 +6947,7 @@ OHO_RNN32_TEST = GodConfig(
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -6916,6 +7009,7 @@ OHO_RNN32_TEST = GodConfig(
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -6982,6 +7076,7 @@ OHO_RNN32_TEST = GodConfig(
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(
                 num_steps=28,
@@ -7038,6 +7133,7 @@ OHO_RNN32_TEST = GodConfig(
             num_samples=8,
             every_n_epochs=1,
             seed=None,
+            shuffle=False,
             input=DataSampleInput(),
             reporter=PlotReporter(title="rnn_predictions"),
         ),

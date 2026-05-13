@@ -97,6 +97,7 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
                     num_examples_total=sg.num_samples,
                     is_test=False,
                     augment=False,
+                    shuffle=sg.shuffle,
                 ),
                 nested=StepConfig(
                     num_steps=1,
@@ -127,6 +128,25 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
 
 
 LEVEL_RE = re.compile(r"level(\d+)/prediction$")
+
+
+def compute_grid_axis_ticks(sample_input: SampleInput) -> tuple[list[float], list[float]] | None:
+    """For a 2D GridSampleInput, return (row_axis_values, col_axis_values) matching the
+    meshgrid(indexing='ij').reshape order: row index = axes[0], col index = axes[1]."""
+    match sample_input:
+        case GridSampleInput(min_value, max_value, n_per_axis, mode):
+            probs = np.linspace(min_value, max_value, n_per_axis)
+            match mode:
+                case "uniform":
+                    axis_values = probs
+                case "quantile":
+                    from scipy.stats import norm
+
+                    axis_values = norm.ppf(probs)
+            vals = axis_values.tolist()
+            return vals, vals
+        case _:
+            return None
 
 
 def display_ready(ns: NamedStat, task: Task) -> NamedStat:
@@ -164,7 +184,23 @@ def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger, confi
         case UMAPReporter(title):
             label_stats = {k: v for k, v in stats.items() if k.endswith("/label")}
             logger.log_umap_stats(prediction_stats | label_stats, title)
-        case GridReporter(title, rows, cols):
-            logger.log_grid_stats(display_ready_stats(), title, rows, cols, iterate_tags=("batch",))
-        case PerSampleGridReporter(GridReporter(title, rows, cols)):
-            logger.log_grid_stats(display_ready_stats(), title, rows, cols, iterate_tags=("batch", "minibatch"))
+        case GridReporter(title, rows, cols, show_z_labels):
+            z_ticks = compute_grid_axis_ticks(sg.input) if show_z_labels else None
+            logger.log_grid_stats(
+                display_ready_stats(),
+                title,
+                rows,
+                cols,
+                iterate_tags=("batch",),
+                z_ticks=z_ticks,
+            )
+        case PerSampleGridReporter(GridReporter(title, rows, cols, show_z_labels)):
+            z_ticks = compute_grid_axis_ticks(sg.input) if show_z_labels else None
+            logger.log_grid_stats(
+                display_ready_stats(),
+                title,
+                rows,
+                cols,
+                iterate_tags=("batch", "minibatch"),
+                z_ticks=z_ticks,
+            )

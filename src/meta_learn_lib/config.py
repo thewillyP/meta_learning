@@ -576,6 +576,7 @@ class GridReporter:
     title: str
     rows: int
     cols: int
+    show_z_labels: bool
 
 
 @dataclass(frozen=True)
@@ -595,6 +596,7 @@ class SampleGeneratorConfig(eqx.Module):
     num_samples: int
     every_n_epochs: int
     seed: int | None
+    shuffle: bool
     input: SampleInput
     reporter: SampleReporter
 
@@ -624,6 +626,7 @@ class DatasetConfig:
     num_examples_total: int
     is_test: bool
     augment: bool
+    shuffle: bool
 
 
 class MetaConfig(eqx.Module):

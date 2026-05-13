@@ -295,14 +295,39 @@ class ScalarLogger:
             plt.close(fig)
             self.logger.log_image(title, series, iteration, img)
 
-    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int, iterate_tags: tuple[Tag, ...]) -> None:
+    def log_grid_stats(
+        self,
+        stats: STAT,
+        title: str,
+        rows: int,
+        cols: int,
+        iterate_tags: tuple[Tag, ...],
+        z_ticks: tuple[list[float], list[float]] | None,
+    ) -> None:
         for series, iteration, sub in self.for_each_entry(stats, iterate_tags):
             if iteration % self.checkpoint_every != 0:
                 continue
             tile = sub[0].reshape(rows, cols, *sub.shape[2:])
             c, h, w = tile.shape[2], tile.shape[3], tile.shape[4]
             grid_img = tile.transpose(0, 3, 1, 4, 2).reshape(rows * h, cols * w, c)
-            self.logger.log_image(title, series, iteration, grid_img)
+            if z_ticks is None:
+                self.logger.log_image(title, series, iteration, grid_img)
+                continue
+            row_ticks, col_ticks = z_ticks
+            fig, ax = plt.subplots(figsize=(max(cols * 0.6, 4), max(rows * 0.6, 4)))
+            display = grid_img.squeeze(-1) if c == 1 else grid_img
+            ax.imshow(display, cmap="gray" if c == 1 else None)
+            ax.set_xticks([(j + 0.5) * w for j in range(cols)])
+            ax.set_yticks([(i + 0.5) * h for i in range(rows)])
+            ax.set_xticklabels([f"{v:.2f}" for v in col_ticks], fontsize=7)
+            ax.set_yticklabels([f"{v:.2f}" for v in row_ticks], fontsize=7)
+            ax.set_xlabel("z1")
+            ax.set_ylabel("z0")
+            ax.set_title(f"{title} - {series}")
+            fig.canvas.draw()
+            img = np.asarray(fig.canvas.renderer.buffer_rgba())[..., :3]
+            plt.close(fig)
+            self.logger.log_image(title, series, iteration, img)
 
     def log_umap_stats(self, stats: STAT, title: str) -> None:
         preds = {k.removesuffix("/prediction"): ns for k, ns in stats.items() if k.endswith("/prediction")}

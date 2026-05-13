@@ -516,13 +516,15 @@ def task_iterator(
     x_mask: float,
     y_mask: float,
     key: PRNG,
+    shuffle: bool,
 ) -> Iterator[tuple[jax.Array, jax.Array]]:
     shuffle_key, k1, k2 = jax.random.split(key, 3)
     xs = jax.vmap(task.x_epoch)(task.xs, jax.random.split(k1, task.xs.shape[0]))
     ys = jax.vmap(task.y_epoch)(task.ys, jax.random.split(k2, task.ys.shape[0]))
 
-    perm = jax.random.permutation(shuffle_key, xs.shape[0])
-    xs, ys = xs[perm], ys[perm]
+    if shuffle:
+        perm = jax.random.permutation(shuffle_key, xs.shape[0])
+        xs, ys = xs[perm], ys[perm]
 
     for i in range(math.ceil(xs.shape[0] / batch)):
         X_batch = xs[i * batch : (i + 1) * batch]
@@ -650,6 +652,7 @@ def task_epoch_tensor(
     x_mask: float,
     y_mask: float,
     key: PRNG,
+    shuffle: bool,
 ) -> tuple[jax.Array, jax.Array]:
     """Eager equivalent of task_iterator's per-epoch yield stream.
 
@@ -660,8 +663,9 @@ def task_epoch_tensor(
     xs = jax.vmap(task.x_epoch)(task.xs, jax.random.split(k1, task.xs.shape[0]))
     ys = jax.vmap(task.y_epoch)(task.ys, jax.random.split(k2, task.ys.shape[0]))
 
-    perm = jax.random.permutation(shuffle_key, xs.shape[0])
-    xs, ys = xs[perm], ys[perm]
+    if shuffle:
+        perm = jax.random.permutation(shuffle_key, xs.shape[0])
+        xs, ys = xs[perm], ys[perm]
 
     N = xs.shape[0]
     num_mb = math.ceil(N / batch)
@@ -696,7 +700,7 @@ def task_loader_eager(
 
     per_task_x, per_task_y = zip(
         *[
-            task_epoch_tensor(datasets[idx], batch_per_task, x_mask, y_mask, tkey)
+            task_epoch_tensor(datasets[idx], batch_per_task, x_mask, y_mask, tkey, level.dataset.shuffle)
             for idx, tkey in zip(task_indices.tolist(), task_keys)
         ]
     )

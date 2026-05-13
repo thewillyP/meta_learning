@@ -159,6 +159,60 @@ VAE_DECODER_2CONV = make_strided_decoder(
 VAE_ARCH_2CONV = combine_vae(VAE_ENCODER_2CONV, VAE_DECODER_2CONV, latent_dim=2)
 
 
+def make_mlp_encoder(input_size: int, channels: int, hidden_layers: list[int], latent_dim: int) -> dict:
+    """MLP encoder: Reshape → (Linear+ReLU) × len(hidden_layers) → Linear(2*latent_dim).
+    `input_size` is per-side length of a (channels, input_size, input_size) image.
+    Returns: {nodes, graph, learnable}. Source node is "x"."""
+    flat_size = channels * input_size * input_size
+    nodes: dict = {"x": UnlabeledSource(), "encoder_flatten": Reshape(shape=(flat_size,))}
+    graph: dict = {"x": set(), "encoder_flatten": {"x"}}
+    learnable: set[str] = set()
+    prev = "encoder_flatten"
+    for i, h in enumerate(hidden_layers, start=1):
+        name = f"encoder_linear{i}"
+        nodes[name] = NNLayer(n=h, activation_fn="relu", use_bias=True)
+        graph[name] = {prev}
+        learnable.add(name)
+        prev = name
+    nodes["encoder_out"] = NNLayer(n=latent_dim * 2, activation_fn="identity", use_bias=True)
+    graph["encoder_out"] = {prev}
+    learnable.add("encoder_out")
+    return {"nodes": nodes, "graph": graph, "learnable": learnable}
+
+
+def make_mlp_decoder(latent_dim: int, hidden_layers: list[int], output_size: int, output_channels: int) -> dict:
+    """MLP decoder: Linear(hidden_layers[0]) → (Linear+ReLU) × rest → Linear(flat) → sigmoid → Reshape.
+    First layer named "decoder_proj" (combine_vae wires its input). Final node is the reshape to image.
+    Returns: {nodes, graph, learnable, output_node}."""
+    if not hidden_layers:
+        raise ValueError("hidden_layers must be non-empty")
+    flat_size = output_channels * output_size * output_size
+    nodes: dict = {"decoder_proj": NNLayer(n=hidden_layers[0], activation_fn="relu", use_bias=True)}
+    graph: dict = {"decoder_proj": set()}
+    learnable: set[str] = {"decoder_proj"}
+    prev = "decoder_proj"
+    for i, h in enumerate(hidden_layers[1:], start=2):
+        name = f"decoder_linear{i}"
+        nodes[name] = NNLayer(n=h, activation_fn="relu", use_bias=True)
+        graph[name] = {prev}
+        learnable.add(name)
+        prev = name
+    final_linear = f"decoder_linear{len(hidden_layers) + 1}"
+    nodes[final_linear] = NNLayer(n=flat_size, activation_fn="identity", use_bias=True)
+    nodes["decoder_sigmoid"] = Activation(activation_fn="sigmoid")
+    nodes["decoder_reshape_out"] = Reshape(shape=(output_channels, output_size, output_size))
+    graph[final_linear] = {prev}
+    graph["decoder_sigmoid"] = {final_linear}
+    graph["decoder_reshape_out"] = {"decoder_sigmoid"}
+    learnable.add(final_linear)
+    return {"nodes": nodes, "graph": graph, "learnable": learnable, "output_node": "decoder_reshape_out"}
+
+
+VAE_ENCODER_MLP = make_mlp_encoder(input_size=28, channels=1, hidden_layers=[784, 784], latent_dim=2)
+VAE_DECODER_MLP = make_mlp_decoder(latent_dim=2, hidden_layers=[784, 784], output_size=28, output_channels=1)
+VAE_ARCH_MLP = combine_vae(VAE_ENCODER_MLP, VAE_DECODER_MLP, latent_dim=2)
+
+
 def encoder_sample_gen_graph(encoder: dict, source_chain: tuple[str, ...], extract: Literal["z", "mu"]) -> dict:
     """Encoder + Reparameterize + (ExtractZ or ExtractMu), with `source_chain` linearly wired into encoder_conv1.
     `source_chain[0]` is the no-dep source node; `source_chain[-1]` feeds encoder_conv1.
@@ -5881,6 +5935,396 @@ VAE_BASELINE = GodConfig(
 )
 
 
+VAE_BASELINE_MLP = GodConfig(
+    seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="vae_baseline_mlp",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
+        scalar_queue_size=0,
+        sample_queue_size=2,
+    ),
+    epochs=50,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=100,
+    transition_graph={},
+    readout_graph=VAE_ARCH_MLP["readout_graph"],
+    nodes=VAE_ARCH_MLP["nodes"],
+    aliases={},
+    hyperparameters={
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=1e-2,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_beta": HyperparameterConfig(
+            value=1.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.0,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_beta": HyperparameterConfig(
+            value=0.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=0.0,
+            level=2,
+            parametrizes_transition=False,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta1_beta",
+                likelihood=RegressionObjective(reduction="sum"),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="raw",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=1024,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=VAE_ARCH_MLP["learnable"],
+                        optimizer=AdamConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=1e-4,
+                        ),
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=RegressionObjective(reduction="sum"),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="raw",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=1024,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+        ),
+        MetaConfig(
+            objective_fn=ELBOObjective(
+                beta="meta2_beta",
+                likelihood=RegressionObjective(reduction="sum"),
+                posterior=ELBOObjective.GaussianPosterior(),
+                prior=ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0),
+            ),
+            dataset_source=MNISTTaskFamily(
+                patch_h=28,
+                patch_w=28,
+                label_last_only=False,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="raw",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=1024,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=1,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=49,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+        ),
+    ],
+    sample_generators=[
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_MLP, source_chain=("z_input",)),
+            source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
+            input_shape=(2,),
+            num_samples=16,
+            every_n_epochs=10,
+            seed=None,
+            shuffle=False,
+            input=GaussianSampleInput(),
+            reporter=ImageReporter(title="vae_samples"),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_MLP, source_chain=("x",), extract="mu"),
+            source_nodes={},
+            aliases={},
+            input_shape=(1, 28, 28),
+            num_samples=512,
+            every_n_epochs=10,
+            seed=42,
+            shuffle=False,
+            input=DataSampleInput(),
+            reporter=UMAPReporter(title="vae_latent"),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_MLP, source_chain=("z_input",)),
+            source_nodes={"z_input": UnlabeledSource()},
+            aliases={},
+            input_shape=(2,),
+            num_samples=100,
+            every_n_epochs=10,
+            seed=None,
+            shuffle=False,
+            input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
+            reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph={
+                "x_seq": frozenset(),
+                "y_seq": frozenset(),
+                "encoder_scan": frozenset({"x_seq", "y_seq"}),
+                "z_prev": frozenset({"encoder_scan"}),
+                "z_curr": frozenset({"encoder_scan"}),
+                "interp": frozenset({"z_prev", "z_curr"}),
+                "interp_y": frozenset({"interp"}),
+                "decoder_scan": frozenset({"interp", "interp_y"}),
+            },
+            source_nodes={
+                "x_seq": UnlabeledSource(),
+                "y_seq": LabeledSource(),
+                "encoder_scan": Scan(
+                    graph=encoder_sample_gen_graph(
+                        VAE_ENCODER_MLP, source_chain=("z_in", "take_x", "reshape_x"), extract="mu"
+                    ),
+                    autoregressive_mask="erase",
+                    carry_transform="identity",
+                    pred_source="y_seq",
+                    start_token="zeros",
+                ),
+                "z_in": UnlabeledSource(),
+                "take_x": Take(start=2, length=1 * 28 * 28),
+                "reshape_x": Reshape(shape=(1, 28, 28)),
+                "z_prev": Take(start=0, length=2),
+                "z_curr": Take(start=2, length=2),
+                "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
+                "interp_y": Reshape(shape=(10, 2)),
+                "decoder_scan": Scan(
+                    graph=decoder_sample_gen_graph(VAE_DECODER_MLP, source_chain=("z_dec_in", "take_z")),
+                    autoregressive_mask="teacher_forcing",
+                    carry_transform="identity",
+                    pred_source="interp_y",
+                    start_token="zeros",
+                ),
+                "z_dec_in": UnlabeledSource(),
+                "take_z": Take(start=2, length=2),
+            },
+            aliases={},
+            input_shape=(2, 1, 28, 28),
+            num_samples=4,
+            every_n_epochs=10,
+            seed=42,
+            shuffle=False,
+            input=InterpolationSampleInput(pixel_transform="raw"),
+            reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10, show_z_labels=False)),
+        ),
+    ],
+    label_mask_value=-1e10,
+    unlabeled_mask_value=-1e10,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
+)
+
+
 OHO_UORO_RNN256_CIFAR10 = GodConfig(
     seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
@@ -7151,6 +7595,7 @@ if __name__ == "__main__":
         ("SOS_BETA_OHO", SOS_BETA_OHO),
         ("SOS_BETA_OHO_2CONV", SOS_BETA_OHO_2CONV),
         ("VAE_BASELINE", VAE_BASELINE),
+        ("VAE_BASELINE_MLP", VAE_BASELINE_MLP),
         ("VAE_BETA_OHO", VAE_BETA_OHO),
         # ("VAE_LR_OHO", VAE_LR_OHO),
         # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),

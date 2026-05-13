@@ -412,8 +412,8 @@ class ThreadedScalarLogger:
                         stats, title = payload
                         self.scalar_logger.log_umap_stats(stats, title)
                     case "grid":
-                        stats, title, rows, cols, iterate_tags = payload
-                        self.scalar_logger.log_grid_stats(stats, title, rows, cols, iterate_tags)
+                        stats, title, rows, cols, iterate_tags, z_ticks = payload
+                        self.scalar_logger.log_grid_stats(stats, title, rows, cols, iterate_tags, z_ticks)
                 q.task_done()
             except queue.Empty:
                 continue
@@ -438,10 +438,18 @@ class ThreadedScalarLogger:
             return
         self.sample_queue.put(("umap", stats, title))
 
-    def log_grid_stats(self, stats: STAT, title: str, rows: int, cols: int, iterate_tags: tuple[Tag, ...]) -> None:
+    def log_grid_stats(
+        self,
+        stats: STAT,
+        title: str,
+        rows: int,
+        cols: int,
+        iterate_tags: tuple[Tag, ...],
+        z_ticks: tuple[list[float], list[float]] | None,
+    ) -> None:
         if self.stop_event.is_set():
             return
-        self.sample_queue.put(("grid", stats, title, rows, cols, iterate_tags))
+        self.sample_queue.put(("grid", stats, title, rows, cols, iterate_tags, z_ticks))
 
     def flush(self) -> None:
         self.scalar_queue.join()

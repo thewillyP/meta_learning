@@ -20,11 +20,15 @@ def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
 def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: Outputs, mask: jax.Array) -> jax.Array:
     # mask is element-wise (shape matches target); KL is per-example. Collapse trailing
     # feature axes to get a per-example mask, then weight the per-example KL by it.
+    # Substitute safe values before exp(log_var) so masked-out positions (which can carry
+    # huge log_var from -1e10-padded inputs through an un-normalized encoder) don't produce
+    # inf, which would survive `where` forward but propagate NaN through `0 * inf` in the gradient.
     example_mask = jnp.any(mask, axis=tuple(range(2, mask.ndim)))
     match (posterior, prior):
         case (ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(prior_mu, prior_log_var)):
-            mu = outputs.mu
-            log_var = outputs.log_var
+            safe = example_mask[..., None]
+            mu = jnp.where(safe, outputs.mu, 0.0)
+            log_var = jnp.where(safe, outputs.log_var, 0.0)
             kl_per_example = -0.5 * jnp.sum(
                 1 + log_var - prior_log_var - (jnp.exp(log_var) + (mu - prior_mu) ** 2) / jnp.exp(prior_log_var),
                 axis=-1,

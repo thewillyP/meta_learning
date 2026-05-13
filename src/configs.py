@@ -6195,7 +6195,7 @@ VAE_BASELINE_MLP = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=49,
+                num_steps=1,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -6252,6 +6252,25 @@ VAE_BASELINE_MLP = GodConfig(
             shuffle=False,
             input=DataSampleInput(),
             reporter=UMAPReporter(title="vae_latent"),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph={
+                **encoder_sample_gen_graph(VAE_ENCODER_MLP, source_chain=("x",), extract="mu"),
+                **{
+                    k: frozenset(v) if k != "decoder_proj" else frozenset({"latent_mu"})
+                    for k, v in VAE_DECODER_MLP["graph"].items()
+                },
+            },
+            source_nodes={},
+            aliases={},
+            input_shape=(1, 28, 28),
+            num_samples=16,
+            every_n_epochs=10,
+            seed=42,
+            shuffle=False,
+            input=DataSampleInput(),
+            reporter=ImageReporter(title="vae_recon"),
         ),
         SampleGeneratorConfig(
             transition_graph={},

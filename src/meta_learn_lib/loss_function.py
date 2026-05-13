@@ -171,8 +171,18 @@ def create_loss_fn[ENV](
                 kl_value = kl(posterior, prior, outputs, example_mask)
 
                 loss = LOSS(recon_loss + beta * kl_value)
+                safe_mask = example_mask[..., None]
+                num_valid = jnp.maximum(jnp.sum(example_mask) * outputs.mu.shape[-1], 1.0)
+                mu_mean = jnp.sum(jnp.where(safe_mask, outputs.mu, 0.0)) / num_valid
+                lv_mean = jnp.sum(jnp.where(safe_mask, outputs.log_var, 0.0)) / num_valid
+                mu_std = jnp.sqrt(jnp.sum(jnp.where(safe_mask, (outputs.mu - mu_mean) ** 2, 0.0)) / num_valid)
+                lv_std = jnp.sqrt(jnp.sum(jnp.where(safe_mask, (outputs.log_var - lv_mean) ** 2, 0.0)) / num_valid)
                 stats["kl"] = scalar(jax.lax.stop_gradient(kl_value))
                 stats["elbo_loss"] = scalar(jax.lax.stop_gradient(loss))
+                stats["mu_mean"] = scalar(jax.lax.stop_gradient(mu_mean))
+                stats["mu_std"] = scalar(jax.lax.stop_gradient(mu_std))
+                stats["log_var_mean"] = scalar(jax.lax.stop_gradient(lv_mean))
+                stats["log_var_std"] = scalar(jax.lax.stop_gradient(lv_std))
                 return loss, stats
 
         case NoopObjective():

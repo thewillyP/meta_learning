@@ -196,17 +196,17 @@ def create_loss_fn[ENV](
 def create_readout_loss_fns[ENV](
     config: GodConfig,
     interfaces: dict[S_ID, GodInterface[ENV]],
-    readouts: list[Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]],
+    readouts: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, Outputs]]],
 ) -> list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]]:
 
     def compose(
         loss_fn: Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]],
-        readout: Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs],
+        readout: Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, Outputs]],
         level: int,
         collect_predictions: bool,
     ) -> Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]:
         def fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, LOSS, STAT]:
-            outputs = readout(env, data)
+            env, outputs = readout(env, data)
             loss, stat = loss_fn(env, outputs, data)
             stat = {f"level{level}/{k}": v for k, v in stat.items()}
             stat |= get_env_stats(config, env, interfaces, level)

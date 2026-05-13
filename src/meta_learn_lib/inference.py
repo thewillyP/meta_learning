@@ -324,7 +324,7 @@ def get_inference[ENV](
 
 
 type TransitionFn[ENV] = Callable[[ENV, tuple[jax.Array, jax.Array]], ENV]
-type ReadoutFn[ENV] = Callable[[ENV, tuple[jax.Array, jax.Array]], Outputs]
+type ReadoutFn[ENV] = Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, Outputs]]
 
 
 def create_raw_inference[ENV](
@@ -344,9 +344,9 @@ def create_raw_inference[ENV](
         env, _ = raw_transition(env, data)
         return env
 
-    def readout_fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> Outputs:
-        _, outputs = raw_readout(env, data)
-        return outputs[last_node]
+    def readout_fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, Outputs]:
+        env, outputs = raw_readout(env, data)
+        return env, outputs[last_node]
 
     return transition_fn, readout_fn
 
@@ -372,9 +372,9 @@ def create_inference_and_readout[ENV](
         out_axes=axes,
     )
     readout_inference: ReadoutFn[ENV] = eqx.filter_vmap(
-        eqx.filter_vmap(lambda e, d: readout_fn(e, d), in_axes=(axes, 0), out_axes=0),
+        eqx.filter_vmap(lambda e, d: readout_fn(e, d), in_axes=(axes, 0), out_axes=(axes, 0)),
         in_axes=(axes, 0),
-        out_axes=0,
+        out_axes=(axes, 0),
     )
 
     return transition_inference, readout_inference

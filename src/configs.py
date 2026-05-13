@@ -6063,7 +6063,7 @@ VAE_BASELINE_MLP = GodConfig(
             validation=StepConfig(
                 num_steps=1,
                 batch=1,
-                reset_t=1,
+                reset_t=None,
                 track_influence_in=frozenset({0}),
             ),
             nested=StepConfig(
@@ -6133,7 +6133,7 @@ VAE_BASELINE_MLP = GodConfig(
             validation=StepConfig(
                 num_steps=1,
                 batch=1,
-                reset_t=1,
+                reset_t=None,
                 track_influence_in=frozenset({1}),
             ),
             nested=StepConfig(
@@ -6191,7 +6191,7 @@ VAE_BASELINE_MLP = GodConfig(
             validation=StepConfig(
                 num_steps=1,
                 batch=1,
-                reset_t=1,
+                reset_t=None,
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
@@ -7611,11 +7611,11 @@ OHO_RNN32_TEST = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        ("SOS_BETA_OHO", SOS_BETA_OHO),
-        ("SOS_BETA_OHO_2CONV", SOS_BETA_OHO_2CONV),
-        ("VAE_BASELINE", VAE_BASELINE),
+        # ("SOS_BETA_OHO", SOS_BETA_OHO),
+        # ("SOS_BETA_OHO_2CONV", SOS_BETA_OHO_2CONV),
+        # ("VAE_BASELINE", VAE_BASELINE),
         ("VAE_BASELINE_MLP", VAE_BASELINE_MLP),
-        ("VAE_BETA_OHO", VAE_BETA_OHO),
+        # ("VAE_BETA_OHO", VAE_BETA_OHO),
         # ("VAE_LR_OHO", VAE_LR_OHO),
         # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
         # ("OHO_RNN32_TEST", OHO_RNN32_TEST),

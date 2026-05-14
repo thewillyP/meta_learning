@@ -3361,7 +3361,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
 
 VAE_BETA_OHO = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="vae_beta_oho",
@@ -8562,11 +8562,11 @@ if __name__ == "__main__":
     for name, config in [
         # ("SOS_BETA_OHO", SOS_BETA_OHO),
         # ("SOS_BETA_OHO_2CONV", SOS_BETA_OHO_2CONV),
-        ("VAE_BASELINE", VAE_BASELINE),
-        ("VAE_BASELINE_ADAM", VAE_BASELINE_ADAM),
+        # ("VAE_BASELINE", VAE_BASELINE),
+        # ("VAE_BASELINE_ADAM", VAE_BASELINE_ADAM),
         # ("VAE_BASELINE_MLP", VAE_BASELINE_MLP),
         ("VAE_BETA_OHO", VAE_BETA_OHO),
-        ("VAE_BETA_OHO_V2", VAE_BETA_OHO_V2),
+        # ("VAE_BETA_OHO_V2", VAE_BETA_OHO_V2),
         # ("VAE_LR_OHO", VAE_LR_OHO),
         # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
         # ("OHO_RNN32_TEST", OHO_RNN32_TEST),

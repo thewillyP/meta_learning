@@ -189,8 +189,7 @@ class AdamConfig(eqx.Module):
     eps_root: jax.Array
 
 
-@dataclass(frozen=True)
-class ExponentiatedGradientConfig:
+class ExponentiatedGradientConfig(eqx.Module):
     base: Union[SGDConfig, AdamConfig]
 
 

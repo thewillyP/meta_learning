@@ -241,6 +241,7 @@ def run(
 
         global_step = start_step + k + 1
         if checkpoint_interval > 0 and global_step % checkpoint_interval == 0:
+            scalar_logger.flush()
             checkpoint_manager.save(arr, CheckpointMetadata(global_step=global_step))
             print(f"Checkpoint saved at step {global_step} (epoch {global_step // iterations_per_epoch})")
 

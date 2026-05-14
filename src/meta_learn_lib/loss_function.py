@@ -17,13 +17,28 @@ def log_p_z(prior: ELBOObjective.Prior, z: jax.Array) -> jax.Array:
             return -0.5 * jnp.sum(jnp.log(2 * jnp.pi) + log_var + (z - mu) ** 2 / jnp.exp(log_var), axis=-1)
 
 
-def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: Outputs, mask: jax.Array) -> jax.Array:
+def kl(
+    posterior: ELBOObjective.Posterior,
+    prior: ELBOObjective.Prior,
+    outputs: Outputs,
+    mask: jax.Array,
+    reduction: Reduction,
+) -> jax.Array:
     # mask is element-wise (shape matches target); KL is per-example. Collapse trailing
     # feature axes to get a per-example mask, then weight the per-example KL by it.
     # Substitute safe values before exp(log_var) so masked-out positions (which can carry
     # huge log_var from -1e10-padded inputs through an un-normalized encoder) don't produce
     # inf, which would survive `where` forward but propagate NaN through `0 * inf` in the gradient.
     example_mask = jnp.any(mask, axis=tuple(range(2, mask.ndim)))
+
+    def reduce_kl(kl_per_example: jax.Array) -> jax.Array:
+        masked_sum = jnp.sum(jnp.where(example_mask, kl_per_example, 0.0))
+        match reduction:
+            case "sum" | "mean":
+                return masked_sum / jnp.maximum(jnp.sum(example_mask), 1.0)
+            case "total_sum":
+                return masked_sum
+
     match (posterior, prior):
         case (ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(prior_mu, prior_log_var)):
             safe = example_mask[..., None]
@@ -33,10 +48,9 @@ def kl(posterior: ELBOObjective.Posterior, prior: ELBOObjective.Prior, outputs: 
                 1 + log_var - prior_log_var - (jnp.exp(log_var) + (mu - prior_mu) ** 2) / jnp.exp(prior_log_var),
                 axis=-1,
             )
-            return jnp.sum(jnp.where(example_mask, kl_per_example, 0.0)) / jnp.maximum(jnp.sum(example_mask), 1.0)
+            return reduce_kl(kl_per_example)
         case _:
-            kl_per_example = outputs.log_q_z - log_p_z(prior, outputs.z)
-            return jnp.sum(jnp.where(example_mask, kl_per_example, 0.0)) / jnp.maximum(jnp.sum(example_mask), 1.0)
+            return reduce_kl(outputs.log_q_z - log_p_z(prior, outputs.z))
 
 
 def nan_if_masked(value: jax.Array, has_label: jax.Array) -> jax.Array:
@@ -105,6 +119,8 @@ def create_loss_fn[ENV](
                 return jnp.sum(jnp.where(example_mask, per_example, 0.0)) / jnp.maximum(jnp.sum(example_mask), 1.0)
             case "mean":
                 return jnp.sum(masked) / jnp.maximum(jnp.sum(mask), 1.0)
+            case "total_sum":
+                return jnp.sum(jnp.where(mask, masked, 0.0))
 
     match objective_fn:
         case CrossEntropyObjective(mode):
@@ -168,7 +184,9 @@ def create_loss_fn[ENV](
                 recon_loss, stats = inner_loss_fn(env, outputs, (x, masked_x))
 
                 beta = task_interface.kl_regularizer_beta.get(env)[0]
-                kl_value = kl(posterior, prior, outputs, example_mask)
+                match likelihood:
+                    case RegressionObjective(likelihood_reduction) | BernoulliObjective(likelihood_reduction):
+                        kl_value = kl(posterior, prior, outputs, example_mask, likelihood_reduction)
 
                 loss = LOSS(recon_loss + beta * kl_value)
                 safe_mask = example_mask[..., None]

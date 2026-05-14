@@ -490,7 +490,7 @@ class LoggersConfig:
     sample_queue_size: int
 
 
-type Reduction = Literal["sum", "mean"]
+type Reduction = Literal["sum", "mean", "total_sum"]
 
 
 @dataclass(frozen=True)

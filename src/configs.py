@@ -6094,7 +6094,7 @@ VAE_BASELINE_MLP = GodConfig(
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1024,
-                num_examples_total=50_000,
+                num_examples_total=54_000,
                 is_test=False,
                 augment=False,
                 shuffle=True,
@@ -6164,7 +6164,7 @@ VAE_BASELINE_MLP = GodConfig(
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1024,
-                num_examples_total=10_000,
+                num_examples_total=6_000,
                 is_test=False,
                 augment=False,
                 shuffle=True,

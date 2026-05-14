@@ -31,7 +31,7 @@ def test_kl_gaussian_closed_form_all_valid():
     outputs = Outputs(mu=mu, log_var=log_var)
     mask = jnp.ones((1, 4, 1, 28, 28), dtype=bool)
 
-    got = kl(ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0), outputs, mask)
+    got = kl(ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0), outputs, mask, "sum")
 
     expected_per = gaussian_kl_closed_form(np.asarray(mu), np.asarray(log_var))
     expected = float(np.mean(expected_per))
@@ -46,7 +46,7 @@ def test_kl_masked_examples_excluded():
     mask = jnp.ones((1, 4, 1, 28, 28), dtype=bool)
     mask = mask.at[:, 1:3].set(False)
 
-    got = kl(ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0), outputs, mask)
+    got = kl(ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0), outputs, mask, "sum")
 
     valid_per = gaussian_kl_closed_form(np.asarray(mu)[:, [0, 3]], np.asarray(log_var)[:, [0, 3]])
     expected = float(np.mean(valid_per))
@@ -63,7 +63,7 @@ def test_kl_safe_against_pathological_padded_log_var():
 
     def loss(mu_, lv_):
         outputs = Outputs(mu=mu_, log_var=lv_)
-        return kl(ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0), outputs, mask)
+        return kl(ELBOObjective.GaussianPosterior(), ELBOObjective.GaussianPrior(mu=0.0, log_var=0.0), outputs, mask, "sum")
 
     forward = float(loss(mu, log_var))
     assert np.isfinite(forward), forward

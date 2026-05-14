@@ -3,7 +3,7 @@ import itertools
 import jax
 import jax.numpy as jnp
 from typing import Callable, Iterator, NamedTuple
-from torch.utils.data import Dataset, random_split
+from torch.utils.data import Dataset, Subset, random_split
 import torch
 import torchvision
 from toolz import mapcat
@@ -479,6 +479,7 @@ def take_datasets(
     x_mask: float,
     y_mask: float,
     augment_fn: EpochTransform,
+    shuffle: bool,
 ) -> tuple[list[PrematerializedTask], list[DatasetWithReshape]]:
     ts_x_reshape = make_jax_timeseries_reshape(n_consume, x_mask)
     ts_y_reshape = make_jax_timeseries_reshape(n_consume, y_mask)
@@ -493,7 +494,11 @@ def take_datasets(
                 f"Task {idx}: no examples remaining (requested {n}, available {len(ds)}). "
                 f"Earlier levels likely consumed all data from this source."
             )
-        taken, leftover = random_split(ds, [take_n, len(ds) - take_n], generator=generator)
+        if shuffle:
+            taken, leftover = random_split(ds, [take_n, len(ds) - take_n], generator=generator)
+        else:
+            taken = Subset(ds, list(range(take_n)))
+            leftover = Subset(ds, list(range(take_n, len(ds))))
         xs, ys = jax_collate_fn(numpy_collate_fn([taken[i] for i in range(len(taken))]))
 
         def x_epoch(x: jax.Array, key: PRNG) -> jax.Array:
@@ -617,6 +622,7 @@ def create_data_sources(
             x_mask=config.unlabeled_mask_value,
             y_mask=config.label_mask_value,
             augment_fn=make_jax_augment(level.dataset_source, level.dataset.augment),
+            shuffle=level.dataset.shuffle,
         )
         level_datasets.append(taken)
 

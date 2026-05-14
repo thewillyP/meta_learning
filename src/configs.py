@@ -3361,7 +3361,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
 
 VAE_BETA_OHO = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=True,
+    clearml_run=False,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="vae_beta_oho",
@@ -3442,7 +3442,7 @@ VAE_BETA_OHO = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.9,
+            value=0.0,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3452,7 +3452,7 @@ VAE_BETA_OHO = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_beta": HyperparameterConfig(
-            value=1.0,
+            value=0.0,
             kind="kl_regularizer_beta",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3573,7 +3573,7 @@ VAE_BETA_OHO = GodConfig(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=0.0,
-                        beta=0.01,
+                        beta=0.1,
                         use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
@@ -3584,13 +3584,10 @@ VAE_BETA_OHO = GodConfig(
                         # target=frozenset({"meta1_beta"}),
                         target=frozenset({"meta1_beta", "meta1_sgd1_lr", "meta1_sgd1_wd"}),
                         optimizer=ExponentiatedGradientConfig(
-                            base=AdamConfig(
+                            base=SGDConfig(
                                 learning_rate="meta2_sgd1_lr",
                                 weight_decay="meta2_sgd1_wd",
                                 momentum="meta2_sgd1_momentum",
-                                second_momentum=0.999,
-                                eps=1e-8,
-                                eps_root=0.0,
                             ),
                         ),
                     ),
@@ -6554,7 +6551,7 @@ VAE_BETA_OHO_V2 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.00001,
+            value=0.0001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -6584,7 +6581,7 @@ VAE_BETA_OHO_V2 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_beta": HyperparameterConfig(
-            value=1.0,
+            value=0.0,
             kind="kl_regularizer_beta",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -8566,7 +8563,7 @@ if __name__ == "__main__":
         # ("VAE_BASELINE_ADAM", VAE_BASELINE_ADAM),
         # ("VAE_BASELINE_MLP", VAE_BASELINE_MLP),
         ("VAE_BETA_OHO", VAE_BETA_OHO),
-        # ("VAE_BETA_OHO_V2", VAE_BETA_OHO_V2),
+        ("VAE_BETA_OHO_V2", VAE_BETA_OHO_V2),
         # ("VAE_LR_OHO", VAE_LR_OHO),
         # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
         # ("OHO_RNN32_TEST", OHO_RNN32_TEST),

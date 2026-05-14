@@ -140,25 +140,46 @@ def combine_vae(encoder: dict, decoder: dict, latent_dim: int) -> dict:
 
 # --- Reusable strided-conv VAE architectures for 28x28 input ---
 # Usable by any 28x28-image VAE config (VAE_BASELINE, VAE_BETA_OHO, SOS_BETA_OHO, …).
-VAE_ENCODER_3CONV = make_strided_encoder(input_size=28, channels=[32, 64, 128], latent_dim=2)
-VAE_DECODER_3CONV = make_strided_decoder(
-    channels_in=VAE_ENCODER_3CONV["channels_out"],
-    spatial_in=VAE_ENCODER_3CONV["spatial_out"],
-    channels=list(reversed([32, 64])),
-    out_channels=1,
-    target_spatial_sequence=list(reversed(VAE_ENCODER_3CONV["spatial_sequence"][:-1])),
-)
-VAE_ARCH_3CONV = combine_vae(VAE_ENCODER_3CONV, VAE_DECODER_3CONV, latent_dim=2)
+def make_vae_3conv(latent_dim: int) -> dict:
+    encoder = make_strided_encoder(input_size=28, channels=[32, 64, 128], latent_dim=latent_dim)
+    decoder = make_strided_decoder(
+        channels_in=encoder["channels_out"],
+        spatial_in=encoder["spatial_out"],
+        channels=list(reversed([32, 64])),
+        out_channels=1,
+        target_spatial_sequence=list(reversed(encoder["spatial_sequence"][:-1])),
+    )
+    arch = combine_vae(encoder, decoder, latent_dim=latent_dim)
+    return {"encoder": encoder, "decoder": decoder, "arch": arch}
 
-VAE_ENCODER_2CONV = make_strided_encoder(input_size=28, channels=[32, 64], latent_dim=2)
-VAE_DECODER_2CONV = make_strided_decoder(
-    channels_in=VAE_ENCODER_2CONV["channels_out"],
-    spatial_in=VAE_ENCODER_2CONV["spatial_out"],
-    channels=list(reversed([32])),
-    out_channels=1,
-    target_spatial_sequence=list(reversed(VAE_ENCODER_2CONV["spatial_sequence"][:-1])),
-)
-VAE_ARCH_2CONV = combine_vae(VAE_ENCODER_2CONV, VAE_DECODER_2CONV, latent_dim=2)
+
+def make_vae_2conv(latent_dim: int) -> dict:
+    encoder = make_strided_encoder(input_size=28, channels=[32, 64], latent_dim=latent_dim)
+    decoder = make_strided_decoder(
+        channels_in=encoder["channels_out"],
+        spatial_in=encoder["spatial_out"],
+        channels=list(reversed([32])),
+        out_channels=1,
+        target_spatial_sequence=list(reversed(encoder["spatial_sequence"][:-1])),
+    )
+    arch = combine_vae(encoder, decoder, latent_dim=latent_dim)
+    return {"encoder": encoder, "decoder": decoder, "arch": arch}
+
+
+VAE_3CONV = make_vae_3conv(latent_dim=2)
+VAE_ENCODER_3CONV = VAE_3CONV["encoder"]
+VAE_DECODER_3CONV = VAE_3CONV["decoder"]
+VAE_ARCH_3CONV = VAE_3CONV["arch"]
+
+VAE_3CONV_L10 = make_vae_3conv(latent_dim=10)
+VAE_ENCODER_3CONV_L10 = VAE_3CONV_L10["encoder"]
+VAE_DECODER_3CONV_L10 = VAE_3CONV_L10["decoder"]
+VAE_ARCH_3CONV_L10 = VAE_3CONV_L10["arch"]
+
+VAE_2CONV = make_vae_2conv(latent_dim=2)
+VAE_ENCODER_2CONV = VAE_2CONV["encoder"]
+VAE_DECODER_2CONV = VAE_2CONV["decoder"]
+VAE_ARCH_2CONV = VAE_2CONV["arch"]
 
 
 def make_mlp_encoder(
@@ -3340,7 +3361,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
 
 VAE_BETA_OHO = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
-    clearml_run=False,
+    clearml_run=True,
     data_root_dir="/scratch/wlp9800/datasets",
     log_dir="/scratch/wlp9800/offline_logs",
     log_title="vae_beta_oho",
@@ -3356,8 +3377,8 @@ VAE_BETA_OHO = GodConfig(
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},
-    readout_graph=VAE_ARCH_3CONV["readout_graph"],
-    nodes=VAE_ARCH_3CONV["nodes"],
+    readout_graph=VAE_ARCH_3CONV_L10["readout_graph"],
+    nodes=VAE_ARCH_3CONV_L10["nodes"],
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
@@ -3488,7 +3509,7 @@ VAE_BETA_OHO = GodConfig(
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
-                        target=VAE_ARCH_3CONV["learnable"],
+                        target=VAE_ARCH_3CONV_L10["learnable"],
                         optimizer=SGDConfig(
                             learning_rate="meta1_sgd1_lr",
                             weight_decay="meta1_sgd1_wd",
@@ -3552,7 +3573,7 @@ VAE_BETA_OHO = GodConfig(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=0.0,
-                        beta=0.1,
+                        beta=0.01,
                         use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
@@ -3560,8 +3581,8 @@ VAE_BETA_OHO = GodConfig(
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
-                        target=frozenset({"meta1_beta"}),
-                        # target=frozenset({"meta1_beta", "meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        # target=frozenset({"meta1_beta"}),
+                        target=frozenset({"meta1_beta", "meta1_sgd1_lr", "meta1_sgd1_wd"}),
                         optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
@@ -3644,7 +3665,7 @@ VAE_BETA_OHO = GodConfig(
     sample_generators=[
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",), extract="mu"),
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV_L10, source_chain=("x",), extract="mu"),
             source_nodes={},
             aliases={},
             input_shape=(1, 28, 28),
@@ -3657,16 +3678,16 @@ VAE_BETA_OHO = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV_L10, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
-            input_shape=(2,),
-            num_samples=100,
+            input_shape=(10,),
+            num_samples=8,
             every_n_epochs=10,
             seed=None,
             shuffle=False,
-            input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
-            reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
+            input=GaussianSampleInput(),
+            reporter=ImageReporter(title="vae_samples"),
         ),
     ],
     label_mask_value=-1e10,
@@ -5630,7 +5651,7 @@ VAE_BASELINE = GodConfig(
         scalar_queue_size=10,
         sample_queue_size=2,
     ),
-    epochs=50,
+    epochs=1_000,
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},

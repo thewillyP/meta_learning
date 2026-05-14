@@ -195,7 +195,7 @@ def make_mlp_decoder(
     output_channels: int,
     init: Literal["lecun_normal", "pytorch_default"],
 ) -> dict:
-    """MLP decoder: Linear(hidden_layers[0]) → (Linear+ReLU) × rest → Linear(flat) → sigmoid → Reshape.
+    """MLP decoder: Linear(hidden_layers[0]) → (Linear+ReLU) × rest → Linear(flat) → Reshape.
     First layer named "decoder_proj" (combine_vae wires its input). Final node is the reshape to image.
     Returns: {nodes, graph, learnable, output_node}."""
     if not hidden_layers:
@@ -213,11 +213,9 @@ def make_mlp_decoder(
         prev = name
     final_linear = f"decoder_linear{len(hidden_layers) + 1}"
     nodes[final_linear] = NNLayer(n=flat_size, activation_fn="identity", use_bias=True, init=init)
-    nodes["decoder_sigmoid"] = Activation(activation_fn="sigmoid")
     nodes["decoder_reshape_out"] = Reshape(shape=(output_channels, output_size, output_size))
     graph[final_linear] = {prev}
-    graph["decoder_sigmoid"] = {final_linear}
-    graph["decoder_reshape_out"] = {"decoder_sigmoid"}
+    graph["decoder_reshape_out"] = {final_linear}
     learnable.add(final_linear)
     return {"nodes": nodes, "graph": graph, "learnable": learnable, "output_node": "decoder_reshape_out"}
 
@@ -3459,7 +3457,7 @@ VAE_BETA_OHO = GodConfig(
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
@@ -3526,7 +3524,7 @@ VAE_BETA_OHO = GodConfig(
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -3602,7 +3600,7 @@ VAE_BETA_OHO = GodConfig(
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -3615,7 +3613,7 @@ VAE_BETA_OHO = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=500,
+                num_steps=50,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -3867,7 +3865,7 @@ SOS_BETA_OHO = GodConfig(
                 region_mode="exclude_region",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
@@ -3937,7 +3935,7 @@ SOS_BETA_OHO = GodConfig(
                 region_mode="only_region",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -4015,7 +4013,7 @@ SOS_BETA_OHO = GodConfig(
                 region_mode="full",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -4028,7 +4026,7 @@ SOS_BETA_OHO = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=500,
+                num_steps=50,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -4098,6 +4096,56 @@ SOS_BETA_OHO = GodConfig(
             shuffle=False,
             input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
             reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph={
+                "x_seq": frozenset(),
+                "y_seq": frozenset(),
+                "encoder_scan": frozenset({"x_seq", "y_seq"}),
+                "z_prev": frozenset({"encoder_scan"}),
+                "z_curr": frozenset({"encoder_scan"}),
+                "interp": frozenset({"z_prev", "z_curr"}),
+                "interp_y": frozenset({"interp"}),
+                "decoder_scan": frozenset({"interp", "interp_y"}),
+            },
+            source_nodes={
+                "x_seq": UnlabeledSource(),
+                "y_seq": LabeledSource(),
+                "encoder_scan": Scan(
+                    graph=encoder_sample_gen_graph(
+                        VAE_ENCODER_3CONV, source_chain=("z_in", "take_x", "reshape_x"), extract="mu"
+                    ),
+                    autoregressive_mask="erase",
+                    carry_transform="identity",
+                    pred_source="y_seq",
+                    start_token="zeros",
+                ),
+                "z_in": UnlabeledSource(),
+                "take_x": Take(start=2, length=1 * 28 * 28),
+                "reshape_x": Reshape(shape=(1, 28, 28)),
+                "z_prev": Take(start=0, length=2),
+                "z_curr": Take(start=2, length=2),
+                "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
+                "interp_y": Reshape(shape=(10, 2)),
+                "decoder_scan": Scan(
+                    graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_dec_in", "take_z")),
+                    autoregressive_mask="teacher_forcing",
+                    carry_transform="identity",
+                    pred_source="interp_y",
+                    start_token="zeros",
+                ),
+                "z_dec_in": UnlabeledSource(),
+                "take_z": Take(start=2, length=2),
+            },
+            aliases={},
+            input_shape=(2, 1, 28, 28),
+            num_samples=4,
+            every_n_epochs=10,
+            seed=42,
+            shuffle=False,
+            input=InterpolationSampleInput(pixel_transform="raw"),
+            reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10, show_z_labels=False)),
         ),
     ],
     label_mask_value=-1e10,
@@ -4230,7 +4278,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 region_mode="exclude_region",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
@@ -4300,7 +4348,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 region_mode="only_region",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -4378,7 +4426,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 region_mode="full",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -4391,7 +4439,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=500,
+                num_steps=50,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -4461,6 +4509,56 @@ SOS_BETA_OHO_2CONV = GodConfig(
             shuffle=False,
             input=GridSampleInput(min_value=0.05, max_value=0.95, n_per_axis=10, mode="quantile"),
             reporter=GridReporter(title="vae_grid", rows=10, cols=10, show_z_labels=True),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph={
+                "x_seq": frozenset(),
+                "y_seq": frozenset(),
+                "encoder_scan": frozenset({"x_seq", "y_seq"}),
+                "z_prev": frozenset({"encoder_scan"}),
+                "z_curr": frozenset({"encoder_scan"}),
+                "interp": frozenset({"z_prev", "z_curr"}),
+                "interp_y": frozenset({"interp"}),
+                "decoder_scan": frozenset({"interp", "interp_y"}),
+            },
+            source_nodes={
+                "x_seq": UnlabeledSource(),
+                "y_seq": LabeledSource(),
+                "encoder_scan": Scan(
+                    graph=encoder_sample_gen_graph(
+                        VAE_ENCODER_2CONV, source_chain=("z_in", "take_x", "reshape_x"), extract="mu"
+                    ),
+                    autoregressive_mask="erase",
+                    carry_transform="identity",
+                    pred_source="y_seq",
+                    start_token="zeros",
+                ),
+                "z_in": UnlabeledSource(),
+                "take_x": Take(start=2, length=1 * 28 * 28),
+                "reshape_x": Reshape(shape=(1, 28, 28)),
+                "z_prev": Take(start=0, length=2),
+                "z_curr": Take(start=2, length=2),
+                "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
+                "interp_y": Reshape(shape=(10, 2)),
+                "decoder_scan": Scan(
+                    graph=decoder_sample_gen_graph(VAE_DECODER_2CONV, source_chain=("z_dec_in", "take_z")),
+                    autoregressive_mask="teacher_forcing",
+                    carry_transform="identity",
+                    pred_source="interp_y",
+                    start_token="zeros",
+                ),
+                "z_dec_in": UnlabeledSource(),
+                "take_z": Take(start=2, length=2),
+            },
+            aliases={},
+            input_shape=(2, 1, 28, 28),
+            num_samples=4,
+            every_n_epochs=10,
+            seed=42,
+            shuffle=False,
+            input=InterpolationSampleInput(pixel_transform="raw"),
+            reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10, show_z_labels=False)),
         ),
     ],
     label_mask_value=-1e10,
@@ -5586,15 +5684,8 @@ VAE_BASELINE = GodConfig(
     checkpoint_every_n_minibatches=1,
     checkpoint_every_n_epochs=100,
     transition_graph={},
-    readout_graph={
-        **VAE_ARCH_3CONV["readout_graph"],
-        "decoder_sigmoid": {"decoder_convT3"},
-        "merge": {"decoder_sigmoid", "latent"},
-    },
-    nodes={
-        **VAE_ARCH_3CONV["nodes"],
-        "decoder_sigmoid": Activation(activation_fn="sigmoid"),
-    },
+    readout_graph=VAE_ARCH_3CONV["readout_graph"],
+    nodes=VAE_ARCH_3CONV["nodes"],
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
@@ -5691,10 +5782,10 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=1024,
+                num_examples_in_minibatch=1000,
                 num_examples_total=50_000,
                 is_test=False,
                 augment=False,
@@ -5732,7 +5823,7 @@ VAE_BASELINE = GodConfig(
                             momentum="meta1_sgd1_momentum",
                             second_momentum=0.999,
                             eps=1e-8,
-                            eps_root=1e-4,
+                            eps_root=1e-8,
                         ),
                     ),
                 },
@@ -5761,10 +5852,10 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=1024,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -5819,10 +5910,10 @@ VAE_BASELINE = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=1024,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -5835,7 +5926,7 @@ VAE_BASELINE = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=49,
+                num_steps=50,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -5869,10 +5960,7 @@ VAE_BASELINE = GodConfig(
     sample_generators=[
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                **decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
-                "decoder_sigmoid": frozenset({"decoder_convT3"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -5898,10 +5986,7 @@ VAE_BASELINE = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                **decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
-                "decoder_sigmoid": frozenset({"decoder_convT3"}),
-            },
+            readout_graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
             input_shape=(2,),
@@ -5944,10 +6029,7 @@ VAE_BASELINE = GodConfig(
                 "interp": Interpolate(n_steps=10, start="z_prev", end="z_curr"),
                 "interp_y": Reshape(shape=(10, 2)),
                 "decoder_scan": Scan(
-                    graph={
-                        **decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_dec_in", "take_z")),
-                        "decoder_sigmoid": frozenset({"decoder_convT3"}),
-                    },
+                    graph=decoder_sample_gen_graph(VAE_DECODER_3CONV, source_chain=("z_dec_in", "take_z")),
                     autoregressive_mask="teacher_forcing",
                     carry_transform="identity",
                     pred_source="interp_y",
@@ -5962,7 +6044,7 @@ VAE_BASELINE = GodConfig(
             every_n_epochs=10,
             seed=42,
             shuffle=False,
-            input=InterpolationSampleInput(pixel_transform="raw"),
+            input=InterpolationSampleInput(pixel_transform="normalize"),
             reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10, show_z_labels=False)),
         ),
     ],
@@ -6090,11 +6172,11 @@ VAE_BASELINE_MLP = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=1024,
-                num_examples_total=54_000,
+                num_examples_in_minibatch=1000,
+                num_examples_total=50_000,
                 is_test=False,
                 augment=False,
                 shuffle=True,
@@ -6102,7 +6184,7 @@ VAE_BASELINE_MLP = GodConfig(
             validation=StepConfig(
                 num_steps=1,
                 batch=1,
-                reset_t=None,
+                reset_t=1,
                 track_influence_in=frozenset({0}),
             ),
             nested=StepConfig(
@@ -6160,10 +6242,10 @@ VAE_BASELINE_MLP = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=1024,
+                num_examples_in_minibatch=1000,
                 num_examples_total=6_000,
                 is_test=False,
                 augment=False,
@@ -6172,7 +6254,7 @@ VAE_BASELINE_MLP = GodConfig(
             validation=StepConfig(
                 num_steps=1,
                 batch=1,
-                reset_t=None,
+                reset_t=1,
                 track_influence_in=frozenset({1}),
             ),
             nested=StepConfig(
@@ -6218,10 +6300,10 @@ VAE_BASELINE_MLP = GodConfig(
                 patch_w=28,
                 label_last_only=False,
                 add_spurious_pixel_to_train=False,
-                pixel_transform="raw",
+                pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=1024,
+                num_examples_in_minibatch=1000,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -6230,7 +6312,7 @@ VAE_BASELINE_MLP = GodConfig(
             validation=StepConfig(
                 num_steps=1,
                 batch=1,
-                reset_t=None,
+                reset_t=1,
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
@@ -6294,25 +6376,6 @@ VAE_BASELINE_MLP = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
-            readout_graph={
-                **encoder_sample_gen_graph(VAE_ENCODER_MLP, source_chain=("x",), extract="mu"),
-                **{
-                    k: frozenset(v) if k != "decoder_proj" else frozenset({"latent_mu"})
-                    for k, v in VAE_DECODER_MLP["graph"].items()
-                },
-            },
-            source_nodes={},
-            aliases={},
-            input_shape=(1, 28, 28),
-            num_samples=16,
-            every_n_epochs=10,
-            seed=42,
-            shuffle=False,
-            input=DataSampleInput(),
-            reporter=ImageReporter(title="vae_recon"),
-        ),
-        SampleGeneratorConfig(
-            transition_graph={},
             readout_graph=decoder_sample_gen_graph(VAE_DECODER_MLP, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},
@@ -6371,7 +6434,7 @@ VAE_BASELINE_MLP = GodConfig(
             every_n_epochs=10,
             seed=42,
             shuffle=False,
-            input=InterpolationSampleInput(pixel_transform="raw"),
+            input=InterpolationSampleInput(pixel_transform="normalize"),
             reporter=PerSampleGridReporter(GridReporter(title="vae_interp", rows=1, cols=10, show_z_labels=False)),
         ),
     ],
@@ -7658,11 +7721,11 @@ OHO_RNN32_TEST = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        # ("SOS_BETA_OHO", SOS_BETA_OHO),
-        # ("SOS_BETA_OHO_2CONV", SOS_BETA_OHO_2CONV),
-        # ("VAE_BASELINE", VAE_BASELINE),
+        ("SOS_BETA_OHO", SOS_BETA_OHO),
+        ("SOS_BETA_OHO_2CONV", SOS_BETA_OHO_2CONV),
+        ("VAE_BASELINE", VAE_BASELINE),
         ("VAE_BASELINE_MLP", VAE_BASELINE_MLP),
-        # ("VAE_BETA_OHO", VAE_BETA_OHO),
+        ("VAE_BETA_OHO", VAE_BETA_OHO),
         # ("VAE_LR_OHO", VAE_LR_OHO),
         # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
         # ("OHO_RNN32_TEST", OHO_RNN32_TEST),

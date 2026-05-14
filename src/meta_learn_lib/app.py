@@ -11,7 +11,6 @@ import toolz
 import math
 import equinox as eqx
 import threading
-import time
 import queue
 
 from meta_learn_lib.checkpoint import CheckpointManager, CheckpointMetadata, NullCheckpointManager
@@ -234,29 +233,17 @@ def run(
     print("Starting main loop...")
 
     collected: tuple[STAT, ...] = ()
-    loop_start = time.perf_counter()
-    last_iter_end = loop_start
     for k, data in enumerate(dataloader):
-        between_loops = time.perf_counter() - last_iter_end
-
-        t0 = time.perf_counter()
         arr, stats = compiled((config, data), arr, static, shapes)
         jax.block_until_ready(arr)
-        t_compute = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
-        t_log = time.perf_counter() - t0
 
         global_step = start_step + k + 1
-        t0 = time.perf_counter()
         if checkpoint_interval > 0 and global_step % checkpoint_interval == 0:
             checkpoint_manager.save(arr, CheckpointMetadata(global_step=global_step))
             print(f"Checkpoint saved at step {global_step} (epoch {global_step // iterations_per_epoch})")
-        t_checkpoint = time.perf_counter() - t0
 
-        t0 = time.perf_counter()
         for sg in config.sample_generators:
             sample_interval = iterations_per_epoch * sg.every_n_epochs
             if sample_interval <= 0 or global_step % sample_interval != 0:
@@ -288,19 +275,6 @@ def run(
                 NullCheckpointManager(),
             )
             report_samples(sg, sample_stats[0], scalar_logger, config)
-        t_sample = time.perf_counter() - t0
-
-        last_iter_end = time.perf_counter()
-        iter_total = t_compute + t_log + t_checkpoint + t_sample
-        print(
-            f"[{stat_prefix} step {global_step}] "
-            f"between={between_loops:.6f}s "
-            f"compute={t_compute:.6f}s "
-            f"log={t_log:.6f}s "
-            f"ckpt={t_checkpoint:.6f}s "
-            f"sample={t_sample:.6f}s "
-            f"iter_total={iter_total:.6f}s"
-        )
 
     scalar_logger.flush()
     scalar_logger.shutdown()

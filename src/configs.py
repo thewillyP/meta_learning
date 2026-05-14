@@ -3361,7 +3361,7 @@ VAE_BETA_OHO = GodConfig(
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
-            value=0.0002,
+            value=0.0003,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3551,8 +3551,8 @@ VAE_BETA_OHO = GodConfig(
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
-                        damping=1e-4,
-                        beta=0.5,
+                        damping=1e-5,
+                        beta=0.1,
                         use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
@@ -4080,6 +4080,22 @@ SOS_BETA_OHO = GodConfig(
             shuffle=False,
             input=DataSampleInput(),
             reporter=UMAPReporter(title="vae_latent"),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_3CONV, source_chain=("x",), extract="mu"),
+            source_nodes={},
+            aliases={},
+            input_shape=(1, 28, 28),
+            num_samples=10_000,
+            every_n_epochs=10,
+            seed=42,
+            shuffle=False,
+            input=DataSampleInput(),
+            reporter=DisentanglementReporter(
+                title="disentanglement",
+                metrics=(MIGMetric(n_bins=20), ModularityMetric(n_bins=20), TCMetric()),
+            ),
         ),
         SampleGeneratorConfig(
             transition_graph={},
@@ -5686,7 +5702,7 @@ VAE_BASELINE = GodConfig(
     aliases={},
     hyperparameters={
         "meta1_sgd1_lr": HyperparameterConfig(
-            value=0.0002,
+            value=0.0003,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),

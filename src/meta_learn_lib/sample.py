@@ -1,10 +1,12 @@
 import dataclasses
 import re
+import jax.numpy as jnp
 import numpy as np
 
 from meta_learn_lib.config import *
 from meta_learn_lib.constants import *
 from meta_learn_lib.datasets import get_pixel_mean_std
+from meta_learn_lib.disentanglement import compute_metric, metric_name
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.logger import Logger
 
@@ -204,3 +206,16 @@ def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger, confi
                 iterate_tags=("batch", "minibatch"),
                 z_ticks=z_ticks,
             )
+        case DisentanglementReporter(title, metrics):
+            preds = {k.removesuffix("/prediction"): ns for k, ns in prediction_stats.items()}
+            labels = {k.removesuffix("/label"): ns for k, ns in stats.items() if k.endswith("/label")}
+            scalar_stats: STAT = {}
+            for prefix in preds.keys() & labels.keys():
+                pred_ns = preds[prefix]
+                label_ns = labels[prefix]
+                latent_mu = np.asarray(pred_ns.data).reshape(-1, pred_ns.data.shape[-1])
+                factors = np.asarray(label_ns.data).reshape(-1, label_ns.data.shape[-1])
+                for m in metrics:
+                    value = compute_metric(m, latent_mu, factors)
+                    scalar_stats[f"{prefix}/{metric_name(m)}"] = NamedStat(jnp.asarray(value), ())
+            logger.log_scalar_stats(scalar_stats, title)

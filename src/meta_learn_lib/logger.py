@@ -295,6 +295,25 @@ class ScalarLogger:
             plt.close(fig)
             self.logger.log_image(title, series, iteration, img)
 
+    def log_scalar_stats(self, stats: STAT, title: str) -> None:
+        context = self.logger.get_context()
+        iteration = self.global_step
+        for key, ns in stats.items():
+            v = float(np.asarray(ns.data).mean())
+            if np.isnan(v):
+                continue
+            series = f"{title}/{key}" if title else key
+            self.logger.log_scalar(
+                context,
+                series,
+                self.log_title,
+                v,
+                iteration,
+                self.total_iterations,
+                self.iteration_offset,
+            )
+        self.logger.close_context(context)
+
     def log_grid_stats(
         self,
         stats: STAT,
@@ -414,6 +433,9 @@ class ThreadedScalarLogger:
                     case "grid":
                         stats, title, rows, cols, iterate_tags, z_ticks = payload
                         self.scalar_logger.log_grid_stats(stats, title, rows, cols, iterate_tags, z_ticks)
+                    case "scalar_stats":
+                        stats, title = payload
+                        self.scalar_logger.log_scalar_stats(stats, title)
                 q.task_done()
             except queue.Empty:
                 continue
@@ -450,6 +472,11 @@ class ThreadedScalarLogger:
         if self.stop_event.is_set():
             return
         self.sample_queue.put(("grid", stats, title, rows, cols, iterate_tags, z_ticks))
+
+    def log_scalar_stats(self, stats: STAT, title: str) -> None:
+        if self.stop_event.is_set():
+            return
+        self.scalar_queue.put(("scalar_stats", stats, title))
 
     def flush(self) -> None:
         self.scalar_queue.join()

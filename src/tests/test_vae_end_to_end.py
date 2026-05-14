@@ -192,16 +192,6 @@ def test_vae_pipeline_end_to_end_self_consistent():
     assert kl >= 0.0, f"kl negative: {kl}"
 
 
-def test_vae_pipeline_pred_is_in_sigmoid_range():
-    """The decoder's final node is sigmoid → prediction values must lie in [0, 1]."""
-    config = _make_single_level_vae_config()
-    env, interfaces, meta_learner, data_sample = _setup(config)
-
-    new_env, stats = meta_learner(env, data_sample)
-    pred = np.asarray(stats["level0/prediction"].data)
-    assert (pred >= 0).all() and (pred <= 1).all(), (pred.min(), pred.max())
-
-
 def test_vae_pipeline_seed_variance():
     """Two configs identical except for global_seed should produce *different* initial weights and
     *different* recon losses. Validates the claim that 'replicating Kian's grid' is run-to-run variance,

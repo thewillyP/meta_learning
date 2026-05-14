@@ -585,7 +585,33 @@ class PerSampleGridReporter:
     grid: GridReporter
 
 
-type SampleReporter = Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter]
+@dataclass(frozen=True)
+class MIGMetric:
+    n_bins: int
+
+
+@dataclass(frozen=True)
+class ModularityMetric:
+    n_bins: int
+
+
+@dataclass(frozen=True)
+class TCMetric:
+    pass
+
+
+type DisentanglementMetric = Union[MIGMetric, ModularityMetric, TCMetric]
+
+
+@dataclass(frozen=True)
+class DisentanglementReporter:
+    title: str
+    metrics: tuple[DisentanglementMetric, ...]
+
+
+type SampleReporter = Union[
+    ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter, DisentanglementReporter
+]
 
 
 class SampleGeneratorConfig(eqx.Module):

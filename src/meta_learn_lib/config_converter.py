@@ -179,7 +179,18 @@ def make_converter() -> Converter:
 
     # -- SampleReporter --
     setup_flattened_union(
-        converter, Union[ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter]
+        converter,
+        Union[
+            ImageReporter,
+            PlotReporter,
+            UMAPReporter,
+            GridReporter,
+            PerSampleGridReporter,
+            DisentanglementReporter,
+        ],
     )
+
+    # -- DisentanglementMetric --
+    setup_flattened_union(converter, Union[MIGMetric, ModularityMetric, TCMetric])
 
     return converter

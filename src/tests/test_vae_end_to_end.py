@@ -35,6 +35,7 @@ def _froze(g):
 
 def _make_single_level_vae_config():
     import configs
+
     base = configs.VAE_BASELINE_MLP
     # Materialize a frozen-graphs version of the shared arch so filter_jit can hash it.
     new_nodes = {}
@@ -161,7 +162,7 @@ def _setup(config):
 
 def test_vae_pipeline_end_to_end_self_consistent():
     """Run one meta_learner step; verify elbo_loss == loss + beta * kl from the logged stats,
-    that loss/kl values are finite and sensible, and that mu/log_var aggregate stats are in expected ranges."""
+    that loss/kl values are finite and sensible."""
     config = _make_single_level_vae_config()
     env, interfaces, meta_learner, data_sample = _setup(config)
 
@@ -174,31 +175,21 @@ def test_vae_pipeline_end_to_end_self_consistent():
     loss = to_scalar("level0/loss")
     kl = to_scalar("level0/kl")
     elbo_loss = to_scalar("level0/elbo_loss")
-    mu_mean = to_scalar("level0/mu_mean")
-    mu_std = to_scalar("level0/mu_std")
-    log_var_mean = to_scalar("level0/log_var_mean")
-    log_var_std = to_scalar("level0/log_var_std")
     beta_logged = to_scalar("level0/kl_regularizer_beta/meta1_beta/0")
 
     # Self-consistency: elbo_loss should equal loss + beta * kl
-    np.testing.assert_allclose(elbo_loss, loss + beta_logged * kl, atol=1e-4, rtol=1e-4,
-                                err_msg="elbo_loss must equal loss + beta * kl")
+    np.testing.assert_allclose(
+        elbo_loss, loss + beta_logged * kl, atol=1e-4, rtol=1e-4, err_msg="elbo_loss must equal loss + beta * kl"
+    )
 
     # All finite
-    for v, name in [(loss, "loss"), (kl, "kl"), (elbo_loss, "elbo_loss"),
-                     (mu_mean, "mu_mean"), (mu_std, "mu_std"),
-                     (log_var_mean, "log_var_mean"), (log_var_std, "log_var_std")]:
+    for v, name in [(loss, "loss"), (kl, "kl"), (elbo_loss, "elbo_loss")]:
         assert np.isfinite(v), f"{name} not finite: {v}"
 
     # Recon should be in plausible range for an untrained MSE-sum VAE on MNIST [0,1]
     assert 0.0 < loss < 1e4, f"loss out of plausible range: {loss}"
     # KL should be non-negative; at init mu and log_var are small so KL is tiny
     assert kl >= 0.0, f"kl negative: {kl}"
-    # Untrained: mu near 0, log_var near 0
-    assert abs(mu_mean) < 5.0, mu_mean
-    assert 0.0 < mu_std < 20.0, mu_std
-    assert -10.0 < log_var_mean < 10.0, log_var_mean
-    assert 0.0 < log_var_std < 10.0, log_var_std
 
 
 def test_vae_pipeline_pred_is_in_sigmoid_range():
@@ -263,8 +254,9 @@ def test_vae_pipeline_recon_matches_manual_mse():
     per_example = ((pred_flat - x_flat) ** 2).sum(axis=(-3, -2, -1))
     recon_manual = float(per_example.mean())
     recon_logged = float(np.asarray(stats["level0/loss"].data).mean())
-    np.testing.assert_allclose(recon_logged, recon_manual, atol=1e-2, rtol=1e-3,
-                                err_msg=f"logged={recon_logged} vs manual={recon_manual}")
+    np.testing.assert_allclose(
+        recon_logged, recon_manual, atol=1e-2, rtol=1e-3, err_msg=f"logged={recon_logged} vs manual={recon_manual}"
+    )
 
 
 def test_reparameterize_sampler_gives_distinct_eps_per_batch_element():

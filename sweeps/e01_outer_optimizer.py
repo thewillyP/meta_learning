@@ -1,6 +1,13 @@
+import argparse
+
 from clearml import Task
 from clearml.automation import DiscreteParameterRange, GridSearch, HyperParameterOptimizer, ParameterSet
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test", action="store_true", help="1-cell smoke test with few epochs + matplotlib enabled")
+parser.add_argument("--test-epochs", type=int, default=5)
+args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
@@ -76,12 +83,26 @@ eg_adam = {
 }
 
 
+task_name = "E01_test: 1-cell smoke" if args.test else "E01: outer optimizer x mlr x RTRL beta x val_beta"
 opt_task = Task.init(
     project_name=PROJECT,
-    task_name="E01: outer optimizer x mlr x RTRL beta x val_beta",
+    task_name=task_name,
     task_type=Task.TaskTypes.optimizer,
 )
 opt_task.execute_remotely(queue_name="services", clone=False, exit_process=True)
+
+max_jobs = 1 if args.test else 100_000
+test_only_dprs = (
+    [
+        dpr("config/epochs", [args.test_epochs]),
+        dpr("config/sample_generators/0/every_n_epochs", [1]),
+        dpr("config/sample_generators/1/every_n_epochs", [1]),
+        dpr("config/sample_generators/2/every_n_epochs", [1]),
+        dpr("config/sample_generators/3/every_n_epochs", [1]),
+    ]
+    if args.test
+    else []
+)
 
 optimizer = HyperParameterOptimizer(
     base_task_id=BASE_TASK_ID,
@@ -93,20 +114,25 @@ optimizer = HyperParameterOptimizer(
         dpr(f"{METHOD_PREFIX}/damping", [1e-3]),
         dpr(f"{METHOD_PREFIX}/start_at_step", [0]),
         dpr(f"{METHOD_PREFIX}/use_finite_hvp", [1e-3]),
+        dpr("config/logger_config/clearml/enabled", [False]),
+        dpr("config/logger_config/hdf5/enabled", [True]),
+        dpr("config/logger_config/console/enabled", [False]),
+        dpr("config/logger_config/matplotlib/enabled", [False]),
         dpr("slurm/time", ["03:00:00"]),
         dpr("slurm/cpu", [4]),
         dpr("slurm/memory", ["16GB"]),
         dpr("slurm/gpu", [1]),
         dpr("slurm/log_dir", ["/scratch/wlp9800/offline_logs"]),
         dpr("slurm/skip_python_env_install", [True]),
+        *test_only_dprs,
     ],
     objective_metric_title="eval_accumulated/level2/loss/0/0/0",
     objective_metric_series="eval",
     objective_metric_sign="min",
-    max_number_of_concurrent_tasks=100_000,
+    max_number_of_concurrent_tasks=max_jobs,
     optimizer_class=GridSearch,
     execution_queue=QUEUE,
-    total_max_jobs=100_000,
+    total_max_jobs=max_jobs,
 )
 optimizer.set_job_default_parent(BASE_TASK_ID, project_name=PROJECT)
 

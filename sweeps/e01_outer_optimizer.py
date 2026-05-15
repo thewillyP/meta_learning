@@ -11,7 +11,7 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-BASE_TASK_ID = "7860a1fe947842b5b76861455a20515e"
+BASE_TASK_ID = "f91427d1040b4ea7a35d4680512e43c6"
 
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"
@@ -108,6 +108,7 @@ optimizer = HyperParameterOptimizer(
     base_task_id=BASE_TASK_ID,
     hyper_parameters=[
         ParameterSet(parameter_combinations=[additive_sgd, additive_adam, eg_sgd, eg_adam]),
+        dpr("config/hyperparameters/meta1_beta/value", [1e-5]),
         dpr("config/clearml_run", [True]),
         dpr("Args/skip_jitter", [False]),
         dpr(f"{METHOD_PREFIX}/_type", ["RTRLConfig"]),

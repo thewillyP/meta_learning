@@ -133,8 +133,8 @@ optimizer = HyperParameterOptimizer(
     optimizer_class=GridSearch,
     execution_queue=QUEUE,
     total_max_jobs=max_jobs,
+    spawn_project=PROJECT,
 )
-optimizer.set_job_default_parent(BASE_TASK_ID, project_name=PROJECT)
 
 optimizer.start()
 optimizer.wait()

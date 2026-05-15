@@ -1,4 +1,4 @@
-from typing import Callable, get_args
+from typing import Callable, Union, get_args, get_origin
 from cattrs.gen import make_dict_unstructure_fn
 import jax
 import jax.flatten_util
@@ -90,26 +90,52 @@ def deep_serialize(_, obj):
         return obj
 
 
+def _placeholder_for(tp):
+    """Build a recursive placeholder dict for type tp with every leaf set to None.
+
+    Needed because ClearML's task.connect only retrieves flat keys present in the
+    input dict — override sub-keys deeper than the input dict's shape get dropped.
+    So the base config must already have every potentially-overridden leaf present.
+    """
+    if get_origin(tp) is Union:
+        members = [a for a in get_args(tp) if a is not type(None)]
+        if len(members) == 1:
+            return _placeholder_for(members[0])
+        merged = {"_type": None}
+        for m in members:
+            sub = _placeholder_for(m)
+            if isinstance(sub, dict):
+                merged.update(sub)
+        return merged
+    if hasattr(tp, "__dataclass_fields__"):
+        return {"_type": None, **{n: _placeholder_for(f.type) for n, f in tp.__dataclass_fields__.items()}}
+    if hasattr(tp, "__attrs_attrs__"):
+        return {"_type": None, **{f.name: _placeholder_for(f.type) for f in tp.__attrs_attrs__}}
+    return None
+
+
 def setup_flattened_union(converter, union_type):
     union_members = get_args(union_type)
 
-    # --- Unstructure: pad missing fields with None, add _type tag ---
+    # --- Unstructure: pad missing fields recursively, add _type tag ---
     def factory(cls, converter):
-        all_fields = set()
+        field_types: dict = {}
         for member_type in union_members:
             if hasattr(member_type, "__attrs_attrs__"):
-                all_fields.update(field.name for field in member_type.__attrs_attrs__)
+                for f in member_type.__attrs_attrs__:
+                    field_types.setdefault(f.name, f.type)
             elif hasattr(member_type, "__dataclass_fields__"):
-                all_fields.update(member_type.__dataclass_fields__.keys())
+                for n, f in member_type.__dataclass_fields__.items():
+                    field_types.setdefault(n, f.type)
 
         base_fn = make_dict_unstructure_fn(cls, converter)
 
         def flatten_unstructure(obj):
             result = base_fn(obj)
             result["_type"] = cls.__name__
-            for field_name in all_fields:
+            for field_name, field_type in field_types.items():
                 if field_name not in result:
-                    result[field_name] = None
+                    result[field_name] = _placeholder_for(field_type)
             return result
 
         return flatten_unstructure

@@ -1,6 +1,5 @@
 import argparse
 
-import numpy as np
 from clearml import Task
 from clearml.automation import DiscreteParameterRange, GridSearch, HyperParameterOptimizer
 
@@ -21,7 +20,18 @@ def dpr(path: str, values: list):
     return DiscreteParameterRange(path, values=values)
 
 
-INNER_LR_VALUES = [float(x) for x in np.logspace(-4, -3, 10)]
+INNER_LR_VALUES = [
+    1.0000000000e-04,
+    1.2915496650e-04,
+    1.6681005372e-04,
+    2.1544346900e-04,
+    2.7825594022e-04,
+    3.5938136638e-04,
+    4.6415888336e-04,
+    5.9948425032e-04,
+    7.7426368268e-04,
+    1.0000000000e-03,
+]
 
 
 task_name = "E00_test: 1-cell smoke" if args.test else "E00: inner lr sweep (no OHO, fixed beta=1)"

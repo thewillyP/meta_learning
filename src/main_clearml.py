@@ -65,6 +65,7 @@ def main(
         task_name="".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
         task_type=clearml.TaskTypes.training,
         auto_resource_monitoring=False,
+        auto_connect_frameworks=False,
         output_uri=True,
         continue_last_task=0,
     )

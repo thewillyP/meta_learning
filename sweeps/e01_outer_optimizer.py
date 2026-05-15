@@ -108,6 +108,7 @@ optimizer = HyperParameterOptimizer(
     execution_queue=QUEUE,
     total_max_jobs=100_000,
 )
+optimizer.set_job_default_parent(BASE_TASK_ID, project_name=PROJECT)
 
 optimizer.start()
 optimizer.wait()

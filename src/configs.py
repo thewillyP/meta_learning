@@ -3422,7 +3422,7 @@ VAE_BETA_OHO = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.0001,
+            value=0.001,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3442,7 +3442,7 @@ VAE_BETA_OHO = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3572,7 +3572,7 @@ VAE_BETA_OHO = GodConfig(
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
-                        damping=0.0,
+                        damping=1e-3,
                         beta=0.1,
                         use_finite_hvp=1e-3,
                     ),
@@ -3584,10 +3584,13 @@ VAE_BETA_OHO = GodConfig(
                         # target=frozenset({"meta1_beta"}),
                         target=frozenset({"meta1_beta", "meta1_sgd1_lr", "meta1_sgd1_wd"}),
                         optimizer=ExponentiatedGradientConfig(
-                            base=SGDConfig(
+                            base=AdamConfig(
                                 learning_rate="meta2_sgd1_lr",
                                 weight_decay="meta2_sgd1_wd",
                                 momentum="meta2_sgd1_momentum",
+                                second_momentum=0.999,
+                                eps=1e-8,
+                                eps_root=0.0,
                             ),
                         ),
                     ),

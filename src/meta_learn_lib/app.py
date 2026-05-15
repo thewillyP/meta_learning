@@ -239,6 +239,14 @@ def run(
         collected = stat_collector(stats, collected)
         scalar_logger.log(prefix_stats(stats, stat_prefix))
 
+        loss_ns = stats.get("level0/loss")
+        if loss_ns is not None and not bool(jnp.isfinite(jnp.mean(loss_ns.data))):
+            print(f"[abort] non-finite level0/loss at step {start_step + k + 1}; stopping training.")
+            scalar_logger.flush()
+            scalar_logger.shutdown()
+            trained_env = eqx.combine(arr, static)
+            return trained_env, collected
+
         global_step = start_step + k + 1
         if checkpoint_interval > 0 and global_step % checkpoint_interval == 0:
             scalar_logger.flush()

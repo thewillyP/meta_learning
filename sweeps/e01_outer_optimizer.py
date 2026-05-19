@@ -11,7 +11,7 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-BASE_TASK_ID = "ef9cd702a80b4810b2b93785ec16cfaa"
+BASE_TASK_ID = "eee7cb236d4c47939feac947571f3156"  # VAE_BETA_OHO_V2_clip base — HardClip dict-shaped so threshold is overridable
 
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"
@@ -22,8 +22,20 @@ RTRL_BETA_PATH = f"{METHOD_PREFIX}/beta"
 VAL_BETA_PATH = "config/hyperparameters/meta2_beta/value"
 B1_PATH = "config/hyperparameters/meta2_sgd1_momentum/value"
 
+CLIP_THRESHOLD_PATH = "config/levels/0/learner/model_learner/add_clip/threshold"
+INNER_LR_PATH = "config/hyperparameters/meta1_sgd1_lr/value"
+
 RTRL_BETAS = [0.01, 0.1, 0.5]
 VAL_BETAS = [0.0, 1.0]
+
+E00_WINNER_LR = 1.6681e-4  # E00 winner (no clip)
+E00B_WINNER_LR = 5e-2  # TODO: replace with E00b winner once that sweep completes
+
+# Pair clip threshold with the right inner lr: HardClip(inf) ≡ no clipping (no grad norm exceeds inf)
+clip_lr_pair = [
+    {CLIP_THRESHOLD_PATH: float("inf"), INNER_LR_PATH: E00_WINNER_LR},   # clip off
+    {CLIP_THRESHOLD_PATH: 1.0,           INNER_LR_PATH: E00B_WINNER_LR}, # clip on
+]
 
 
 def dpr(path: str, values: list):
@@ -83,7 +95,7 @@ eg_adam = {
 }
 
 
-task_name = "E01_test: 1-cell smoke" if args.test else "E01: outer optimizer x mlr x RTRL beta x val_beta"
+task_name = "E01_test: 1-cell smoke" if args.test else "E01: outer optimizer x mlr x RTRL beta x val_beta x clip"
 opt_task = Task.init(
     project_name=PROJECT,
     task_name=task_name,
@@ -108,6 +120,8 @@ optimizer = HyperParameterOptimizer(
     base_task_id=BASE_TASK_ID,
     hyper_parameters=[
         ParameterSet(parameter_combinations=[additive_sgd, additive_adam, eg_sgd, eg_adam]),
+        ParameterSet(parameter_combinations=clip_lr_pair),
+        dpr("config/levels/0/learner/model_learner/add_clip/_type", ["HardClip"]),
         dpr("config/hyperparameters/meta1_beta/value", [1e-5]),
         dpr("config/clearml_run", [True]),
         dpr("Args/skip_jitter", [False]),

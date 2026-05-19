@@ -51,6 +51,7 @@ def main(
     skip_jitter: bool,
     resume_model_id: str | None,
     cache_dir: str,
+    queue: str | None,
 ):
     jax.config.update("jax_compilation_cache_dir", os.path.expanduser(cache_dir))
     jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
@@ -72,8 +73,8 @@ def main(
 
     slurm_params = SlurmParams(
         memory="16GB",
-        time="01:00:00",
-        cpu=2,
+        time="03:00:00",
+        cpu=4,
         gpu=1,
         log_dir="/scratch/wlp9800/logs",
         skip_python_env_install=True,
@@ -87,6 +88,10 @@ def main(
     config_model, config_dict = fetch_config(config_name=config_name, config_id=config_id)
     task.connect(config_model)
     _config = task.connect(config_dict, name="config")
+
+    if queue:
+        task.execute_remotely(queue_name=queue, clone=False, exit_process=True)
+
     config = converter.structure(_config, GodConfig)
 
     loggers = []
@@ -117,6 +122,9 @@ if __name__ == "__main__":
     parser.add_argument("--skip-jitter", action="store_true", default=False)
     parser.add_argument("--resume-model-id", default=None, help="ClearML model ID to resume training from")
     parser.add_argument("--cache-dir", required=True, help="JAX persistent compilation cache directory")
+    parser.add_argument(
+        "--queue", default=None, help="If set, enqueue to this ClearML queue and exit instead of running locally"
+    )
     args = parser.parse_args()
     main(
         config_name=args.config_name,
@@ -124,4 +132,5 @@ if __name__ == "__main__":
         skip_jitter=args.skip_jitter,
         resume_model_id=args.resume_model_id,
         cache_dir=args.cache_dir,
+        queue=args.queue,
     )

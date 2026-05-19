@@ -31,7 +31,7 @@ def parse_value(raw: str):
 
 
 def apply_edit(cfg: dict, dotted_path: str, value) -> None:
-    keys = [int(k) if k.lstrip("-").isdigit() else k for k in dotted_path.split("/")]
+    keys = dotted_path.split("/")
     cursor = cfg
     for k in keys[:-1]:
         cursor = cursor[k]

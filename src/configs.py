@@ -4541,6 +4541,22 @@ SOS_BETA_OHO_2CONV = GodConfig(
         ),
         SampleGeneratorConfig(
             transition_graph={},
+            readout_graph=encoder_sample_gen_graph(VAE_ENCODER_2CONV, source_chain=("x",), extract="mu"),
+            source_nodes={},
+            aliases={},
+            input_shape=(1, 28, 28),
+            num_samples=10_000,
+            every_n_epochs=10,
+            seed=42,
+            shuffle=False,
+            input=DataSampleInput(),
+            reporter=DisentanglementReporter(
+                title="disentanglement",
+                metrics=(MIGMetric(n_bins=20), ModularityMetric(n_bins=20), TCMetric()),
+            ),
+        ),
+        SampleGeneratorConfig(
+            transition_graph={},
             readout_graph=decoder_sample_gen_graph(VAE_DECODER_2CONV, source_chain=("z_input",)),
             source_nodes={"z_input": UnlabeledSource()},
             aliases={},

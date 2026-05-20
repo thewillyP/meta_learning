@@ -11,7 +11,7 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-BASE_TASK_ID = "21030cf4c06f4111bf6a02b6761da929"  # SOS_BETA_OHO_clip_eg_shaped_no_run base task
+BASE_TASK_ID = "bee61bc5c97a41f69383623db146117c"  # SOS_BETA_OHO_clip_eg_shaped_no_run_v2 base task (with SOSGridSampleInput/GridDeformationReporter sample-gen)
 
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"
@@ -28,7 +28,7 @@ INNER_LR_PATH = "config/hyperparameters/meta1_sgd1_lr/value"
 
 RTRL_BETAS = [0.1, 1.0]
 VAL_BETAS = [0.0, 1.0]
-E00_SOS_WINNER_LR = 1e-2  # TODO: replace with E00_sos winner once that sweep completes
+E00_SOS_WINNER_LR = 1e-1  # E00_sos winner (HPO 3c5b6798, common-iter=50000 loss=10.6)
 
 
 def dpr(path: str, values: list):
@@ -97,7 +97,9 @@ TARGETS = [
 ]
 
 
-task_name = "E01_sos_test: 1-cell smoke" if args.test else "E01_sos: outer-opt x mlr x RTRL x val_beta x target (clip on, SOS)"
+task_name = (
+    "E01_sos_test: 1-cell smoke" if args.test else "E01_sos: outer-opt x mlr x RTRL x val_beta x target (clip on, SOS)"
+)
 opt_task = Task.init(
     project_name=PROJECT,
     task_name=task_name,

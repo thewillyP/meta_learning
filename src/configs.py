@@ -3889,6 +3889,7 @@ SOS_BETA_OHO = GodConfig(
                 patch_w=28,
                 region=(6.0, 22.0, 6.0, 22.0),
                 region_mode="exclude_region",
+                tag=0,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1000,
@@ -3959,6 +3960,7 @@ SOS_BETA_OHO = GodConfig(
                 patch_w=28,
                 region=(6.0, 22.0, 6.0, 22.0),
                 region_mode="only_region",
+                tag=0,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1000,
@@ -4037,6 +4039,7 @@ SOS_BETA_OHO = GodConfig(
                 patch_w=28,
                 region=(0.0, 0.0, 0.0, 0.0),
                 region_mode="full",
+                tag=0,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1000,
@@ -4130,6 +4133,7 @@ SOS_BETA_OHO = GodConfig(
                     patch_w=28,
                     region=(0.0, 28.0, 0.0, 28.0),
                     region_mode="grid",
+                    tag=0,
                 ),
                 n_per_axis=10,
             ),
@@ -4343,6 +4347,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 patch_w=28,
                 region=(6.0, 22.0, 6.0, 22.0),
                 region_mode="exclude_region",
+                tag=0,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1000,
@@ -4413,6 +4418,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 patch_w=28,
                 region=(6.0, 22.0, 6.0, 22.0),
                 region_mode="only_region",
+                tag=0,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1000,
@@ -4491,6 +4497,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 patch_w=28,
                 region=(0.0, 0.0, 0.0, 0.0),
                 region_mode="full",
+                tag=0,
             ),
             dataset=DatasetConfig(
                 num_examples_in_minibatch=1000,
@@ -4584,6 +4591,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                     patch_w=28,
                     region=(0.0, 28.0, 0.0, 28.0),
                     region_mode="grid",
+                    tag=0,
                 ),
                 n_per_axis=10,
             ),

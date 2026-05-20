@@ -85,7 +85,7 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return 1
         case MNISTSequenceTaskFamily(_, _):
             return 1
-        case SOSTaskFamily(grid_size, _, _, _, ph, pw, _, _):
+        case SOSTaskFamily(grid_size, _, _, _, ph, pw, _, _, _):
             return (grid_size // ph) * (grid_size // pw)
 
 
@@ -412,7 +412,7 @@ def dataset_sources(
 
             return [make_seq_task(s, k) for s, k in zip(splits, keys)]
 
-        case SOSTaskFamily(grid_size, sigma_x, sigma_y, n, patch_h, patch_w, region, region_mode):
+        case SOSTaskFamily(grid_size, sigma_x, sigma_y, n, patch_h, patch_w, region, region_mode, _):
             keys = jax.random.split(seed, num_tasks)
             x_min, x_max, y_min, y_max = region
 

@@ -328,6 +328,49 @@ class ScalarLogger:
                     plt.close(fig)
                     self.logger.log_image(title, f"{series}{suffix}", iteration, img)
 
+    def log_grid_deformation_stats(self, stats: STAT, title: str, n_per_axis: int) -> None:
+        preds = {k.removesuffix("/prediction"): ns for k, ns in stats.items() if k.endswith("/prediction")}
+        labels = {k.removesuffix("/label"): ns for k, ns in stats.items() if k.endswith("/label")}
+        for prefix in preds.keys() & labels.keys():
+            pred_iter = self.for_each_entry({f"{prefix}/prediction": preds[prefix]}, ("batch", "time"))
+            label_iter = self.for_each_entry({f"{prefix}/label": labels[prefix]}, ("batch", "time"))
+            for (series, iteration, pred_sub), (_, _, label_sub) in zip(pred_iter, label_iter):
+                if iteration % self.checkpoint_every != 0:
+                    continue
+                pred_flat = pred_sub.reshape(pred_sub.shape[0], -1)
+                label_flat = label_sub.reshape(label_sub.shape[0], -1)
+                if pred_flat.shape[1] != 2 or label_flat.shape[1] != 2:
+                    continue
+                if pred_flat.shape[0] != n_per_axis * n_per_axis:
+                    continue
+                z = pred_flat.reshape(n_per_axis, n_per_axis, 2)
+                cxy = label_flat.reshape(n_per_axis, n_per_axis, 2)
+                cx_min, cx_max = float(cxy[..., 0].min()), float(cxy[..., 0].max())
+                cy_min, cy_max = float(cxy[..., 1].min()), float(cxy[..., 1].max())
+                cx_norm = (cxy[..., 0] - cx_min) / max(cx_max - cx_min, 1e-9)
+                cy_norm = (cxy[..., 1] - cy_min) / max(cy_max - cy_min, 1e-9)
+                rgb = np.stack([cx_norm, cy_norm, np.full_like(cx_norm, 0.5)], axis=-1)
+                fig, ax = plt.subplots(figsize=(8, 8))
+                for i in range(n_per_axis):
+                    ax.plot(z[i, :, 0], z[i, :, 1], color="gray", linewidth=0.7, alpha=0.5)
+                    ax.plot(z[:, i, 0], z[:, i, 1], color="gray", linewidth=0.7, alpha=0.5)
+                ax.scatter(
+                    z[..., 0].reshape(-1),
+                    z[..., 1].reshape(-1),
+                    c=rgb.reshape(-1, 3),
+                    s=30,
+                    edgecolors="black",
+                    linewidths=0.4,
+                )
+                ax.set_xlabel("z1")
+                ax.set_ylabel("z2")
+                ax.set_title(f"{title} - {series}  (cx→R, cy→G)")
+                ax.grid(True, alpha=0.3)
+                fig.canvas.draw()
+                img = np.asarray(fig.canvas.renderer.buffer_rgba())[..., :3]
+                plt.close(fig)
+                self.logger.log_image(title, series, iteration, img)
+
 
 class ThreadedScalarLogger:
     def __init__(
@@ -381,6 +424,9 @@ class ThreadedScalarLogger:
                     case "scalar_stats":
                         stats, title = payload
                         self.scalar_logger.log_scalar_stats(stats, title)
+                    case "grid_deformation":
+                        stats, title, n_per_axis = payload
+                        self.scalar_logger.log_grid_deformation_stats(stats, title, n_per_axis)
                 q.task_done()
             except queue.Empty:
                 continue
@@ -422,6 +468,11 @@ class ThreadedScalarLogger:
         if self.stop_event.is_set():
             return
         self.scalar_queue.put(("scalar_stats", stats, title))
+
+    def log_grid_deformation_stats(self, stats: STAT, title: str, n_per_axis: int) -> None:
+        if self.stop_event.is_set():
+            return
+        self.sample_queue.put(("grid_deformation", stats, title, n_per_axis))
 
     def flush(self) -> None:
         self.scalar_queue.join()

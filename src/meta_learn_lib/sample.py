@@ -88,6 +88,12 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
                     time_series_length=2,
                     pixel_transform=pixel_transform,
                 )
+            case SOSGridSampleInput(sos_task, n_per_axis):
+                dataset_source = dataclasses.replace(
+                    sos_task,
+                    n=n_per_axis * n_per_axis,
+                    region_mode="grid",
+                )
 
         new_levels.append(
             dataclasses.replace(
@@ -219,3 +225,6 @@ def report_samples(sg: SampleGeneratorConfig, stats: STAT, logger: Logger, confi
                     value = compute_metric(m, latent_mu, factors)
                     scalar_stats[f"{prefix}/{metric_name(m)}"] = NamedStat(jnp.asarray(value), ())
             logger.log_scalar_stats(scalar_stats, title)
+        case GridDeformationReporter(title, n_per_axis):
+            label_stats = {k: v for k, v in stats.items() if k.endswith("/label")}
+            logger.log_grid_deformation_stats(prediction_stats | label_stats, title, n_per_axis)

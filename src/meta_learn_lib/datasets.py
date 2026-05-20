@@ -2,7 +2,7 @@ from functools import partial
 import itertools
 import jax
 import jax.numpy as jnp
-from typing import Callable, Iterator, NamedTuple
+from typing import Callable, Iterator, Literal, NamedTuple
 from torch.utils.data import Dataset, Subset, random_split
 import torch
 import torchvision
@@ -433,13 +433,17 @@ def dataset_sources(
                 return (x_min <= cx) & (cx <= x_max) & (y_min <= cy) & (cy <= y_max)
 
             def make_sos_task(key: PRNG) -> DatasetWithReshape:
-                def sample_n_acceptable(k: PRNG, want: int) -> jax.Array:
+                def sample_n_acceptable(
+                    k: PRNG,
+                    want: int,
+                    rejection_mode: Literal["full", "exclude_region", "only_region"],
+                ) -> jax.Array:
                     pool: list[np.ndarray] = []
                     accepted = 0
                     while accepted < want:
                         k, k_batch = jax.random.split(k)
                         candidates = jax.random.uniform(k_batch, (want * 2, 2), minval=0.0, maxval=float(grid_size))
-                        match region_mode:
+                        match rejection_mode:
                             case "full":
                                 mask = jnp.ones((candidates.shape[0],), dtype=bool)
                             case "exclude_region":
@@ -451,7 +455,18 @@ def dataset_sources(
                         accepted += kept.shape[0]
                     return jnp.asarray(np.concatenate(pool, axis=0)[:want])
 
-                centers = sample_n_acceptable(key, n)
+                match region_mode:
+                    case "grid":
+                        n_per_axis = int(round(math.sqrt(n)))
+                        assert n_per_axis * n_per_axis == n, (
+                            f"SOS grid mode requires n to be a perfect square, got n={n}"
+                        )
+                        cx_vals = jnp.linspace(x_min, x_max, n_per_axis)
+                        cy_vals = jnp.linspace(y_min, y_max, n_per_axis)
+                        cx_grid, cy_grid = jnp.meshgrid(cx_vals, cy_vals, indexing="ij")
+                        centers = jnp.stack([cx_grid.reshape(-1), cy_grid.reshape(-1)], axis=-1)
+                    case non_grid:
+                        centers = sample_n_acceptable(key, n, non_grid)
                 cxs, cys = centers[:, 0], centers[:, 1]
 
                 xv, yv = jnp.meshgrid(jnp.arange(grid_size), jnp.arange(grid_size), indexing="xy")

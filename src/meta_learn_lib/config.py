@@ -104,7 +104,7 @@ class SOSTaskFamily:
     patch_h: int
     patch_w: int
     region: tuple[float, float, float, float]  # (x_min, x_max, y_min, y_max); ignored when region_mode="full"
-    region_mode: Literal["full", "exclude_region", "only_region"]
+    region_mode: Literal["full", "exclude_region", "only_region", "grid"]
 
 
 type Task = Union[
@@ -553,7 +553,19 @@ class InterpolationSampleInput:
     pixel_transform: PixelTransform
 
 
-type SampleInput = Union[GaussianSampleInput, DataSampleInput, GridSampleInput, InterpolationSampleInput]
+@dataclass(frozen=True)
+class SOSGridSampleInput:
+    dataset: SOSTaskFamily
+    n_per_axis: int
+
+
+type SampleInput = Union[
+    GaussianSampleInput,
+    DataSampleInput,
+    GridSampleInput,
+    InterpolationSampleInput,
+    SOSGridSampleInput,
+]
 
 
 @dataclass(frozen=True)
@@ -608,8 +620,20 @@ class DisentanglementReporter:
     metrics: tuple[DisentanglementMetric, ...]
 
 
+@dataclass(frozen=True)
+class GridDeformationReporter:
+    title: str
+    n_per_axis: int
+
+
 type SampleReporter = Union[
-    ImageReporter, PlotReporter, UMAPReporter, GridReporter, PerSampleGridReporter, DisentanglementReporter
+    ImageReporter,
+    PlotReporter,
+    UMAPReporter,
+    GridReporter,
+    PerSampleGridReporter,
+    DisentanglementReporter,
+    GridDeformationReporter,
 ]
 
 

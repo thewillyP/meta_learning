@@ -174,6 +174,7 @@ def make_converter() -> Converter:
             DataSampleInput,
             GridSampleInput,
             InterpolationSampleInput,
+            SOSGridSampleInput,
         ],
     )
 
@@ -187,6 +188,7 @@ def make_converter() -> Converter:
             GridReporter,
             PerSampleGridReporter,
             DisentanglementReporter,
+            GridDeformationReporter,
         ],
     )
 

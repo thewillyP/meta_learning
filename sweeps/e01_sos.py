@@ -11,7 +11,7 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-BASE_TASK_ID = "bee61bc5c97a41f69383623db146117c"  # SOS_BETA_OHO_clip_eg_shaped_no_run_v2 base task (with SOSGridSampleInput/GridDeformationReporter sample-gen)
+BASE_TASK_ID = "c14b3d0807114b7db88c429920291287"  # SOS_BETA_OHO_clip_eg_shaped_no_run_v3 base task (with SOSGridSampleInput tagged per level)
 
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"

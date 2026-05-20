@@ -19,12 +19,8 @@ from meta_learn_lib.lib_types import STAT, Tag
 
 
 class Logger(Protocol):
-    def get_context(self): ...
-
-    def close_context(self, context): ...
-
     def log_scalar(
-        self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
+        self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
     ): ...
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray): ...
@@ -37,23 +33,15 @@ class HDF5Logger:
         self.checkpoint_every = checkpoint_every
         self.log_file = self.log_dir / f"metrics_{task_id}.h5"
         self.image_logger = MatplotlibLogger(str(self.log_dir / f"images_{task_id}"))
-
-        with h5py.File(self.log_file, "a") as f:
-            f.attrs["task_id"] = task_id
-            f.attrs.setdefault("created", datetime.now().isoformat())
-
-    def get_context(self) -> h5py.File:
-        return h5py.File(self.log_file, "a")
-
-    def close_context(self, f: h5py.File):
-        f.close()
+        self.file = h5py.File(self.log_file, "a")
+        self.file.attrs["task_id"] = task_id
+        self.file.attrs.setdefault("created", datetime.now().isoformat())
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
         self.image_logger.log_image(title, series, iteration, image)
 
-    def log_scalar(
-        self, f: h5py.File, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
-    ):
+    def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
+        f = self.file
         if title not in f:
             dataset = f.create_dataset(title, shape=(max_count,), dtype=np.float64, fillvalue=np.nan)
             dataset.attrs["series"] = series
@@ -70,17 +58,7 @@ class ClearMLLogger:
     def __init__(self, task: clearml.Task):
         self.task = task
 
-    def get_context(self):
-        """No context needed for ClearML"""
-        return None
-
-    def close_context(self, context):
-        """No context to close for ClearML"""
-        pass
-
-    def log_scalar(
-        self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
-    ):
+    def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         self.task.get_logger().report_scalar(
             title=title, series=series, value=value, iteration=iteration + iteration_offset
         )
@@ -93,20 +71,10 @@ class ConsoleLogger:
     def __init__(self):
         pass
 
-    def get_context(self):
-        """No context needed for ConsoleLogger"""
-        return None
-
-    def close_context(self, context):
-        """No context to close for ConsoleLogger"""
-        pass
-
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
         pass
 
-    def log_scalar(
-        self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
-    ):
+    def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         print(f"[{title}] {series} @ {iteration + iteration_offset}/{max_count}: {value}")
 
 
@@ -115,12 +83,6 @@ class MatplotlibLogger:
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.data = defaultdict(lambda: {"iterations": [], "values": [], "title": None})
-
-    def get_context(self):
-        return None
-
-    def close_context(self, context):
-        pass
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
         if image.ndim == 3 and image.shape[0] in (1, 3):
@@ -137,9 +99,7 @@ class MatplotlibLogger:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
-    def log_scalar(
-        self, context, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
-    ):
+    def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         self.data[series]["iterations"].append(iteration + iteration_offset)
         self.data[series]["values"].append(value)
         self.data[series]["title"] = title
@@ -162,22 +122,13 @@ class MultiLogger:
     def __init__(self, loggers: list[Logger]):
         self.loggers = loggers
 
-    def get_context(self):
-        return [logger.get_context() for logger in self.loggers]
-
-    def close_context(self, contexts):
-        for logger, context in zip(self.loggers, contexts):
-            logger.close_context(context)
-
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
         for logger in self.loggers:
             logger.log_image(title, series, iteration, image)
 
-    def log_scalar(
-        self, contexts, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int
-    ):
-        for logger, context in zip(self.loggers, contexts):
-            logger.log_scalar(context, title, series, value, iteration, max_count, iteration_offset)
+    def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
+        for logger in self.loggers:
+            logger.log_scalar(title, series, value, iteration, max_count, iteration_offset)
 
 
 def compute_strides(shape: tuple[int, ...]) -> list[int]:
@@ -236,7 +187,6 @@ class ScalarLogger:
                     yield series, iteration, sub
 
     def log(self, stats: STAT) -> None:
-        context = self.logger.get_context()
         for series, iteration, sub in self.for_each_entry(stats, ("batch", "minibatch")):
             if sub.ndim != 1:
                 continue
@@ -246,7 +196,6 @@ class ScalarLogger:
             if np.isnan(v):
                 continue
             self.logger.log_scalar(
-                context,
                 series,
                 self.log_title,
                 v,
@@ -259,7 +208,6 @@ class ScalarLogger:
             default=1,
         )
         self.global_step += max_scan_size
-        self.logger.close_context(context)
 
     def log_image_stats(self, stats: STAT, title: str) -> None:
         for series, iteration, sub in self.for_each_entry(stats, ("batch", "minibatch")):
@@ -296,7 +244,6 @@ class ScalarLogger:
             self.logger.log_image(title, series, iteration, img)
 
     def log_scalar_stats(self, stats: STAT, title: str) -> None:
-        context = self.logger.get_context()
         iteration = self.global_step
         for key, ns in stats.items():
             v = float(np.asarray(ns.data).mean())
@@ -304,7 +251,6 @@ class ScalarLogger:
                 continue
             series = f"{title}/{key}" if title else key
             self.logger.log_scalar(
-                context,
                 series,
                 self.log_title,
                 v,
@@ -312,7 +258,6 @@ class ScalarLogger:
                 self.total_iterations,
                 self.iteration_offset,
             )
-        self.logger.close_context(context)
 
     def log_grid_stats(
         self,

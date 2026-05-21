@@ -12,19 +12,23 @@ import equinox as eqx
 
 def _prng_to_data(pytree):
     """Convert PRNG keys to their underlying integer arrays for serialization."""
+
     def convert(x):
         if isinstance(x, jax.Array) and jnp.issubdtype(x.dtype, jax.dtypes.prng_key):
             return jax.random.key_data(x)
         return x
+
     return jax.tree.map(convert, pytree)
 
 
 def _data_to_prng(pytree, like):
     """Restore PRNG keys from integer arrays using the reference pytree for dtype info."""
+
     def convert(x, ref):
         if isinstance(ref, jax.Array) and jnp.issubdtype(ref.dtype, jax.dtypes.prng_key):
             return jax.random.wrap_key_data(x)
         return x
+
     return jax.tree.map(convert, pytree, like)
 
 
@@ -72,10 +76,13 @@ class FileCheckpointManager:
 
 
 class ClearMLCheckpointManager:
-    """Saves via OutputModel (uploaded to ClearML fileserver) + local cache.
+    """Saves to ClearML fileserver via OutputModel. Local file is a save-side staging step only.
+
+    Server is source of truth on load. Local file is never read; it exists only because
+    OutputModel.update_weights needs a file path to upload from.
 
     Supports two resume modes:
-    - Automatic: requeued task loads its own latest output model
+    - Automatic: requeued task loads its own latest output model from server
     - Manual: new task loads a specific model by ID (initial_model_id)
     """
 
@@ -99,17 +106,10 @@ class ClearMLCheckpointManager:
         self.task.upload_artifact("checkpoint_metadata", meta_path)
 
     def load(self, like) -> tuple | None:
-        # Priority 1: explicit model ID (new run starting from a prior checkpoint)
         if self.initial_model_id is not None:
             arr = self._download_arr(clearml.InputModel(model_id=self.initial_model_id), like)
             return (arr, CheckpointMetadata(global_step=0)) if arr is not None else None
 
-        # Priority 2: local cache (fast path, same node after requeue)
-        local = self.file_mgr.load(like)
-        if local is not None:
-            return local
-
-        # Priority 3: current task's output models (cross-node requeue)
         models = self.task.models.get("output", [])
         if not models:
             return None

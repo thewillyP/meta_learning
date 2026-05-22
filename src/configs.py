@@ -285,6 +285,7 @@ OHO_RNN32 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=True),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -600,6 +601,7 @@ OHO_RNN32_ADAM = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=True),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -915,6 +917,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=False),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=True),
         scalar_queue_size=0,
@@ -1252,6 +1255,7 @@ OHO_RNN256_V2 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -1567,6 +1571,7 @@ OHO_RNN256_V3 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -1879,6 +1884,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -2185,6 +2191,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -2504,6 +2511,7 @@ RNN256_CIFAR10 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -2766,6 +2774,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -3067,6 +3076,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -3368,6 +3378,7 @@ VAE_BETA_OHO = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=10,
@@ -3778,6 +3789,7 @@ SOS_BETA_OHO = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=True),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=0,
@@ -4236,6 +4248,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=True),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=0,
@@ -4694,6 +4707,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=0,
@@ -5072,6 +5086,7 @@ VAE_LR_OHO = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=0,
@@ -5482,6 +5497,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -5791,6 +5807,7 @@ VAE_BASELINE = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=10,
@@ -6181,6 +6198,7 @@ VAE_BASELINE_ADAM = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=10,
@@ -6574,6 +6592,7 @@ VAE_BETA_OHO_V2 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=10,
@@ -6978,6 +6997,7 @@ VAE_BASELINE_MLP = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
         scalar_queue_size=0,
@@ -7368,6 +7388,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -7678,6 +7699,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -7997,6 +8019,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,
@@ -8307,6 +8330,7 @@ OHO_RNN32_TEST = GodConfig(
     logger_config=LoggersConfig(
         clearml=ClearMLLoggerConfig(enabled=True),
         hdf5=HDF5LoggerConfig(enabled=True),
+        sqlite=SQLiteLoggerConfig(enabled=False),
         console=ConsoleLoggerConfig(enabled=False),
         matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
         scalar_queue_size=0,

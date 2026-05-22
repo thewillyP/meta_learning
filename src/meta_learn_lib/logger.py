@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 from itertools import accumulate
 from operator import mul
+import sqlite3
 import threading
 import queue
 import itertools
 import math
-import jax
 import umap
 
 from meta_learn_lib.lib_types import STAT, Tag
@@ -52,6 +52,40 @@ class HDF5Logger:
         if 0 <= idx < len(f[title]):
             f[title][idx] = value
             f[f"{title}_iterations"][idx] = absolute_iteration
+
+
+class SQLiteLogger:
+    def __init__(self, log_dir: str, task_id: str, checkpoint_every: int):
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_every = checkpoint_every
+        self.db_file = self.log_dir / f"metrics_{task_id}.sqlite"
+        self.image_logger = MatplotlibLogger(str(self.log_dir / f"images_{task_id}"))
+        self.conn = sqlite3.connect(str(self.db_file), check_same_thread=False, isolation_level=None)
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=NORMAL")
+        self.conn.execute(
+            """CREATE TABLE IF NOT EXISTS scalars (
+                series TEXT NOT NULL,
+                iteration INTEGER NOT NULL,
+                value REAL NOT NULL,
+                log_title TEXT
+            )"""
+        )
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_series_iter ON scalars(series, iteration)")
+        self.conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('task_id', ?)", (task_id,))
+        self.conn.execute("INSERT OR IGNORE INTO meta VALUES ('created', ?)", (datetime.now().isoformat(),))
+
+    def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
+        self.image_logger.log_image(title, series, iteration, image)
+
+    def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
+        absolute_iteration = iteration + iteration_offset
+        self.conn.execute(
+            "INSERT INTO scalars(series, iteration, value, log_title) VALUES (?, ?, ?, ?)",
+            (series, absolute_iteration, float(value), title),
+        )
 
 
 class ClearMLLogger:

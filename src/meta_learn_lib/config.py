@@ -465,6 +465,11 @@ class HDF5LoggerConfig:
 
 
 @dataclass(frozen=True)
+class SQLiteLoggerConfig:
+    enabled: bool
+
+
+@dataclass(frozen=True)
 class ClearMLLoggerConfig:
     enabled: bool
 
@@ -484,6 +489,7 @@ class MatplotlibLoggerConfig:
 class LoggersConfig:
     clearml: ClearMLLoggerConfig
     hdf5: HDF5LoggerConfig
+    sqlite: SQLiteLoggerConfig
     console: ConsoleLoggerConfig
     matplotlib: MatplotlibLoggerConfig
     scalar_queue_size: int

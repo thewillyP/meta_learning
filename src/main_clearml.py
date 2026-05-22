@@ -13,7 +13,7 @@ from meta_learn_lib import app
 from meta_learn_lib.checkpoint import ClearMLCheckpointManager, NullCheckpointManager
 from meta_learn_lib.config import *
 from meta_learn_lib.config_converter import make_converter
-from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, ConsoleLogger
+from meta_learn_lib.logger import ClearMLLogger, HDF5Logger, MatplotlibLogger, ConsoleLogger, SQLiteLogger
 import jax
 
 # jax.config.update("jax_platform_name", "cpu")
@@ -100,6 +100,8 @@ def main(
         loggers.append(ClearMLLogger(task))
     if lc.hdf5.enabled:
         loggers.append(HDF5Logger(config.log_dir, task.task_id, config.checkpoint_every_n_minibatches))
+    if lc.sqlite.enabled:
+        loggers.append(SQLiteLogger(config.log_dir, task.task_id, config.checkpoint_every_n_minibatches))
     if lc.console.enabled:
         loggers.append(ConsoleLogger())
     if lc.matplotlib.enabled:

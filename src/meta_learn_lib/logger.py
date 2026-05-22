@@ -69,7 +69,7 @@ class SQLiteLogger:
                 series TEXT NOT NULL,
                 iteration INTEGER NOT NULL,
                 value REAL NOT NULL,
-                log_title TEXT
+                run_label TEXT
             )"""
         )
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_series_iter ON scalars(series, iteration)")
@@ -81,10 +81,13 @@ class SQLiteLogger:
         self.image_logger.log_image(title, series, iteration, image)
 
     def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
+        # Note: the Logger Protocol's `title` arg is the data-series path (e.g. "train/level0/loss/0/0/0"),
+        # and `series` is the run label (e.g. "sos_beta_oho_2conv"). The SQL columns are named after their
+        # actual contents, not after the protocol parameter names.
         absolute_iteration = iteration + iteration_offset
         self.conn.execute(
-            "INSERT INTO scalars(series, iteration, value, log_title) VALUES (?, ?, ?, ?)",
-            (series, absolute_iteration, float(value), title),
+            "INSERT INTO scalars(series, iteration, value, run_label) VALUES (?, ?, ?, ?)",
+            (title, absolute_iteration, float(value), series),
         )
 
 

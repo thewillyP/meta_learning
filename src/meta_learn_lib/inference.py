@@ -1,3 +1,4 @@
+import math
 from typing import Callable
 import jax
 import jax.numpy as jnp
@@ -12,6 +13,7 @@ from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
 from meta_learn_lib.util import get_activation_fn, to_vector
+from meta_learn_lib.create_env import create_inference_state, get_output_shapes
 
 
 def make_vanilla_rnn_reader[ENV](interface: GodInterface[ENV]) -> Callable[[ENV], Outputs]:
@@ -46,6 +48,13 @@ def make_scan_reader[ENV](sub_from_env: PMap[str, Callable[[ENV], Outputs]]) -> 
     return read
 
 
+def make_const_reader[ENV](value: jax.Array) -> Callable[[ENV], Outputs]:
+    def read(env: ENV) -> Outputs:
+        return Outputs(prediction=value)
+
+    return read
+
+
 def get_reader[ENV](
     node_graph: dict[Uncanon, set[Uncanon]],
     nodes: dict[Canon, Node],
@@ -65,7 +74,7 @@ def get_reader[ENV](
                 from_env = from_env.set(node_name, make_gru_reader(interfaces[(canon, level)]))
             case LSTMLayer():
                 from_env = from_env.set(node_name, make_lstm_reader(interfaces[(canon, level)]))
-            case Scan(graph, autoregressive_mask, carry_transform, pred_source, _start_token):
+            case Scan(graph, _, _, _, _) | MemoryScan(graph, _, _):
                 sub_from_env = get_reader(graph, nodes, aliases, interfaces, level)
                 from_env = from_env.set(node_name, make_scan_reader(sub_from_env))
             case (
@@ -95,6 +104,7 @@ def get_inference[ENV](
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
     from_env: PMap[Uncanon, Callable[[ENV], Outputs]],
+    dataset_source: Task,
 ) -> Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, PMap[Uncanon, Outputs]]]:
     def infer(env: ENV, data: tuple[jax.Array, jax.Array]) -> tuple[ENV, PMap[Uncanon, Outputs]]:
         outputs: PMap[Uncanon, Outputs] = pmap()
@@ -172,11 +182,11 @@ def get_inference[ENV](
                         *[outputs[n] for n in node_graph[node_name] if n in outputs and n != pred_source],
                     ]
                     x = deps[-1].prediction
-                    y = from_env[pred_source](env) if pred_source in from_env else outputs[pred_source].prediction
+                    y = (from_env[pred_source](env) if pred_source in from_env else outputs[pred_source]).prediction
                     last_sub_node = toposort_flatten(graph)[-1]
                     token = interface.autoregressive_predictions.get(env)
 
-                    fn = get_inference(graph, nodes, aliases, interfaces, level, pmap())
+                    fn = get_inference(graph, nodes, aliases, interfaces, level, pmap(), dataset_source)
 
                     def step(
                         carry: tuple[ENV, jax.Array],
@@ -206,6 +216,70 @@ def get_inference[ENV](
                     (env, new_token), predictions = jax.lax.scan(step, (env, token), (x, y))
                     env = interface.autoregressive_predictions.put(env, new_token)
                     outputs = outputs.set(node_name, Outputs(prediction=predictions))
+
+                case MemoryScan(graph, K, cell_shape):
+                    deps = [
+                        *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
+                        *[outputs[n] for n in node_graph[node_name] if n in outputs],
+                    ]
+                    x_t = deps[-1].prediction
+                    M = interface.external_memory.get(env).buffer
+                    ys = jnp.broadcast_to(x_t, (K, *x_t.shape))
+
+                    env = interface.autoregressive_predictions.put(env, x_t)
+
+                    inner_features = get_output_shapes(
+                        {},
+                        graph,
+                        nodes,
+                        aliases,
+                        ((math.prod(x_t.shape) + math.prod(cell_shape),), x_t.shape),
+                    )
+                    reset_prng, env = interface.take_prng(env)
+                    env = create_inference_state(
+                        nodes,
+                        graph,
+                        aliases,
+                        interfaces,
+                        level,
+                        inner_features,
+                        frozenset(),
+                        False,
+                        dataset_source,
+                        env,
+                        reset_prng,
+                    )
+
+                    inner_scan = Scan(
+                        graph=graph,
+                        autoregressive_mask="teacher_forcing",
+                        carry_transform="identity",
+                        pred_source="_ys_src",
+                        start_token="zeros",
+                    )
+                    inner_graph = {node_name: frozenset({"_M_src", "_ys_src"})}
+                    inner_nodes = {**nodes, node_name: inner_scan}
+                    inner_from_env = pmap(
+                        {
+                            "_M_src": make_const_reader(M),
+                            "_ys_src": make_const_reader(ys),
+                        }
+                    )
+
+                    inner_fn = get_inference(
+                        inner_graph,
+                        inner_nodes,
+                        aliases,
+                        interfaces,
+                        level,
+                        inner_from_env,
+                        dataset_source,
+                    )
+                    env, inner_outputs = inner_fn(env, (None, None))
+
+                    M_new = inner_outputs[node_name].prediction
+                    env = interface.external_memory.put(env, ExternalMemory(buffer=M_new))
+                    outputs = outputs.set(node_name, Outputs(prediction=M_new[-1]))
 
                 case Repeat(i):
                     deps = [
@@ -334,10 +408,11 @@ def create_raw_inference[ENV](
     aliases: dict[Uncanon, Canon],
     interfaces: dict[S_ID, GodInterface[ENV]],
     level: int,
+    dataset_source: Task,
 ) -> tuple[TransitionFn[ENV], ReadoutFn[ENV]]:
     env_readout = get_reader(transition_graph, nodes, aliases, interfaces, level)
-    raw_transition = get_inference(transition_graph, nodes, aliases, interfaces, level, pmap())
-    raw_readout = get_inference(readout_graph, nodes, aliases, interfaces, level, env_readout)
+    raw_transition = get_inference(transition_graph, nodes, aliases, interfaces, level, pmap(), dataset_source)
+    raw_readout = get_inference(readout_graph, nodes, aliases, interfaces, level, env_readout, dataset_source)
     last_node = toposort_flatten(readout_graph)[-1]
 
     def transition_fn(env: ENV, data: tuple[jax.Array, jax.Array]) -> ENV:
@@ -364,6 +439,7 @@ def create_inference_and_readout[ENV](
         config.aliases,
         interfaces,
         level,
+        config.levels[level].dataset_source,
     )
 
     transition_inference: TransitionFn[ENV] = eqx.filter_vmap(

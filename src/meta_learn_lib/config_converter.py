@@ -85,6 +85,7 @@ def make_converter() -> Converter:
             MaxPool2dLayer,
             AvgPool2dLayer,
             Scan,
+            MemoryScan,
             UnlabeledSource,
             LabeledSource,
             Repeat,

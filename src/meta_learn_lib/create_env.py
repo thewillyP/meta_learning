@@ -49,6 +49,12 @@ def get_output_shapes(
                 )
                 n_out = (scan_x_shape[0],) + node_features[aliases.get(last_sub_node, last_sub_node)]
                 node_features[canon] = n_out
+            case MemoryScan(graph, K, cell_shape):
+                x_t_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
+                last_sub_node = toposort_flatten(graph)[-1]
+                inner_x_size = math.prod(x_t_shape) + math.prod(cell_shape)
+                node_features = get_output_shapes(node_features, graph, nodes, aliases, ((inner_x_size,), x_t_shape))
+                node_features[canon] = node_features[aliases.get(last_sub_node, last_sub_node)]
             case Repeat(n):
                 # same issue as scan, just take the last one
                 n_in = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
@@ -187,6 +193,32 @@ def create_inference_state[ENV](
                             token = (jnp.zeros(shape) - mean_arr) / std_arr
                 env = interface.autoregressive_predictions.put_tagged(
                     env, Tagged(value=token, meta=StateMeta(is_stateful=track_influence_in))
+                )
+                env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
+                env = create_inference_state(
+                    nodes,
+                    graph,
+                    aliases,
+                    interfaces,
+                    level,
+                    node_features,
+                    track_influence_in,
+                    is_init,
+                    dataset_source,
+                    env,
+                    k2,
+                )
+            case MemoryScan(graph, K, cell_shape):
+                k1, k2, prng = jax.random.split(prng, 3)
+                x_t_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
+                buffer = jnp.zeros((K, *cell_shape))
+                env = interface.external_memory.put_tagged(
+                    env,
+                    Tagged(value=ExternalMemory(buffer=buffer), meta=StateMeta(is_stateful=track_influence_in)),
+                )
+                env = interface.autoregressive_predictions.put_tagged(
+                    env,
+                    Tagged(value=jnp.zeros(x_t_shape), meta=StateMeta(is_stateful=track_influence_in)),
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
                 env = create_inference_state(
@@ -450,7 +482,7 @@ def create_inference_parameters[ENV](
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
-            case Scan(graph, _, _, _, _):
+            case Scan(graph, _, _, _, _) | MemoryScan(graph, _, _):
                 k1, k2, prng = jax.random.split(prng, 3)
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
                 sub_transition, sub_readout = (graph, {}) if is_transition else ({}, graph)
@@ -781,6 +813,7 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
                     vanilla_recurrent_states=pmap({}),
                     lstm_states=pmap({}),
                     autoregressive_predictions=pmap({}),
+                    external_memories=pmap({}),
                 )
                 for _ in range(len(config.levels))
             ]

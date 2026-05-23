@@ -369,6 +369,12 @@ class Scan(eqx.Module):  # Wraps around a layer and repeats it in an unfold mann
     start_token: Literal["zeros", "input_zero"]
 
 
+class MemoryScan(eqx.Module):
+    graph: dict[Uncanon, frozenset[Uncanon]]
+    K: int
+    cell_shape: tuple[int, ...]
+
+
 @dataclass(frozen=True)
 class Repeat:
     n: int
@@ -441,6 +447,7 @@ type Node = Union[
     MaxPool2dLayer,
     AvgPool2dLayer,
     Scan,
+    MemoryScan,
     UnlabeledSource,
     LabeledSource,
     Repeat,

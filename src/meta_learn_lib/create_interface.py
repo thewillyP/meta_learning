@@ -7,7 +7,7 @@ import optax
 from jaxtyping import PyTree
 
 from meta_learn_lib.config import *
-from meta_learn_lib.env import RNN, GodState, Tagged, ParamMeta, StateMeta, Logs
+from meta_learn_lib.env import RNN, ExternalMemory, GodState, Tagged, ParamMeta, StateMeta, Logs
 from meta_learn_lib.interface import *
 from meta_learn_lib.util import to_vector
 from meta_learn_lib.constants import *
@@ -364,6 +364,20 @@ def autoregressive_predictions(i: S_ID, level: int) -> Accessor[GodState, jax.Ar
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
+def external_memory(i: S_ID, level: int) -> Accessor[GodState, ExternalMemory]:
+    def get(env: GodState) -> ExternalMemory:
+        t = env.model_states[level].external_memories.get(i)
+        return None if t is None else t.value
+
+    def put(env: GodState, val: ExternalMemory) -> GodState:
+        return env.transform(["model_states", level, "external_memories", i, "value"], lambda _: val)
+
+    def put_tagged(env: GodState, tagged: Tagged[ExternalMemory]) -> GodState:
+        return env.transform(["model_states", level, "external_memories", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
+
+
 # ============================================================================
 # LEARNING STATE ACCESSORS
 # ============================================================================
@@ -559,6 +573,15 @@ def build_interfaces(
                         prng=prng_accessor(si, level),
                         logs=logs_acc,
                         autoregressive_predictions=autoregressive_predictions(si, level),
+                    )
+
+                case MemoryScan():
+                    interfaces[(name, level)] = copy.replace(
+                        default,
+                        prng=prng_accessor(si, level),
+                        logs=logs_acc,
+                        autoregressive_predictions=autoregressive_predictions(si, level),
+                        external_memory=external_memory(si, level),
                     )
 
                 case ReparameterizeLayer():

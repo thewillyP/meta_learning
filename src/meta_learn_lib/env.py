@@ -68,6 +68,10 @@ class MidpointBuffer(PClass):
     predictor: JACOBIAN = field(serializer=deep_serialize)
 
 
+class ExternalMemory(PClass):
+    buffer: jax.Array = field(serializer=deep_serialize)
+
+
 class Parameters(PClass):
     mlps: PMap[S_ID, Tagged[eqx.nn.Sequential]] = field(serializer=deep_serialize)
     rnns: PMap[S_ID, RNN] = field(serializer=deep_serialize)
@@ -95,6 +99,7 @@ class ModelStates(PClass):
     vanilla_recurrent_states: PMap[S_ID, Tagged[VanillaRecurrentState]] = field(serializer=deep_serialize)
     lstm_states: PMap[S_ID, Tagged[LSTMState]] = field(serializer=deep_serialize)
     autoregressive_predictions: PMap[S_ID, Tagged[jax.Array]] = field(serializer=deep_serialize)
+    external_memories: PMap[S_ID, Tagged[ExternalMemory]] = field(serializer=deep_serialize)
 
 
 class LevelMeta(PClass):

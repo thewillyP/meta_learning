@@ -6,6 +6,7 @@ import optax
 import equinox as eqx
 
 from meta_learn_lib.env import (
+    ExternalMemory,
     LSTMState,
     Logs,
     MidpointBuffer,
@@ -48,6 +49,7 @@ class GodInterface[ENV]:
     lstm_cell: Accessor[ENV, eqx.nn.LSTMCell]
     lstm_state: Accessor[ENV, LSTMState]
     autoregressive_predictions: Accessor[ENV, jax.Array]
+    external_memory: Accessor[ENV, ExternalMemory]
     time_constant: Accessor[ENV, jax.Array]
     opt_state: Accessor[ENV, optax.OptState]
     forward_mode_jacobian: Accessor[ENV, JACOBIAN]
@@ -99,6 +101,7 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         lstm_cell=noop(),
         lstm_state=noop(),
         autoregressive_predictions=noop(),
+        external_memory=noop(),
         time_constant=noop(),
         opt_state=noop(),
         forward_mode_jacobian=noop(),

@@ -87,6 +87,8 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return 1
         case SOSTaskFamily(grid_size, _, _, _, ph, pw, _, _, _):
             return (grid_size // ph) * (grid_size // pw)
+        case NTMCopyTaskFamily(seq_len, _, _, _):
+            return 2 * seq_len + 1
 
 
 def get_pixel_mean_std(task: Task) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
@@ -484,6 +486,30 @@ def dataset_sources(
                 return TransformedDataset(raw_ds, x_pre, y_pre), patch_reshape_fn
 
             return [make_sos_task(k) for k in keys]
+
+        case NTMCopyTaskFamily(seq_len, bits_per_vector, n_train, n_test):
+            keys = jax.random.split(seed, num_tasks)
+            T = seq_len
+            V = bits_per_vector
+            n = n_test if is_test else n_train
+
+            def make_copy_task(key: PRNG) -> DatasetWithReshape:
+                example_keys = jax.random.split(key, n)
+
+                def gen_one(k: PRNG) -> tuple[jax.Array, jax.Array]:
+                    vec = jax.random.bernoulli(k, 0.5, (T, V)).astype(jnp.float32)
+                    input_phase = jnp.concatenate([vec, jnp.zeros((T, 1))], axis=1)
+                    eos = jnp.ones((1, V + 1))
+                    output_phase_input = jnp.zeros((T, V + 1))
+                    X = jnp.concatenate([input_phase, eos, output_phase_input], axis=0)
+                    mask_part = jnp.full((T + 1, V), y_mask, dtype=jnp.float32)
+                    Y = jnp.concatenate([mask_part, vec], axis=0)
+                    return X, Y
+
+                Xs, Ys = jax.vmap(gen_one)(example_keys)
+                return PyTreeDataset((Xs, Ys)), lambda x: x
+
+            return [make_copy_task(k) for k in keys]
 
 
 def take_datasets(

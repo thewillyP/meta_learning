@@ -228,28 +228,6 @@ def get_inference[ENV](
 
                     env = interface.autoregressive_predictions.put(env, x_t)
 
-                    inner_features = get_output_shapes(
-                        {},
-                        graph,
-                        nodes,
-                        aliases,
-                        ((math.prod(x_t.shape) + math.prod(cell_shape),), x_t.shape),
-                    )
-                    reset_prng, env = interface.take_prng(env)
-                    env = create_inference_state(
-                        nodes,
-                        graph,
-                        aliases,
-                        interfaces,
-                        level,
-                        inner_features,
-                        frozenset(),
-                        False,
-                        dataset_source,
-                        env,
-                        reset_prng,
-                    )
-
                     inner_scan = Scan(
                         graph=graph,
                         autoregressive_mask="teacher_forcing",

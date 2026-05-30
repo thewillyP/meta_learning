@@ -155,6 +155,7 @@ def make_converter() -> Converter:
             GridTaskFamily,
             MNISTSequenceTaskFamily,
             SOSTaskFamily,
+            NTMCopyTaskFamily,
         ],
     )
 

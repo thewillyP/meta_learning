@@ -108,6 +108,14 @@ class SOSTaskFamily:
     tag: int
 
 
+@dataclass(frozen=True)
+class NTMCopyTaskFamily:
+    seq_len: int
+    bits_per_vector: int
+    n_train: int
+    n_test: int
+
+
 type Task = Union[
     MNISTTaskFamily,
     FashionMNISTTaskFamily,
@@ -118,6 +126,7 @@ type Task = Union[
     GridTaskFamily,
     MNISTSequenceTaskFamily,
     SOSTaskFamily,
+    NTMCopyTaskFamily,
 ]
 
 

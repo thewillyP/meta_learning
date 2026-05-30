@@ -110,7 +110,8 @@ class SOSTaskFamily:
 
 @dataclass(frozen=True)
 class NTMCopyTaskFamily:
-    seq_len: int
+    min_seq_len: int
+    max_seq_len: int
     bits_per_vector: int
     n_train: int
     n_test: int

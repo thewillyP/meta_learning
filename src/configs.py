@@ -374,7 +374,8 @@ NTM_COPY_MEMSCAN = GodConfig(
         MetaConfig(
             objective_fn=BernoulliObjective(reduction="sum"),
             dataset_source=NTMCopyTaskFamily(
-                seq_len=20,
+                min_seq_len=1,
+                max_seq_len=20,
                 bits_per_vector=8,
                 n_train=11_000,
                 n_test=1_000,
@@ -438,7 +439,8 @@ NTM_COPY_MEMSCAN = GodConfig(
         MetaConfig(
             objective_fn=BernoulliObjective(reduction="sum"),
             dataset_source=NTMCopyTaskFamily(
-                seq_len=20,
+                min_seq_len=1,
+                max_seq_len=20,
                 bits_per_vector=8,
                 n_train=11_000,
                 n_test=1_000,
@@ -490,7 +492,8 @@ NTM_COPY_MEMSCAN = GodConfig(
         MetaConfig(
             objective_fn=BernoulliObjective(reduction="sum"),
             dataset_source=NTMCopyTaskFamily(
-                seq_len=40,
+                min_seq_len=40,
+                max_seq_len=40,
                 bits_per_vector=8,
                 n_train=1_000,
                 n_test=1_000,

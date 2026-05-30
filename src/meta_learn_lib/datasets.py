@@ -87,8 +87,8 @@ def get_seq_len(task: Task, is_test: bool) -> int:
             return 1
         case SOSTaskFamily(grid_size, _, _, _, ph, pw, _, _, _):
             return (grid_size // ph) * (grid_size // pw)
-        case NTMCopyTaskFamily(seq_len, _, _, _):
-            return 2 * seq_len + 1
+        case NTMCopyTaskFamily(_, max_seq_len, _, _, _):
+            return 2 * max_seq_len + 1
 
 
 def get_pixel_mean_std(task: Task) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
@@ -487,23 +487,31 @@ def dataset_sources(
 
             return [make_sos_task(k) for k in keys]
 
-        case NTMCopyTaskFamily(seq_len, bits_per_vector, n_train, n_test):
+        case NTMCopyTaskFamily(min_seq_len, max_seq_len, bits_per_vector, n_train, n_test):
             keys = jax.random.split(seed, num_tasks)
-            T = seq_len
             V = bits_per_vector
+            T_max = max_seq_len
+            total = 2 * T_max + 1
             n = n_test if is_test else n_train
 
             def make_copy_task(key: PRNG) -> DatasetWithReshape:
                 example_keys = jax.random.split(key, n)
 
                 def gen_one(k: PRNG) -> tuple[jax.Array, jax.Array]:
-                    vec = jax.random.bernoulli(k, 0.5, (T, V)).astype(jnp.float32)
-                    input_phase = jnp.concatenate([vec, jnp.zeros((T, 1))], axis=1)
-                    eos = jnp.ones((1, V + 1))
-                    output_phase_input = jnp.zeros((T, V + 1))
-                    X = jnp.concatenate([input_phase, eos, output_phase_input], axis=0)
-                    mask_part = jnp.full((T + 1, V), y_mask, dtype=jnp.float32)
-                    Y = jnp.concatenate([mask_part, vec], axis=0)
+                    k_len, k_vec = jax.random.split(k)
+                    T = jax.random.randint(k_len, (), min_seq_len, max_seq_len + 1)
+                    vec_pool = jax.random.bernoulli(k_vec, 0.5, (T_max, V)).astype(jnp.float32)
+                    t_idx = jnp.arange(total)
+                    in_input_phase = t_idx < T
+                    is_eos = t_idx == T
+                    in_output_phase = (t_idx > T) & (t_idx < 2 * T + 1)
+                    input_idx = jnp.clip(t_idx, 0, T_max - 1)
+                    output_idx = jnp.clip(t_idx - T - 1, 0, T_max - 1)
+                    X_input_bits = jnp.where(in_input_phase[:, None], vec_pool[input_idx], 0.0)
+                    X_eos_bits = jnp.where(is_eos[:, None], jnp.ones((1, V)), 0.0)
+                    X_extra_channel = is_eos.astype(jnp.float32)[:, None]
+                    X = jnp.concatenate([X_input_bits + X_eos_bits, X_extra_channel], axis=1)
+                    Y = jnp.where(in_output_phase[:, None], vec_pool[output_idx], y_mask)
                     return X, Y
 
                 Xs, Ys = jax.vmap(gen_one)(example_keys)

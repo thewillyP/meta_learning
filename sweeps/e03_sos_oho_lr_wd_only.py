@@ -94,7 +94,7 @@ optimizer = HyperParameterOptimizer(
         dpr("config/levels/0/learner/model_learner/add_clip/threshold", [1.0]),
         # OHO mechanism: RTRL with same damping/finite_hvp as e01_sos
         dpr(f"{METHOD_PREFIX}/_type", ["RTRLConfig"]),
-        dpr(f"{METHOD_PREFIX}/damping", [1e-5]),
+        dpr(f"{METHOD_PREFIX}/damping", [1e-4]),
         dpr(f"{METHOD_PREFIX}/start_at_step", [0]),
         dpr(f"{METHOD_PREFIX}/use_finite_hvp", [1e-3]),
         # logging + scheduling (identical to e01_sos / e02)

@@ -11,20 +11,21 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-# Same SOS base as e01_sos/e02 — arch/data/eval identical, directly comparable
-BASE_TASK_ID = "c14b3d0807114b7db88c429920291287"
+# SOS_BETA_OHO base (clearml_run=False) — matches e01_sos arch on current commit (has SQLite)
+# uploaded model_id=152eead1f0714aeba6260d101cf3e55c
+BASE_TASK_ID = "ca760480a7104a15bc3c5f10923de453"
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"
 METHOD_PREFIX = "config/levels/1/learner/optimizer_learner/method"
 
-MLR_PATH        = "config/hyperparameters/meta2_sgd1_lr/value"
-RTRL_BETA_PATH  = f"{METHOD_PREFIX}/beta"
-VAL_BETA_PATH   = "config/hyperparameters/meta2_beta/value"
-B1_PATH         = "config/hyperparameters/meta2_sgd1_momentum/value"
-TARGET_PATH     = "config/levels/1/learner/optimizer/meta2_sgd1/target"
-WD_INIT_PATH    = "config/hyperparameters/meta1_sgd1_wd/value"
-BETA_INIT_PATH  = "config/hyperparameters/meta1_beta/value"
-INNER_LR_PATH   = "config/hyperparameters/meta1_sgd1_lr/value"
+MLR_PATH = "config/hyperparameters/meta2_sgd1_lr/value"
+RTRL_BETA_PATH = f"{METHOD_PREFIX}/beta"
+VAL_BETA_PATH = "config/hyperparameters/meta2_beta/value"
+B1_PATH = "config/hyperparameters/meta2_sgd1_momentum/value"
+TARGET_PATH = "config/levels/1/learner/optimizer/meta2_sgd1/target"
+WD_INIT_PATH = "config/hyperparameters/meta1_sgd1_wd/value"
+BETA_INIT_PATH = "config/hyperparameters/meta1_beta/value"
+INNER_LR_PATH = "config/hyperparameters/meta1_sgd1_lr/value"
 
 # Existential ablation: is β-OHO doing real work?
 # Test: keep β fixed at 1.0; let OHO adapt lr + wd. If this matches 20849b4 (β+lr+wd OHO),
@@ -74,33 +75,34 @@ optimizer = HyperParameterOptimizer(
         dpr("config/seed/global_seed", SEEDS),
         # Outer optimizer = additive_adam (20849b4's family)
         dpr(f"{OPT_PREFIX}/_type", ["AdamConfig"]),
-        dpr(f"{OPT_PREFIX}/learning_rate",   ["meta2_sgd1_lr"]),
-        dpr(f"{OPT_PREFIX}/weight_decay",    ["meta2_sgd1_wd"]),
-        dpr(f"{OPT_PREFIX}/momentum",        ["meta2_sgd1_momentum"]),
+        dpr(f"{OPT_PREFIX}/learning_rate", ["meta2_sgd1_lr"]),
+        dpr(f"{OPT_PREFIX}/weight_decay", ["meta2_sgd1_wd"]),
+        dpr(f"{OPT_PREFIX}/momentum", ["meta2_sgd1_momentum"]),
         dpr(f"{OPT_PREFIX}/second_momentum", [0.999]),
-        dpr(f"{OPT_PREFIX}/eps",             [1e-8]),
-        dpr(f"{OPT_PREFIX}/eps_root",        [0.0]),
-        dpr(MLR_PATH,        [1e-5]),
-        dpr(B1_PATH,         [0.9]),
-        dpr(RTRL_BETA_PATH,  [0.1]),
-        dpr(VAL_BETA_PATH,   [0.0]),
+        dpr(f"{OPT_PREFIX}/eps", [1e-8]),
+        dpr(f"{OPT_PREFIX}/eps_root", [0.0]),
+        dpr(MLR_PATH, [1e-5]),
+        dpr(B1_PATH, [0.9]),
+        dpr(RTRL_BETA_PATH, [0.1]),
+        dpr(VAL_BETA_PATH, [0.0]),
         # Inner-init HPs (β fixed at 1.0 throughout because it's not in the OHO target)
-        dpr(BETA_INIT_PATH,  [1.0]),
-        dpr(WD_INIT_PATH,    [1e-6]),
-        dpr(INNER_LR_PATH,   [1e-1]),  # e00_sos winner LR
+        dpr(BETA_INIT_PATH, [1.0]),
+        dpr(WD_INIT_PATH, [1e-6]),
+        dpr(INNER_LR_PATH, [1e-3]),  # start small; OHO will adjust upward if it should
         # clip on
-        dpr("config/levels/0/learner/model_learner/add_clip/_type",      ["HardClip"]),
-        dpr("config/levels/0/learner/model_learner/add_clip/threshold",  [1.0]),
+        dpr("config/levels/0/learner/model_learner/add_clip/_type", ["HardClip"]),
+        dpr("config/levels/0/learner/model_learner/add_clip/threshold", [1.0]),
         # OHO mechanism: RTRL with same damping/finite_hvp as e01_sos
         dpr(f"{METHOD_PREFIX}/_type", ["RTRLConfig"]),
-        dpr(f"{METHOD_PREFIX}/damping",        [1e-4]),
-        dpr(f"{METHOD_PREFIX}/start_at_step",  [0]),
+        dpr(f"{METHOD_PREFIX}/damping", [1e-5]),
+        dpr(f"{METHOD_PREFIX}/start_at_step", [0]),
         dpr(f"{METHOD_PREFIX}/use_finite_hvp", [1e-3]),
         # logging + scheduling (identical to e01_sos / e02)
         dpr("config/clearml_run", [True]),
         dpr("Args/skip_jitter", [False]),
         dpr("config/logger_config/clearml/enabled", [False]),
-        dpr("config/logger_config/hdf5/enabled", [True]),
+        dpr("config/logger_config/hdf5/enabled", [False]),
+        dpr("config/logger_config/sqlite/enabled", [True]),
         dpr("config/logger_config/console/enabled", [False]),
         dpr("config/logger_config/matplotlib/enabled", [False]),
         dpr("slurm/time", ["03:00:00"]),

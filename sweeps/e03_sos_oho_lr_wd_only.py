@@ -11,8 +11,7 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-# SOS_BETA_OHO base (clearml_run=False) — fresh upload model_id=7f90dfe3397d4c798cd21980ca9e46be
-BASE_TASK_ID = "ca5c29b41eef4b5c85f2c98f4159768c"
+BASE_TASK_ID = "fd5da229b21346edb1bbf733a31807c4"
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"
 METHOD_PREFIX = "config/levels/1/learner/optimizer_learner/method"

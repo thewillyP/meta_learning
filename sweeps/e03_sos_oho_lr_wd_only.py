@@ -11,9 +11,8 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-# SOS_BETA_OHO base (clearml_run=False) — matches e01_sos arch on current commit (has SQLite)
-# uploaded model_id=152eead1f0714aeba6260d101cf3e55c
-BASE_TASK_ID = "ca760480a7104a15bc3c5f10923de453"
+# SOS_BETA_OHO base (clearml_run=False) — fresh upload model_id=7f90dfe3397d4c798cd21980ca9e46be
+BASE_TASK_ID = "ca5c29b41eef4b5c85f2c98f4159768c"
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"
 METHOD_PREFIX = "config/levels/1/learner/optimizer_learner/method"

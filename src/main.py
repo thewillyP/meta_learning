@@ -1,6 +1,8 @@
 import os
 import argparse
 import copy
+import random
+import string
 import jax
 import jax.numpy as jnp
 from configs import *
@@ -24,9 +26,11 @@ def main(cache_dir: str):
     config = VAE_BETA_OHO
     config = copy.replace(
         config,
+        clearml_run=True,
         logger_config=copy.replace(
             config.logger_config,
-            matplotlib=MatplotlibLoggerConfig(save_dir=config.log_dir, enabled=True),
+            sqlite=SQLiteLoggerConfig(enabled=True),
+            # matplotlib=MatplotlibLoggerConfig(save_dir=config.log_dir, enabled=True),
         ),
     )
 
@@ -41,6 +45,9 @@ def main(cache_dir: str):
         loggers.append(ConsoleLogger())
     if lc.matplotlib.enabled:
         loggers.append(MatplotlibLogger(lc.matplotlib.save_dir))
+    if lc.sqlite.enabled:
+        task_id = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        loggers.append(SQLiteLogger(config.log_dir, task_id, config.checkpoint_every_n_minibatches))
 
     app.runApp(config, loggers, NullCheckpointManager())
 

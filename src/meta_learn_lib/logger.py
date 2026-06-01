@@ -25,6 +25,8 @@ class Logger(Protocol):
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray): ...
 
+    def flush(self) -> None: ...
+
 
 class HDF5Logger:
     def __init__(self, log_dir: str, task_id: str, checkpoint_every: int):
@@ -53,6 +55,9 @@ class HDF5Logger:
             f[title][idx] = value
             f[f"{title}_iterations"][idx] = absolute_iteration
 
+    def flush(self) -> None:
+        pass
+
 
 class SQLiteLogger:
     def __init__(self, log_dir: str, task_id: str, checkpoint_every: int):
@@ -76,6 +81,7 @@ class SQLiteLogger:
         self.conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
         self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('task_id', ?)", (task_id,))
         self.conn.execute("INSERT OR IGNORE INTO meta VALUES ('created', ?)", (datetime.now().isoformat(),))
+        self.buffer: list[tuple] = []
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
         self.image_logger.log_image(title, series, iteration, image)
@@ -85,10 +91,19 @@ class SQLiteLogger:
         # and `series` is the run label (e.g. "sos_beta_oho_2conv"). The SQL columns are named after their
         # actual contents, not after the protocol parameter names.
         absolute_iteration = iteration + iteration_offset
-        self.conn.execute(
+        self.buffer.append((title, absolute_iteration, float(value), series))
+
+    def flush(self) -> None:
+        if not self.buffer:
+            return
+        # explicit BEGIN/COMMIT because `with self.conn` is a no-op under isolation_level=None
+        self.conn.execute("BEGIN")
+        self.conn.executemany(
             "INSERT INTO scalars(series, iteration, value, run_label) VALUES (?, ?, ?, ?)",
-            (title, absolute_iteration, float(value), series),
+            self.buffer,
         )
+        self.conn.execute("COMMIT")
+        self.buffer.clear()
 
 
 class ClearMLLogger:
@@ -103,6 +118,9 @@ class ClearMLLogger:
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
         self.task.get_logger().report_image(title=title, series=series, iteration=iteration, image=image)
 
+    def flush(self) -> None:
+        pass
+
 
 class ConsoleLogger:
     def __init__(self):
@@ -113,6 +131,9 @@ class ConsoleLogger:
 
     def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         print(f"[{title}] {series} @ {iteration + iteration_offset}/{max_count}: {value}")
+
+    def flush(self) -> None:
+        pass
 
 
 class MatplotlibLogger:
@@ -141,6 +162,9 @@ class MatplotlibLogger:
         self.data[series]["values"].append(value)
         self.data[series]["title"] = title
 
+    def flush(self) -> None:
+        pass
+
     def generate_figures(self):
         for series, data in self.data.items():
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -166,6 +190,10 @@ class MultiLogger:
     def log_scalar(self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int):
         for logger in self.loggers:
             logger.log_scalar(title, series, value, iteration, max_count, iteration_offset)
+
+    def flush(self) -> None:
+        for logger in self.loggers:
+            logger.flush()
 
 
 def compute_strides(shape: tuple[int, ...]) -> list[int]:
@@ -464,6 +492,7 @@ class ThreadedScalarLogger:
                     case "grid_deformation":
                         stats, title, n_per_axis = payload
                         self.scalar_logger.log_grid_deformation_stats(stats, title, n_per_axis)
+                self.scalar_logger.logger.flush()
                 q.task_done()
             except queue.Empty:
                 continue
@@ -514,6 +543,7 @@ class ThreadedScalarLogger:
     def flush(self) -> None:
         self.scalar_queue.join()
         self.sample_queue.join()
+        self.scalar_logger.logger.flush()
 
     def shutdown(self) -> None:
         self.stop_event.set()
@@ -527,6 +557,7 @@ class ThreadedScalarLogger:
             q.put(None)
         self.scalar_worker.join(timeout=5.0)
         self.sample_worker.join(timeout=5.0)
+        self.scalar_logger.logger.flush()
 
     def __del__(self):
         if hasattr(self, "stop_event") and not self.stop_event.is_set():

@@ -74,7 +74,7 @@ def get_reader[ENV](
                 from_env = from_env.set(node_name, make_gru_reader(interfaces[(canon, level)]))
             case LSTMLayer():
                 from_env = from_env.set(node_name, make_lstm_reader(interfaces[(canon, level)]))
-            case Scan(graph, _, _, _, _) | MemoryScan(graph, _, _):
+            case Scan(graph, _, _, _, _) | MemoryScan(graph, _, _, _):
                 sub_from_env = get_reader(graph, nodes, aliases, interfaces, level)
                 from_env = from_env.set(node_name, make_scan_reader(sub_from_env))
             case (
@@ -217,7 +217,7 @@ def get_inference[ENV](
                     env = interface.autoregressive_predictions.put(env, new_token)
                     outputs = outputs.set(node_name, Outputs(prediction=predictions))
 
-                case MemoryScan(graph, K, cell_shape):
+                case MemoryScan(graph, K, cell_shape, reset_inner_state):
                     deps = [
                         *[from_env[n](env) for n in node_graph[node_name] if n in from_env],
                         *[outputs[n] for n in node_graph[node_name] if n in outputs],
@@ -227,6 +227,29 @@ def get_inference[ENV](
                     ys = jnp.broadcast_to(x_t, (K, *x_t.shape))
 
                     env = interface.autoregressive_predictions.put(env, x_t)
+
+                    if reset_inner_state:
+                        inner_features = get_output_shapes(
+                            {},
+                            graph,
+                            nodes,
+                            aliases,
+                            ((math.prod(x_t.shape) + math.prod(cell_shape),), x_t.shape),
+                        )
+                        reset_prng, env = interface.take_prng(env)
+                        env = create_inference_state(
+                            nodes,
+                            graph,
+                            aliases,
+                            interfaces,
+                            level,
+                            inner_features,
+                            frozenset(),
+                            False,
+                            dataset_source,
+                            env,
+                            reset_prng,
+                        )
 
                     inner_scan = Scan(
                         graph=graph,

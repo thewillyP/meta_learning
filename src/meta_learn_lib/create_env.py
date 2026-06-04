@@ -49,7 +49,7 @@ def get_output_shapes(
                 )
                 n_out = (scan_x_shape[0],) + node_features[aliases.get(last_sub_node, last_sub_node)]
                 node_features[canon] = n_out
-            case MemoryScan(graph, K, cell_shape):
+            case MemoryScan(graph, K, cell_shape, _):
                 x_t_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
                 last_sub_node = toposort_flatten(graph)[-1]
                 inner_x_size = math.prod(x_t_shape) + math.prod(cell_shape)
@@ -208,7 +208,7 @@ def create_inference_state[ENV](
                     env,
                     k2,
                 )
-            case MemoryScan(graph, K, cell_shape):
+            case MemoryScan(graph, K, cell_shape, _):
                 k1, k2, prng = jax.random.split(prng, 3)
                 x_t_shape = [node_features[aliases.get(n, n)] for n in node_graph[node_name]][-1]
                 buffer = jnp.zeros((K, *cell_shape))
@@ -482,7 +482,7 @@ def create_inference_parameters[ENV](
                 )
                 env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
-            case Scan(graph, _, _, _, _) | MemoryScan(graph, _, _):
+            case Scan(graph, _, _, _, _) | MemoryScan(graph, _, _, _):
                 k1, k2, prng = jax.random.split(prng, 3)
                 env = interface.prng.put_tagged(env, Tagged(value=k1, meta=StateMeta(is_stateful=frozenset())))
                 sub_transition, sub_readout = (graph, {}) if is_transition else ({}, graph)

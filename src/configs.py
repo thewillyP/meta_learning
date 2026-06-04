@@ -312,6 +312,7 @@ NTM_COPY_MEMSCAN = GodConfig(
             },
             K=32,
             cell_shape=(32,),
+            reset_inner_state=True,
         ),
         "z": UnlabeledSource(),
         "lstm": LSTMLayer(
@@ -587,6 +588,7 @@ MEMSCAN_TINY = GodConfig(
             },
             K=32,
             cell_shape=(8,),
+            reset_inner_state=True,
         ),
         "z": UnlabeledSource(),
         "lstm": LSTMLayer(
@@ -862,6 +864,7 @@ MEMSCAN_FF = GodConfig(
             },
             K=28,
             cell_shape=(32,),
+            reset_inner_state=True,
         ),
         "z": UnlabeledSource(),
         "lstm": LSTMLayer(
@@ -1138,6 +1141,7 @@ MEMSCAN = GodConfig(
             },
             K=4,
             cell_shape=(32,),
+            reset_inner_state=True,
         ),
         "z": UnlabeledSource(),
         "lstm": LSTMLayer(

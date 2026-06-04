@@ -383,6 +383,7 @@ class MemoryScan(eqx.Module):
     graph: dict[Uncanon, frozenset[Uncanon]]
     K: int
     cell_shape: tuple[int, ...]
+    reset_inner_state: bool
 
 
 @dataclass(frozen=True)

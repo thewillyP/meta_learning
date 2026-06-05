@@ -69,19 +69,34 @@ class SQLiteLogger:
         self.conn = sqlite3.connect(str(self.db_file), check_same_thread=False, isolation_level=None)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
+        self.conn.execute("PRAGMA cache_size=-65536")
+        self.conn.execute("PRAGMA mmap_size=268435456")
+        self.conn.execute("PRAGMA temp_store=MEMORY")
+        self.conn.execute("PRAGMA wal_autocheckpoint=2000")
+        # series names normalized into an id table so the wide repeated key is not rewritten per row
+        self.conn.execute("CREATE TABLE IF NOT EXISTS series (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)")
         self.conn.execute(
-            """CREATE TABLE IF NOT EXISTS scalars (
-                series TEXT NOT NULL,
+            """CREATE TABLE IF NOT EXISTS scalar_data (
+                series_id INTEGER NOT NULL,
                 iteration INTEGER NOT NULL,
                 value REAL NOT NULL,
                 run_label TEXT
             )"""
         )
-        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_series_iter ON scalars(series, iteration)")
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_series_iter ON scalar_data(series_id, iteration, run_label)"
+        )
+        # compat view: readers keep querying scalars(series, iteration, value, run_label) unchanged
+        self.conn.execute(
+            """CREATE VIEW IF NOT EXISTS scalars AS
+                SELECT s.name AS series, d.iteration AS iteration, d.value AS value, d.run_label AS run_label
+                FROM scalar_data d JOIN series s ON d.series_id = s.id"""
+        )
         self.conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
         self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('task_id', ?)", (task_id,))
         self.conn.execute("INSERT OR IGNORE INTO meta VALUES ('created', ?)", (datetime.now().isoformat(),))
         self.buffer: list[tuple] = []
+        self.series_ids: dict[str, int] = {}
 
     def log_image(self, title: str, series: str, iteration: int, image: np.ndarray):
         self.image_logger.log_image(title, series, iteration, image)
@@ -91,7 +106,12 @@ class SQLiteLogger:
         # and `series` is the run label (e.g. "sos_beta_oho_2conv"). The SQL columns are named after their
         # actual contents, not after the protocol parameter names.
         absolute_iteration = iteration + iteration_offset
-        self.buffer.append((title, absolute_iteration, float(value), series))
+        series_id = self.series_ids.get(title)
+        if series_id is None:
+            self.conn.execute("INSERT OR IGNORE INTO series(name) VALUES (?)", (title,))
+            series_id = self.conn.execute("SELECT id FROM series WHERE name = ?", (title,)).fetchone()[0]
+            self.series_ids[title] = series_id
+        self.buffer.append((series_id, absolute_iteration, float(value), series))
 
     def flush(self) -> None:
         if not self.buffer:
@@ -99,7 +119,7 @@ class SQLiteLogger:
         # explicit BEGIN/COMMIT because `with self.conn` is a no-op under isolation_level=None
         self.conn.execute("BEGIN")
         self.conn.executemany(
-            "INSERT INTO scalars(series, iteration, value, run_label) VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO scalar_data(series_id, iteration, value, run_label) VALUES (?, ?, ?, ?)",
             self.buffer,
         )
         self.conn.execute("COMMIT")

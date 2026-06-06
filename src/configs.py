@@ -1,3 +1,4 @@
+import dataclasses
 import jax.numpy as jnp
 from meta_learn_lib.config import *
 from upload_configs import upload_config
@@ -140,12 +141,12 @@ def combine_vae(encoder: dict, decoder: dict, latent_dim: int) -> dict:
 
 # --- Reusable strided-conv VAE architectures for 28x28 input ---
 # Usable by any 28x28-image VAE config (VAE_BASELINE, VAE_BETA_OHO, SOS_BETA_OHO, …).
-def make_vae_3conv(latent_dim: int) -> dict:
-    encoder = make_strided_encoder(input_size=28, channels=[32, 64, 128], latent_dim=latent_dim)
+def make_vae_3conv(latent_dim: int, encoder_channels: list[int], decoder_channels: list[int]) -> dict:
+    encoder = make_strided_encoder(input_size=28, channels=encoder_channels, latent_dim=latent_dim)
     decoder = make_strided_decoder(
         channels_in=encoder["channels_out"],
         spatial_in=encoder["spatial_out"],
-        channels=list(reversed([32, 64])),
+        channels=decoder_channels,
         out_channels=1,
         target_spatial_sequence=list(reversed(encoder["spatial_sequence"][:-1])),
     )
@@ -166,15 +167,20 @@ def make_vae_2conv(latent_dim: int) -> dict:
     return {"encoder": encoder, "decoder": decoder, "arch": arch}
 
 
-VAE_3CONV = make_vae_3conv(latent_dim=2)
+VAE_3CONV = make_vae_3conv(latent_dim=2, encoder_channels=[32, 64, 128], decoder_channels=[64, 32])
 VAE_ENCODER_3CONV = VAE_3CONV["encoder"]
 VAE_DECODER_3CONV = VAE_3CONV["decoder"]
 VAE_ARCH_3CONV = VAE_3CONV["arch"]
 
-VAE_3CONV_L10 = make_vae_3conv(latent_dim=10)
+VAE_3CONV_L10 = make_vae_3conv(latent_dim=10, encoder_channels=[32, 64, 128], decoder_channels=[64, 32])
 VAE_ENCODER_3CONV_L10 = VAE_3CONV_L10["encoder"]
 VAE_DECODER_3CONV_L10 = VAE_3CONV_L10["decoder"]
 VAE_ARCH_3CONV_L10 = VAE_3CONV_L10["arch"]
+
+VAE_3CONV_WIDE = make_vae_3conv(latent_dim=2, encoder_channels=[64, 128, 256], decoder_channels=[128, 64])
+VAE_ENCODER_3CONV_WIDE = VAE_3CONV_WIDE["encoder"]
+VAE_DECODER_3CONV_WIDE = VAE_3CONV_WIDE["decoder"]
+VAE_ARCH_3CONV_WIDE = VAE_3CONV_WIDE["arch"]
 
 VAE_2CONV = make_vae_2conv(latent_dim=2)
 VAE_ENCODER_2CONV = VAE_2CONV["encoder"]
@@ -5345,6 +5351,30 @@ SOS_BETA_OHO = GodConfig(
 )
 
 
+SOS_BETA_OHO_WIDE = dataclasses.replace(
+    SOS_BETA_OHO,
+    log_title="sos_beta_oho_wide",
+    readout_graph=VAE_ARCH_3CONV_WIDE["readout_graph"],
+    nodes=VAE_ARCH_3CONV_WIDE["nodes"],
+    levels=[
+        dataclasses.replace(
+            SOS_BETA_OHO.levels[0],
+            learner=dataclasses.replace(
+                SOS_BETA_OHO.levels[0].learner,
+                optimizer={
+                    "meta1_sgd1": dataclasses.replace(
+                        SOS_BETA_OHO.levels[0].learner.optimizer["meta1_sgd1"],
+                        target=VAE_ARCH_3CONV_WIDE["learnable"],
+                    ),
+                },
+            ),
+        ),
+        SOS_BETA_OHO.levels[1],
+        SOS_BETA_OHO.levels[2],
+    ],
+)
+
+
 SOS_BETA_OHO_2CONV = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
@@ -9764,20 +9794,7 @@ OHO_RNN32_TEST = GodConfig(
 
 if __name__ == "__main__":
     for name, config in [
-        ("SOS_BETA_OHO", SOS_BETA_OHO),
-        # ("SOS_BETA_OHO_2CONV", SOS_BETA_OHO_2CONV),
-        # ("VAE_BASELINE", VAE_BASELINE),
-        # ("VAE_BASELINE_ADAM", VAE_BASELINE_ADAM),
-        # ("VAE_BASELINE_MLP", VAE_BASELINE_MLP),
-        # ("VAE_BETA_OHO", VAE_BETA_OHO),
-        # ("VAE_BETA_OHO_V2", VAE_BETA_OHO_V2),
-        # ("VAE_LR_OHO", VAE_LR_OHO),
-        # ("VAE_BETA_OHO_ADAM", VAE_BETA_OHO_ADAM),
-        # ("OHO_RNN32_TEST", OHO_RNN32_TEST),
-        ("MEMSCAN", MEMSCAN),
-        ("MEMSCAN_FF", MEMSCAN_FF),
-        ("MEMSCAN_TINY", MEMSCAN_TINY),
-        ("NTM_COPY_MEMSCAN", NTM_COPY_MEMSCAN),
+        ("SOS_BETA_OHO_WIDE", SOS_BETA_OHO_WIDE),
     ]:
         upload_config(name, config)
 

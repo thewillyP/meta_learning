@@ -5,8 +5,8 @@ Two kinds of test here:
 1. Deterministic correctness of the speed-related changes (always run, no data needed):
    - writes are buffered and only hit disk on flush()
    - flush() commits the whole batch in one transaction
-   - a replayed (series, iteration) after a preempt overwrites instead of duplicating (idempotent, like hdf5)
-   - the compat `scalars` view returns the pre-normalization shape so readers are unaffected
+   - writes are append-only (no index, so write cost stays flat at scale); replayed points just append
+   - the compat `scalars` view dedups to the newest row per (series, iteration) and keeps the old shape
 
 2. Full-pipeline throughput parity (slow, skipped without datasets):
    runs the real main.py flow (app.runApp) once with HDF5Logger and once with SQLiteLogger on the
@@ -17,6 +17,7 @@ Two kinds of test here:
 """
 
 import dataclasses
+import os
 import sqlite3
 import tempfile
 import time
@@ -25,14 +26,12 @@ import pytest
 
 import configs as configs_module
 from meta_learn_lib.config import GodConfig
-
-# epochs for the full-pipeline speed test; ratio is per-step-stable, so 12 already gives a decisive
-# number — bump to ~50 only to tighten it (≈25-30 min on GPU vs ~11 min at 12).
-PIPELINE_EPOCHS = 50
 from meta_learn_lib.config_converter import make_converter
 from meta_learn_lib.checkpoint import NullCheckpointManager
 from meta_learn_lib.logger import SQLiteLogger, HDF5Logger
 from meta_learn_lib import app
+
+PIPELINE_EPOCHS = int(os.environ.get("PIPELINE_EPOCHS", "50"))
 
 
 def make_sqlite(dirpath: str, task_id: str) -> SQLiteLogger:
@@ -106,35 +105,63 @@ def test_compat_view_matches_old_schema():
 
 
 @pytest.mark.slow
-def test_write_rate_stays_flat_as_table_grows():
-    """No write index → appends must not degrade as the table fills (the hdf5-parity-at-scale guarantee).
-    Compares write throughput of the last decile of rows against the first decile over a multi-million-row table."""
-    iters, n_series = 100_000, 24
-    d = tempfile.mkdtemp()
-    lg = make_sqlite(d, "scale")
-    decile = iters // 10
+def test_sqlite_vs_hdf5_write_scaling():
+    """Head-to-head: does sqlite's write cost grow past hdf5's as the table fills? A crossover can only
+    happen if sqlite degrades with size while hdf5 stays flat. Measure each backend's real per-step write
+    throughput in a window on an empty table, then again after the table has grown by ~0.5M rows, and
+    compare. No JAX — pure write path, runs on CPU."""
+    n_series = 24
+    window = 2000  # iterations measured at real per-step (per-flush) cadence
+    fill = 20_000  # iterations written between the two windows to grow the table
+    max_count = 2 * window + fill + 10
 
-    def write_range(lo: int, hi: int) -> float:
+    def sqlite_window(lg, start: int) -> float:
         t = time.perf_counter()
-        for it in range(lo, hi):
+        for it in range(start, start + window):
             for s in range(n_series):
                 log_point(lg, f"train/loss/{s}", it, float(it + s), "run")
             lg.flush()
-        return (hi - lo) * n_series / (time.perf_counter() - t)
+        return window * n_series / (time.perf_counter() - t)
 
-    rate_first = write_range(1, 1 + decile)
-    write_range(1 + decile, 1 + 9 * decile)  # fill the middle 80% so the table is large
-    rate_last = write_range(1 + 9 * decile, 1 + 10 * decile)
+    def sqlite_fill(lg, start: int) -> None:
+        for it in range(start, start + fill):
+            for s in range(n_series):
+                log_point(lg, f"train/loss/{s}", it, float(it + s), "run")
+            if it % 1000 == 0:
+                lg.flush()
+        lg.flush()
 
-    rows = sqlite3.connect(lg.db_file).execute("SELECT COUNT(*) FROM scalar_data").fetchone()[0]
+    def hdf5_window(lg, start: int, n: int) -> float:
+        t = time.perf_counter()
+        for it in range(start, start + n):
+            for s in range(n_series):
+                lg.log_scalar(f"train/loss/{s}", "run", float(it + s), it, max_count, 0)
+        return n * n_series / (time.perf_counter() - t)
+
+    d = tempfile.mkdtemp()
+    sq = make_sqlite(d, "sqscale")
+    sq_small = sqlite_window(sq, 1)
+    sqlite_fill(sq, 1 + window)
+    sq_large = sqlite_window(sq, 1 + window + fill)
+
+    h = HDF5Logger(d, "hscale", 1)
+    h_small = hdf5_window(h, 1, window)
+    hdf5_window(h, 1 + window, fill)  # grow it; timing ignored
+    h_large = hdf5_window(h, 1 + window + fill, window)
+    h.file.flush()
+
+    rows = sqlite3.connect(sq.db_file).execute("SELECT COUNT(*) FROM scalar_data").fetchone()[0]
     print(
-        f"\nscaling: rows={rows:,}  first-decile={rate_first:,.0f} rows/s  "
-        f"last-decile={rate_last:,.0f} rows/s  slowdown={rate_first / rate_last:.2f}x"
+        f"\nwrite scaling over {rows:,} rows (real per-step cadence):"
+        f"\n  sqlite: empty={sq_small:,.0f} rows/s  full={sq_large:,.0f} rows/s  self-slowdown={sq_small / sq_large:.2f}x"
+        f"\n  hdf5:   empty={h_small:,.0f} rows/s  full={h_large:,.0f} rows/s  self-slowdown={h_small / h_large:.2f}x"
+        f"\n  sqlite/hdf5: empty={sq_small / h_small:.2f}x  full={sq_large / h_large:.2f}x"
     )
-    assert rows == iters * n_series
-    assert rate_last >= rate_first / 3, (
-        f"write rate degraded {rate_first / rate_last:.1f}x as table grew — index regression?"
-    )
+    # neither backend may degrade as its own table grows ...
+    assert sq_large >= sq_small / 1.5, f"sqlite degraded {sq_small / sq_large:.2f}x as table grew"
+    assert h_large >= h_small / 1.5, f"hdf5 degraded {h_small / h_large:.2f}x as table grew"
+    # ... and sqlite must not lose ground to hdf5 at large size vs small (that would be the crossover)
+    assert (sq_large / h_large) >= (sq_small / h_small) * 0.7, "sqlite lost ground to hdf5 as the table grew"
 
 
 def pipeline_config(epochs: int) -> GodConfig:

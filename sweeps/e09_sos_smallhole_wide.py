@@ -11,8 +11,8 @@ args = parser.parse_args()
 
 PROJECT = "oho"
 QUEUE = "willyp"
-# SOS_BETA_OHO_WIDE base task (wide arch: encoder [64,128,256], decoder [128,64])
-BASE_TASK_ID = "3901784cc5804358962f565b3f383337"
+# SOS_BETA_OHO_WIDE base task with HardClip(1.0) dict pre-baked to avoid the cattrs add_clip='' bug
+BASE_TASK_ID = "e4020fae22714631aa0f5b3c261eb199"
 
 OPT_PREFIX = "config/levels/1/learner/optimizer/meta2_sgd1/optimizer"
 METHOD_PREFIX = "config/levels/1/learner/optimizer_learner/method"
@@ -36,7 +36,7 @@ def dpr(path: str, values: list):
 task_name = (
     "E09_sos_smallhole_wide_test: 1-cell smoke"
     if args.test
-    else "E09_sos_smallhole_wide: wide arch + 10x10 hole + disjoint val/test, OHO β+lr+wd mlr=1e-4 lr_init=1e-1 x 5 seeds"
+    else "E09_sos_smallhole_wide: wide arch + 10x10 hole + disjoint val/test, OHO β+lr+wd mlr=1e-4 lr_init=1e-3 x 5 seeds"
 )
 opt_task = Task.init(
     project_name=PROJECT,
@@ -77,11 +77,11 @@ optimizer = HyperParameterOptimizer(
         dpr(VAL_BETA_PATH, [0.0]),
         dpr(BETA_INIT_PATH, [1.0]),
         dpr(WD_INIT_PATH, [1e-6]),
-        dpr(INNER_LR_PATH, [1e-1]),
+        dpr(INNER_LR_PATH, [1e-3]),
         dpr("config/levels/0/learner/model_learner/add_clip/_type", ["HardClip"]),
         dpr("config/levels/0/learner/model_learner/add_clip/threshold", [1.0]),
         dpr(f"{METHOD_PREFIX}/_type", ["RTRLConfig"]),
-        dpr(f"{METHOD_PREFIX}/damping", [1e-5]),
+        dpr(f"{METHOD_PREFIX}/damping", [1e-6]),
         dpr(f"{METHOD_PREFIX}/start_at_step", [0]),
         dpr(f"{METHOD_PREFIX}/use_finite_hvp", [1e-3]),
         # 10x10 hole + disjoint val/test (same geometry as e08)

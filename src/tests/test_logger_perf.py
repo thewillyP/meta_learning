@@ -25,6 +25,10 @@ import pytest
 
 import configs as configs_module
 from meta_learn_lib.config import GodConfig
+
+# epochs for the full-pipeline speed test; ratio is per-step-stable, so 12 already gives a decisive
+# number — bump to ~50 only to tighten it (≈25-30 min on GPU vs ~11 min at 12).
+PIPELINE_EPOCHS = 50
 from meta_learn_lib.config_converter import make_converter
 from meta_learn_lib.checkpoint import NullCheckpointManager
 from meta_learn_lib.logger import SQLiteLogger, HDF5Logger
@@ -64,8 +68,9 @@ def test_flush_commits_whole_batch_atomically():
     con.close()
 
 
-def test_replay_overwrites_not_duplicates():
-    """A preempt+resume replays steps from the last model checkpoint; those rows must overwrite, not pile up."""
+def test_replay_view_returns_newest_value():
+    """A preempt+resume replays steps from the last checkpoint. Writes are append-only (duplicates allowed
+    in storage); the compat view resolves each (series, iteration) to the newest row by rowid."""
     d = tempfile.mkdtemp()
     lg = make_sqlite(d, "replay")
     for it in range(1, 6):
@@ -77,9 +82,10 @@ def test_replay_overwrites_not_duplicates():
     for it in range(3, 6):
         log_point(lg, "train/loss", it, float(it * 100), "runA")
         lg.flush()
+    assert con.execute("SELECT COUNT(*) FROM scalar_data").fetchone()[0] == 8  # storage appends the replays
     rows = con.execute("SELECT iteration, value FROM scalars ORDER BY iteration").fetchall()
     con.close()
-    assert rows == [(1, 1.0), (2, 2.0), (3, 300.0), (4, 400.0), (5, 500.0)]
+    assert rows == [(1, 1.0), (2, 2.0), (3, 300.0), (4, 400.0), (5, 500.0)]  # view shows the newest per point
 
 
 def test_compat_view_matches_old_schema():
@@ -99,6 +105,38 @@ def test_compat_view_matches_old_schema():
     con.close()
 
 
+@pytest.mark.slow
+def test_write_rate_stays_flat_as_table_grows():
+    """No write index → appends must not degrade as the table fills (the hdf5-parity-at-scale guarantee).
+    Compares write throughput of the last decile of rows against the first decile over a multi-million-row table."""
+    iters, n_series = 100_000, 24
+    d = tempfile.mkdtemp()
+    lg = make_sqlite(d, "scale")
+    decile = iters // 10
+
+    def write_range(lo: int, hi: int) -> float:
+        t = time.perf_counter()
+        for it in range(lo, hi):
+            for s in range(n_series):
+                log_point(lg, f"train/loss/{s}", it, float(it + s), "run")
+            lg.flush()
+        return (hi - lo) * n_series / (time.perf_counter() - t)
+
+    rate_first = write_range(1, 1 + decile)
+    write_range(1 + decile, 1 + 9 * decile)  # fill the middle 80% so the table is large
+    rate_last = write_range(1 + 9 * decile, 1 + 10 * decile)
+
+    rows = sqlite3.connect(lg.db_file).execute("SELECT COUNT(*) FROM scalar_data").fetchone()[0]
+    print(
+        f"\nscaling: rows={rows:,}  first-decile={rate_first:,.0f} rows/s  "
+        f"last-decile={rate_last:,.0f} rows/s  slowdown={rate_first / rate_last:.2f}x"
+    )
+    assert rows == iters * n_series
+    assert rate_last >= rate_first / 3, (
+        f"write rate degraded {rate_first / rate_last:.1f}x as table grew — index regression?"
+    )
+
+
 def pipeline_config(epochs: int) -> GodConfig:
     """main.py's config, shrunk: clearml_run on, no sample generators, no checkpointing."""
     converter = make_converter()
@@ -116,7 +154,7 @@ def test_sqlite_keeps_pace_with_hdf5_full_pipeline():
     prev_x64 = jax.config.jax_enable_x64
     jax.config.update("jax_enable_x64", False)
     try:
-        config = pipeline_config(epochs=12)
+        config = pipeline_config(epochs=PIPELINE_EPOCHS)
         if not os.path.isdir(config.data_root_dir):
             pytest.skip(f"data_root_dir not found: {config.data_root_dir}")
 
@@ -135,6 +173,8 @@ def test_sqlite_keeps_pace_with_hdf5_full_pipeline():
         jax.config.update("jax_enable_x64", prev_x64)
 
     rows = sqlite3.connect(f"{d}/metrics_sqlite.sqlite").execute("SELECT COUNT(*) FROM scalars").fetchone()[0]
-    print(f"\nfull pipeline: hdf5={t_hdf5:.2f}s  sqlite={t_sqlite:.2f}s  ratio={t_sqlite / t_hdf5:.2f}x  sqlite_rows={rows}")
+    print(
+        f"\nfull pipeline: hdf5={t_hdf5:.2f}s  sqlite={t_sqlite:.2f}s  ratio={t_sqlite / t_hdf5:.2f}x  sqlite_rows={rows}"
+    )
     assert rows > 0
     assert t_sqlite <= t_hdf5 * 1.5, f"sqlite {t_sqlite:.2f}s vs hdf5 {t_hdf5:.2f}s — logger regressed"

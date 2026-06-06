@@ -84,13 +84,10 @@ class SQLiteLogger:
             )"""
         )
         self.conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_series_iter ON scalar_data(series_id, iteration, run_label)"
-        )
-        # compat view: readers keep querying scalars(series, iteration, value, run_label) unchanged
-        self.conn.execute(
             """CREATE VIEW IF NOT EXISTS scalars AS
                 SELECT s.name AS series, d.iteration AS iteration, d.value AS value, d.run_label AS run_label
-                FROM scalar_data d JOIN series s ON d.series_id = s.id"""
+                FROM scalar_data d JOIN series s ON d.series_id = s.id
+                WHERE d.rowid IN (SELECT MAX(rowid) FROM scalar_data GROUP BY series_id, iteration, run_label)"""
         )
         self.conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
         self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('task_id', ?)", (task_id,))
@@ -119,7 +116,7 @@ class SQLiteLogger:
         # explicit BEGIN/COMMIT because `with self.conn` is a no-op under isolation_level=None
         self.conn.execute("BEGIN")
         self.conn.executemany(
-            "INSERT OR REPLACE INTO scalar_data(series_id, iteration, value, run_label) VALUES (?, ?, ?, ?)",
+            "INSERT INTO scalar_data(series_id, iteration, value, run_label) VALUES (?, ?, ?, ?)",
             self.buffer,
         )
         self.conn.execute("COMMIT")

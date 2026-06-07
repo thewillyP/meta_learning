@@ -182,6 +182,11 @@ VAE_ENCODER_3CONV_WIDE = VAE_3CONV_WIDE["encoder"]
 VAE_DECODER_3CONV_WIDE = VAE_3CONV_WIDE["decoder"]
 VAE_ARCH_3CONV_WIDE = VAE_3CONV_WIDE["arch"]
 
+VAE_3CONV_LOWCAP_DEC = make_vae_3conv(latent_dim=2, encoder_channels=[64, 128, 256], decoder_channels=[16, 8])
+VAE_ENCODER_3CONV_LOWCAP_DEC = VAE_3CONV_LOWCAP_DEC["encoder"]
+VAE_DECODER_3CONV_LOWCAP_DEC = VAE_3CONV_LOWCAP_DEC["decoder"]
+VAE_ARCH_3CONV_LOWCAP_DEC = VAE_3CONV_LOWCAP_DEC["arch"]
+
 VAE_2CONV = make_vae_2conv(latent_dim=2)
 VAE_ENCODER_2CONV = VAE_2CONV["encoder"]
 VAE_DECODER_2CONV = VAE_2CONV["decoder"]
@@ -5375,6 +5380,204 @@ SOS_BETA_OHO_WIDE = dataclasses.replace(
 )
 
 
+SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
+    SOS_BETA_OHO_WIDE,
+    log_title="sos_beta_oho_wide_split",
+    hyperparameters={
+        "meta1_enc_lr": HyperparameterConfig(
+            value=1e-4,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_enc_wd": HyperparameterConfig(
+            value=1e-6,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_enc_mom": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_dec_lr": HyperparameterConfig(
+            value=1e-4,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_dec_wd": HyperparameterConfig(
+            value=1e-6,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_dec_mom": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_beta": HyperparameterConfig(
+            value=0.01,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_beta": HyperparameterConfig(
+            value=0.0,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=False,
+        ),
+    },
+    levels=[
+        dataclasses.replace(
+            SOS_BETA_OHO_WIDE.levels[0],
+            learner=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[0].learner,
+                optimizer={
+                    "meta1_sgd1_enc": OptimizerAssignment(
+                        target=frozenset(VAE_3CONV_WIDE["encoder"]["learnable"]),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_enc_lr",
+                            weight_decay="meta1_enc_wd",
+                            momentum="meta1_enc_mom",
+                        ),
+                    ),
+                    "meta1_sgd1_dec": OptimizerAssignment(
+                        target=frozenset(VAE_3CONV_WIDE["decoder"]["learnable"]),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_dec_lr",
+                            weight_decay="meta1_dec_wd",
+                            momentum="meta1_dec_mom",
+                        ),
+                    ),
+                },
+            ),
+        ),
+        dataclasses.replace(
+            SOS_BETA_OHO_WIDE.levels[1],
+            learner=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[1].learner,
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset(
+                            {
+                                "meta1_beta",
+                                "meta1_enc_lr",
+                                "meta1_enc_wd",
+                                "meta1_enc_mom",
+                                "meta1_dec_lr",
+                                "meta1_dec_wd",
+                                "meta1_dec_mom",
+                            }
+                        ),
+                        optimizer=AdamConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
+                        ),
+                    ),
+                },
+            ),
+        ),
+        SOS_BETA_OHO_WIDE.levels[2],
+    ],
+)
+
+
+SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
+    SOS_BETA_OHO_WIDE,
+    log_title="sos_beta_oho_lowcap_dec",
+    readout_graph=VAE_ARCH_3CONV_LOWCAP_DEC["readout_graph"],
+    nodes=VAE_ARCH_3CONV_LOWCAP_DEC["nodes"],
+    levels=[
+        dataclasses.replace(
+            SOS_BETA_OHO_WIDE.levels[0],
+            learner=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[0].learner,
+                optimizer={
+                    "meta1_sgd1": dataclasses.replace(
+                        SOS_BETA_OHO_WIDE.levels[0].learner.optimizer["meta1_sgd1"],
+                        target=VAE_ARCH_3CONV_LOWCAP_DEC["learnable"],
+                    ),
+                },
+            ),
+        ),
+        SOS_BETA_OHO_WIDE.levels[1],
+        SOS_BETA_OHO_WIDE.levels[2],
+    ],
+)
+
+
 SOS_BETA_OHO_2CONV = GodConfig(
     seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
     clearml_run=True,
@@ -9795,6 +9998,8 @@ OHO_RNN32_TEST = GodConfig(
 if __name__ == "__main__":
     for name, config in [
         ("SOS_BETA_OHO_WIDE", SOS_BETA_OHO_WIDE),
+        ("SOS_BETA_OHO_WIDE_SPLIT", SOS_BETA_OHO_WIDE_SPLIT),
+        ("SOS_BETA_OHO_LOWCAP_DEC", SOS_BETA_OHO_LOWCAP_DEC),
     ]:
         upload_config(name, config)
 

@@ -5383,6 +5383,16 @@ SOS_BETA_OHO_WIDE = dataclasses.replace(
 SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
     SOS_BETA_OHO_WIDE,
     log_title="sos_beta_oho_wide_split",
+    clearml_run=True,
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
+        scalar_queue_size=0,
+        sample_queue_size=2,
+    ),
     hyperparameters={
         "meta1_enc_lr": HyperparameterConfig(
             value=1e-4,
@@ -5524,6 +5534,21 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
             SOS_BETA_OHO_WIDE.levels[1],
             learner=dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[1].learner,
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-6,
+                        beta=0.1,
+                        use_finite_hvp=1e-3,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset(
@@ -5557,6 +5582,16 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
 SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
     SOS_BETA_OHO_WIDE,
     log_title="sos_beta_oho_lowcap_dec",
+    clearml_run=True,
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
+        scalar_queue_size=0,
+        sample_queue_size=2,
+    ),
     readout_graph=VAE_ARCH_3CONV_LOWCAP_DEC["readout_graph"],
     nodes=VAE_ARCH_3CONV_LOWCAP_DEC["nodes"],
     levels=[
@@ -5572,7 +5607,27 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                 },
             ),
         ),
-        SOS_BETA_OHO_WIDE.levels[1],
+        dataclasses.replace(
+            SOS_BETA_OHO_WIDE.levels[1],
+            learner=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[1].learner,
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=1e-6,
+                        beta=0.1,
+                        use_finite_hvp=1e-3,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+            ),
+        ),
         SOS_BETA_OHO_WIDE.levels[2],
     ],
 )

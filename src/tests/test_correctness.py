@@ -1,20 +1,10 @@
-"""
-Correctness tests for the meta-learning algorithm.
-
-Tests:
-1. RTRL vs BPTT gradient equivalence at level 0 (via full meta-learner)
-2. Reset: state is actually reset
-3. Reset: parameters survive reset
-4. Reset: influence tensor is zeroed on reset
-5. Reset: tick counter resets properly
-6. Identity learner produces zero meta-gradient
-7. Tick modular arithmetic for reset checker
-"""
+"""Correctness tests for the meta-learning algorithm."""
 
 import random
 import os
 from typing import Callable, Iterator, NamedTuple
 import numpy as np
+import pytest
 import torch
 import toolz
 import jax
@@ -22,7 +12,7 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from meta_learn_lib.config import *
-from meta_learn_lib.constants import MODEL_LEARNER
+from meta_learn_lib.constants import MODEL_LEARNER, OPTIMIZER_LEARNER
 from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.create_env import (
     create_env,
@@ -73,6 +63,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
         logger_config=LoggersConfig(
             clearml=ClearMLLoggerConfig(enabled=False),
             hdf5=HDF5LoggerConfig(enabled=False),
+            sqlite=SQLiteLoggerConfig(enabled=False),
             console=ConsoleLoggerConfig(enabled=False),
             matplotlib=MatplotlibLoggerConfig(save_dir="/tmp", enabled=False),
             scalar_queue_size=0,
@@ -97,6 +88,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     n=RNN_SIZE,
                     activation_fn="tanh",
                     use_bias=True,
+                    init="lecun_normal",
                 ),
                 layer_norm=None,
                 use_random_init=False,
@@ -106,6 +98,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                 n=NUM_CLASSES,
                 activation_fn="identity",
                 use_bias=True,
+                init="lecun_normal",
             ),
         },
         aliases={},
@@ -166,6 +159,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                     num_examples_total=100,
                     is_test=False,
                     augment=False,
+                    shuffle=True,
                 ),
                 validation=StepConfig(
                     num_steps=28,
@@ -212,6 +206,149 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                 ),
                 test_seed=0,
                 collect_predictions=False,
+            ),
+        ],
+        sample_generators=[],
+        label_mask_value=-1.0,
+        unlabeled_mask_value=-100.0,
+        num_tasks=1,
+        prefetch_buffer_size=1,
+        dataloader_chunk_size=None,
+    )
+
+
+META_INNER_STEPS = 4
+
+
+def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMethod) -> GodConfig:
+    immediate = GradientConfig(method=ImmediateLearnerConfig(), add_clip=None, scale=1.0)
+    inner_grad = GradientConfig(method=inner_method, add_clip=None, scale=1.0)
+    meta_grad = GradientConfig(method=meta_method, add_clip=None, scale=1.0)
+
+    def hp(value: float, kind: HyperparameterConfig.Kind, level: int, max_value: float) -> HyperparameterConfig:
+        return HyperparameterConfig(
+            value=value,
+            kind=kind,
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=max_value,
+            level=level,
+            parametrizes_transition=True,
+        )
+
+    def meta_level(num_steps: int, track: int, learner: LearnConfig) -> MetaConfig:
+        return MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=10,
+                num_examples_total=200,
+                is_test=False,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(num_steps=28, batch=1, reset_t=28, track_influence_in=frozenset({track})),
+            nested=StepConfig(num_steps=num_steps, batch=1, reset_t=None, track_influence_in=frozenset({track})),
+            learner=learner,
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+        )
+
+    return GodConfig(
+        seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
+        clearml_run=True,
+        data_root_dir="/scratch/wlp9800/datasets",
+        log_dir="/tmp",
+        log_title="test",
+        logger_config=LoggersConfig(
+            clearml=ClearMLLoggerConfig(enabled=False),
+            hdf5=HDF5LoggerConfig(enabled=False),
+            sqlite=SQLiteLoggerConfig(enabled=False),
+            console=ConsoleLoggerConfig(enabled=False),
+            matplotlib=MatplotlibLoggerConfig(save_dir="/tmp", enabled=False),
+            scalar_queue_size=0,
+            sample_queue_size=0,
+        ),
+        epochs=1,
+        checkpoint_every_n_minibatches=1,
+        checkpoint_every_n_epochs=0,
+        transition_graph={
+            "x": frozenset(),
+            "concat": frozenset({"x"}),
+            "rnn1": frozenset({"concat"}),
+        },
+        readout_graph={
+            "readout": frozenset({"rnn1"}),
+        },
+        nodes={
+            "x": UnlabeledSource(),
+            "concat": Concat(),
+            "rnn1": VanillaRNNLayer(
+                nn_layer=NNLayer(n=RNN_SIZE, activation_fn="tanh", use_bias=True, init="lecun_normal"),
+                layer_norm=None,
+                use_random_init=False,
+                time_constant="meta1_tc",
+            ),
+            "readout": NNLayer(n=NUM_CLASSES, activation_fn="identity", use_bias=True, init="lecun_normal"),
+        },
+        aliases={},
+        hyperparameters={
+            "meta1_tc": hp(1.0, "time_constant", 1, 1.0),
+            "meta1_lr": hp(0.05, "learning_rate", 1, jnp.inf),
+            "meta1_wd": hp(0.001, "weight_decay", 1, jnp.inf),
+            "meta1_mom": hp(0.0, "momentum", 1, 1.0),
+            "meta2_lr": hp(1e-3, "learning_rate", 1, jnp.inf),
+            "meta2_wd": hp(0.0, "weight_decay", 1, jnp.inf),
+            "meta2_mom": hp(0.0, "momentum", 1, 1.0),
+        },
+        levels=[
+            meta_level(
+                num_steps=1,
+                track=0,
+                learner=LearnConfig(
+                    model_learner=inner_grad,
+                    optimizer_learner=immediate,
+                    optimizer={
+                        "meta1_sgd1": OptimizerAssignment(
+                            target=frozenset({"rnn1", "readout"}),
+                            optimizer=SGDConfig(
+                                learning_rate="meta1_lr", weight_decay="meta1_wd", momentum="meta1_mom"
+                            ),
+                        ),
+                    },
+                ),
+            ),
+            meta_level(
+                num_steps=META_INNER_STEPS,
+                track=1,
+                learner=LearnConfig(
+                    model_learner=inner_grad,
+                    optimizer_learner=meta_grad,
+                    optimizer={
+                        "meta2_sgd1": OptimizerAssignment(
+                            target=frozenset({"meta1_lr", "meta1_wd"}),
+                            optimizer=SGDConfig(
+                                learning_rate="meta2_lr", weight_decay="meta2_wd", momentum="meta2_mom"
+                            ),
+                        ),
+                    },
+                ),
             ),
         ],
         sample_generators=[],
@@ -299,7 +436,6 @@ def test_rtrl_vs_bptt_level0():
 
     data = stuff_bptt.data_sample
 
-    # Verify initial envs are identical
     params_init_bptt = stuff_bptt.interfaces[(MODEL_LEARNER, 0)].param.get(stuff_bptt.env)
     params_init_rtrl = stuff_rtrl.interfaces[(MODEL_LEARNER, 0)].param.get(stuff_rtrl.env)
     init_diff = jnp.max(jnp.abs(params_init_bptt - params_init_rtrl))
@@ -308,13 +444,6 @@ def test_rtrl_vs_bptt_level0():
     env_bptt_after, stats_bptt = stuff_bptt.meta_learner(stuff_bptt.env, data)
     env_rtrl_after, stats_rtrl = stuff_rtrl.meta_learner(stuff_rtrl.env, data)
 
-    # Compare meta-gradient norms.
-    # optimizer_learner is RTRL in both configs, differentiating through the
-    # model_learner. The model_learner BPTT and RTRL produce equivalent model
-    # gradients, but the optimizer_learner's RTRL sees different computational
-    # graphs (eqx.filter_grad vs the RTRL scan), so the meta-gradients can
-    # legitimately differ. We check params instead — if model gradients match,
-    # the SGD update is identical, so params after one step must match.
     norm_bptt = stats_bptt["level0/meta_gradient_norm"].data
     norm_rtrl = stats_rtrl["level0/meta_gradient_norm"].data
     norm_diff = jnp.abs(norm_bptt - norm_rtrl)
@@ -323,8 +452,6 @@ def test_rtrl_vs_bptt_level0():
     print(f"  RTRL meta-gradient norm: {norm_rtrl:.8f}")
     print(f"  Abs diff in norms:       {norm_diff:.2e}")
 
-    # Compare params after one step — the model_learner gradient (BPTT vs RTRL)
-    # feeds into SGD. If equivalent, params are identical after one step.
     val_interface_bptt = stuff_bptt.interfaces[(MODEL_LEARNER, 0)]
     val_interface_rtrl = stuff_rtrl.interfaces[(MODEL_LEARNER, 0)]
     params_bptt = val_interface_bptt.param.get(env_bptt_after)
@@ -355,7 +482,6 @@ def test_validation_gradient_rtrl_vs_bptt():
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
 
-    # Rebuild validation learners to get model_learner gradients directly
     vl_learners_bptt, _ = create_validation_learners(
         stuff_bptt.transition_fns, stuff_bptt.loss_fns, stuff_bptt.interfaces, config_bptt
     )
@@ -368,7 +494,6 @@ def test_validation_gradient_rtrl_vs_bptt():
     env_bptt = stuff_bptt.env
     env_rtrl = stuff_rtrl.env
 
-    # Compute axes for vmap (to peel nested.batch dim)
     def get_axes(config, stuff):
         resetters = env_resetters(config, stuff.shapes, stuff.interfaces, [False] * len(config.levels))
         inner_resetter, _ = resetters[0]
@@ -377,7 +502,6 @@ def test_validation_gradient_rtrl_vs_bptt():
     axes_bptt = get_axes(config_bptt, stuff_bptt)
     axes_rtrl = get_axes(config_rtrl, stuff_rtrl)
 
-    # Extract validation data from dataloader batch
     data_batch = stuff_bptt.data_sample
     step_data = jax.tree.map(lambda x: x[0], data_batch)
     _, vl_data = step_data
@@ -402,6 +526,137 @@ def test_validation_gradient_rtrl_vs_bptt():
 
     assert jnp.linalg.norm(grad_bptt) > 1e-8, f"BPTT gradient is zero — test is degenerate"
     assert diff < 1e-10, f"RTRL/BPTT validation gradient diff too large: {diff:.2e}"
+
+
+# ============================================================================
+# Meta-hypergradient runner / divergence helpers
+# ============================================================================
+
+
+def run_two_level_meta(config: GodConfig) -> tuple[jax.Array, jax.Array, jax.Array]:
+    stuff = setup_env_and_fns(config)
+    env_after, stats = stuff.meta_learner(stuff.env, stuff.data_sample)
+    iface = stuff.interfaces[(OPTIMIZER_LEARNER, 1)]
+    hp_init = iface.param.get(stuff.env)
+    hp_after = iface.param.get(env_after)
+    norm = stats["level1/meta_gradient_norm"].data
+    return norm, hp_init, hp_after
+
+
+def hypergradient_rel_divergence(hp_init: jax.Array, hp_after: jax.Array, hp_after_truth: jax.Array) -> jax.Array:
+    step = hp_after - hp_init
+    step_truth = hp_after_truth - hp_init
+    return jnp.linalg.norm(step - step_truth) / jnp.maximum(jnp.linalg.norm(step_truth), 1e-30)
+
+
+# ============================================================================
+# TEST 1c: Meta hypergradient — RTRL-over-RTRL vs BPTT-over-BPTT
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_meta_hypergradient_rtrl_vs_bptt():
+    print("=" * 60)
+    print("TEST 1c: Meta hypergradient RTRL-over-RTRL vs BPTT-over-BPTT")
+    print("=" * 60)
+
+    bptt = BPTTConfig(truncate_at=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+
+    norm_bptt, hp_init_bptt, hp_after_bptt = run_two_level_meta(make_two_level_config(bptt, bptt))
+    norm_rtrl, hp_init_rtrl, hp_after_rtrl = run_two_level_meta(make_two_level_config(rtrl, rtrl))
+
+    init_diff = jnp.max(jnp.abs(hp_init_bptt - hp_init_rtrl))
+    norm_abs_diff = jnp.abs(norm_bptt - norm_rtrl)
+    norm_rel_diff = norm_abs_diff / jnp.maximum(jnp.abs(norm_bptt), 1e-12)
+    hp_step = jnp.max(jnp.abs(hp_after_bptt - hp_init_bptt))
+    vec_rel_diff = hypergradient_rel_divergence(hp_init_bptt, hp_after_rtrl, hp_after_bptt)
+
+    print(f"  Initial meta-param diff: {init_diff:.2e}")
+    print(f"  BPTT-over-BPTT hypergradient norm: {norm_bptt:.12f}")
+    print(f"  RTRL-over-RTRL hypergradient norm: {norm_rtrl:.12f}")
+    print(f"  Rel diff in norms:           {norm_rel_diff:.2e}")
+    print(f"  Rel diff in vector (vs BPTT): {vec_rel_diff:.2e}")
+    print(f"  Inner hp after (BPTT): {hp_after_bptt}")
+    print(f"  Inner hp after (RTRL): {hp_after_rtrl}")
+    print(f"  Meta step size (max |hp_after - hp_init|): {hp_step:.2e}")
+
+    assert init_diff < 1e-12, f"Starting meta-params differ: {init_diff:.2e}"
+    assert norm_bptt > 1e-8, "BPTT hypergradient norm is zero — test is degenerate"
+    assert norm_rtrl > 1e-8, "RTRL hypergradient norm is zero — test is degenerate"
+    assert hp_step > 1e-8, "Meta step is zero — meta optimizer did not move the hyperparameters"
+    assert norm_rel_diff < 1e-4, f"RTRL/BPTT hypergradient norm rel diff too large: {norm_rel_diff:.2e}"
+    assert vec_rel_diff < 1e-4, f"RTRL/BPTT hypergradient vector rel diff too large: {vec_rel_diff:.2e}"
+
+
+# ============================================================================
+# TEST 1d: Finite-difference RTRL-over-RTRL is close to exact BPTT-over-BPTT
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_meta_hypergradient_finite_difference_rtrl():
+    print("=" * 60)
+    print("TEST 1d: Finite-difference RTRL-over-RTRL vs exact BPTT-over-BPTT")
+    print("=" * 60)
+
+    eps = 1e-3
+    bptt = BPTTConfig(truncate_at=None)
+    fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps)
+
+    norm_truth, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt))
+    norm_fd, _, hp_after_fd = run_two_level_meta(make_two_level_config(fd_rtrl, fd_rtrl))
+
+    vec_rel_diff = hypergradient_rel_divergence(hp_init, hp_after_fd, hp_after_truth)
+    norm_rel_diff = jnp.abs(norm_fd - norm_truth) / jnp.maximum(jnp.abs(norm_truth), 1e-12)
+
+    print(f"  eps = {eps:.0e}")
+    print(f"  exact BPTT/BPTT hypergradient norm:   {norm_truth:.12f}")
+    print(f"  finite-diff RTRL/RTRL hypergrad norm: {norm_fd:.12f}")
+    print(f"  Rel diff in norms:            {norm_rel_diff:.2e}")
+    print(f"  Rel diff in vector (vs BPTT): {vec_rel_diff:.2e}")
+
+    assert norm_truth > 1e-8, "ground-truth hypergradient norm is zero — test is degenerate"
+    assert norm_fd > 1e-8, "finite-diff hypergradient norm is zero — test is degenerate"
+    assert vec_rel_diff < 5e-2, f"finite-diff RTRL hypergradient too far from BPTT: {vec_rel_diff:.2e}"
+
+
+# ============================================================================
+# TEST 1e: How far the finite-difference OHO hypergradient diverges from truth
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_finite_difference_oho_divergence():
+    print("=" * 60)
+    print("TEST 1e: Finite-difference OHO divergence from true hypergradient")
+    print("=" * 60)
+
+    bptt = BPTTConfig(truncate_at=None)
+    exact_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    eps_values = [1e-2, 1e-4]
+
+    _, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt))
+
+    _, _, hp_after_exact = run_two_level_meta(make_two_level_config(bptt, exact_rtrl))
+    div_exact = hypergradient_rel_divergence(hp_init, hp_after_exact, hp_after_truth)
+    print(f"  exact RTRL OHO            rel divergence = {div_exact:.3e}")
+
+    div_finite = {}
+    for eps in eps_values:
+        fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps)
+        _, _, hp_after_fd = run_two_level_meta(make_two_level_config(bptt, fd_rtrl))
+        div = hypergradient_rel_divergence(hp_init, hp_after_fd, hp_after_truth)
+        div_finite[eps] = div
+        print(f"  finite-diff OHO eps={eps:.0e} rel divergence = {div:.3e}")
+
+    worst_finite = max(div_finite.values())
+
+    assert div_exact < 1e-4, f"exact RTRL OHO should match truth, got {div_exact:.3e}"
+    assert worst_finite < 0.5, f"finite-diff OHO diverged wildly: {worst_finite:.3e}"
+    assert worst_finite > div_exact, (
+        f"finite-diff OHO ({worst_finite:.3e}) should be a worse approximation than exact RTRL ({div_exact:.3e})"
+    )
 
 
 # ============================================================================
@@ -598,6 +853,9 @@ def test_reset_checker_fires_correctly():
 if __name__ == "__main__":
     test_rtrl_vs_bptt_level0()
     test_validation_gradient_rtrl_vs_bptt()
+    test_meta_hypergradient_rtrl_vs_bptt()
+    test_meta_hypergradient_finite_difference_rtrl()
+    test_finite_difference_oho_divergence()
     test_reset_state()
     test_reset_preserves_params()
     test_reset_zeros_influence_tensor()

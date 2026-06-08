@@ -1819,7 +1819,7 @@ OHO_RNN32_ADAM = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -1942,10 +1942,13 @@ OHO_RNN32_ADAM = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_adam1_lr", "meta1_adam1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -2789,7 +2792,7 @@ OHO_RNN256_V3 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -2909,10 +2912,13 @@ OHO_RNN256_V3 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -3102,7 +3108,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3218,10 +3224,13 @@ OHO_RNN256_CIFAR10 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -3419,7 +3428,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -3538,10 +3547,13 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -3987,7 +3999,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -4103,10 +4115,13 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -4289,7 +4304,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -4405,10 +4420,13 @@ OHO_GRU128_CIFAR10 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -5485,7 +5503,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.9,
+            value=0.0,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -5582,13 +5600,10 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
                                 "meta1_dec_mom",
                             }
                         ),
-                        optimizer=AdamConfig(
+                        optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
-                            second_momentum=0.999,
-                            eps=1e-8,
-                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -5668,6 +5683,16 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
             level=2,
             parametrizes_transition=True,
         ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
     },
     levels=[
         dataclasses.replace(
@@ -5724,13 +5749,10 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_beta", "meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=AdamConfig(
+                        optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
-                            second_momentum=0.999,
-                            eps=1e-8,
-                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -6322,7 +6344,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -6731,7 +6753,7 @@ VAE_LR_OHO = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -8181,7 +8203,7 @@ VAE_BETA_OHO_V2 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -8321,10 +8343,13 @@ VAE_BETA_OHO_V2 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_beta"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -8586,7 +8611,7 @@ VAE_BASELINE_MLP = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -9003,7 +9028,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -9123,10 +9148,13 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -9634,7 +9662,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -9754,10 +9782,13 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },
@@ -9946,7 +9977,7 @@ OHO_RNN32_TEST = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_momentum": HyperparameterConfig(
-            value=0.0,
+            value=0.9,
             kind="momentum",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -10066,10 +10097,13 @@ OHO_RNN32_TEST = GodConfig(
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
                         target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
-                        optimizer=SGDConfig(
+                        optimizer=AdamConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
                             momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
                         ),
                     ),
                 },

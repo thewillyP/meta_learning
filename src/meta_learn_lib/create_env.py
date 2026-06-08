@@ -784,7 +784,6 @@ def reset_nested_learner[ENV](
             gradient=jnp.zeros_like(nest_interface.param.get(env)) if meta_config.track_logs.gradient else None,
             hessian_contains_nans=jnp.array(False) if meta_config.track_logs.hessian_contains_nans else None,
             largest_eigenvalue=jnp.array(0.0) if meta_config.track_logs.largest_eigenvalue else None,
-            influence_tensor_norm=jnp.array(0.0) if meta_config.track_logs.influence_tensor_norm else None,
             immediate_influence_tensor=jnp.zeros(
                 (nest_interface.state.get(env).shape[0], nest_interface.param.get(env).shape[0])
             )

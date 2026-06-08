@@ -220,7 +220,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
 META_INNER_STEPS = 4
 
 
-def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMethod) -> GodConfig:
+def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMethod, inner_steps: int) -> GodConfig:
     immediate = GradientConfig(method=ImmediateLearnerConfig(), add_clip=None, scale=1.0)
     inner_grad = GradientConfig(method=inner_method, add_clip=None, scale=1.0)
     meta_grad = GradientConfig(method=meta_method, add_clip=None, scale=1.0)
@@ -237,7 +237,7 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
             parametrizes_transition=True,
         )
 
-    def meta_level(num_steps: int, track: int, learner: LearnConfig) -> MetaConfig:
+    def meta_level(num_steps: int, track: frozenset[int], learner: LearnConfig) -> MetaConfig:
         return MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
             dataset_source=MNISTTaskFamily(
@@ -254,8 +254,8 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
                 augment=False,
                 shuffle=True,
             ),
-            validation=StepConfig(num_steps=28, batch=1, reset_t=28, track_influence_in=frozenset({track})),
-            nested=StepConfig(num_steps=num_steps, batch=1, reset_t=None, track_influence_in=frozenset({track})),
+            validation=StepConfig(num_steps=28, batch=1, reset_t=28, track_influence_in=track),
+            nested=StepConfig(num_steps=num_steps, batch=1, reset_t=None, track_influence_in=track),
             learner=learner,
             track_logs=TrackLogs(
                 gradient=False,
@@ -320,7 +320,7 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
         levels=[
             meta_level(
                 num_steps=1,
-                track=0,
+                track=frozenset({0}),
                 learner=LearnConfig(
                     model_learner=inner_grad,
                     optimizer_learner=immediate,
@@ -335,8 +335,8 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
                 ),
             ),
             meta_level(
-                num_steps=META_INNER_STEPS,
-                track=1,
+                num_steps=inner_steps,
+                track=frozenset({1}),
                 learner=LearnConfig(
                     model_learner=inner_grad,
                     optimizer_learner=meta_grad,
@@ -529,6 +529,54 @@ def test_validation_gradient_rtrl_vs_bptt():
 
 
 # ============================================================================
+# TEST 1b2: jacfwd vs jacrev of the validation gradient (2nd-order consistency)
+# ============================================================================
+
+
+def test_validation_gradient_jacobian_consistency():
+    print("=" * 60)
+    print("TEST 1b2: jacfwd vs jacrev of d(val_grad)/d(theta)")
+    print("=" * 60)
+
+    for label, method in [
+        ("BPTT", BPTTConfig(truncate_at=None)),
+        ("RTRL", RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)),
+    ]:
+        config = make_single_level_config(method)
+        stuff = setup_env_and_fns(config)
+        vl_learners, _ = create_validation_learners(stuff.transition_fns, stuff.loss_fns, stuff.interfaces, config)
+        vl = vl_learners[0]
+        iface = stuff.interfaces[(MODEL_LEARNER, 0)]
+
+        resetters = env_resetters(config, stuff.shapes, stuff.interfaces, [False] * len(config.levels))
+        inner_resetter, _ = resetters[0]
+        axes = diff_axes(stuff.env, inner_resetter(stuff.env, jax.random.key(0)))
+
+        step_data = jax.tree.map(lambda x: x[0], stuff.data_sample)
+        _, vl_data = step_data
+        theta0 = iface.param.get(stuff.env)
+
+        def g_fn(theta):
+            env_t = iface.param.put(stuff.env, theta)
+
+            def inner(env, data):
+                _, grad, _ = vl(env, data)
+                return grad
+
+            grads = eqx.filter_vmap(inner, in_axes=(axes, 0), out_axes=0)(env_t, vl_data)
+            return grads.sum(axis=0)
+
+        Jf = jax.jacfwd(g_fn)(theta0)
+        Jr = jax.jacrev(g_fn)(theta0)
+        diff = jnp.max(jnp.abs(Jf - Jr))
+        rel = diff / jnp.maximum(jnp.max(jnp.abs(Jr)), 1e-30)
+        print(f"  {label}: jacfwd vs jacrev  max abs={diff:.3e}  rel={rel:.3e}")
+
+        if label == "BPTT":
+            assert rel < 1e-8, f"BPTT 2nd-order inconsistent (control should pass): {rel:.3e}"
+
+
+# ============================================================================
 # Meta-hypergradient runner / divergence helpers
 # ============================================================================
 
@@ -563,8 +611,8 @@ def test_meta_hypergradient_rtrl_vs_bptt():
     bptt = BPTTConfig(truncate_at=None)
     rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
 
-    norm_bptt, hp_init_bptt, hp_after_bptt = run_two_level_meta(make_two_level_config(bptt, bptt))
-    norm_rtrl, hp_init_rtrl, hp_after_rtrl = run_two_level_meta(make_two_level_config(rtrl, rtrl))
+    norm_bptt, hp_init_bptt, hp_after_bptt = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
+    norm_rtrl, hp_init_rtrl, hp_after_rtrl = run_two_level_meta(make_two_level_config(rtrl, rtrl, META_INNER_STEPS))
 
     init_diff = jnp.max(jnp.abs(hp_init_bptt - hp_init_rtrl))
     norm_abs_diff = jnp.abs(norm_bptt - norm_rtrl)
@@ -604,8 +652,8 @@ def test_meta_hypergradient_finite_difference_rtrl():
     bptt = BPTTConfig(truncate_at=None)
     fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps)
 
-    norm_truth, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt))
-    norm_fd, _, hp_after_fd = run_two_level_meta(make_two_level_config(fd_rtrl, fd_rtrl))
+    norm_truth, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
+    norm_fd, _, hp_after_fd = run_two_level_meta(make_two_level_config(fd_rtrl, fd_rtrl, META_INNER_STEPS))
 
     vec_rel_diff = hypergradient_rel_divergence(hp_init, hp_after_fd, hp_after_truth)
     norm_rel_diff = jnp.abs(norm_fd - norm_truth) / jnp.maximum(jnp.abs(norm_truth), 1e-12)
@@ -636,16 +684,16 @@ def test_finite_difference_oho_divergence():
     exact_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
     eps_values = [1e-2, 1e-4]
 
-    _, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt))
+    _, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
 
-    _, _, hp_after_exact = run_two_level_meta(make_two_level_config(bptt, exact_rtrl))
+    _, _, hp_after_exact = run_two_level_meta(make_two_level_config(bptt, exact_rtrl, META_INNER_STEPS))
     div_exact = hypergradient_rel_divergence(hp_init, hp_after_exact, hp_after_truth)
     print(f"  exact RTRL OHO            rel divergence = {div_exact:.3e}")
 
     div_finite = {}
     for eps in eps_values:
         fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps)
-        _, _, hp_after_fd = run_two_level_meta(make_two_level_config(bptt, fd_rtrl))
+        _, _, hp_after_fd = run_two_level_meta(make_two_level_config(bptt, fd_rtrl, META_INNER_STEPS))
         div = hypergradient_rel_divergence(hp_init, hp_after_fd, hp_after_truth)
         div_finite[eps] = div
         print(f"  finite-diff OHO eps={eps:.0e} rel divergence = {div:.3e}")
@@ -657,6 +705,61 @@ def test_finite_difference_oho_divergence():
     assert worst_finite > div_exact, (
         f"finite-diff OHO ({worst_finite:.3e}) should be a worse approximation than exact RTRL ({div_exact:.3e})"
     )
+
+
+# ============================================================================
+# TEST 1f: Full inner x meta method matrix (localize the divergence)
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_meta_hypergradient_matrix():
+    print("=" * 60)
+    print("Meta hypergradient 2x2 matrix (rel divergence vs BPTT-over-BPTT)")
+    print("=" * 60)
+
+    bptt = BPTTConfig(truncate_at=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    combos = {
+        ("inner=BPTT", "meta=BPTT"): (bptt, bptt),
+        ("inner=BPTT", "meta=RTRL"): (bptt, rtrl),
+        ("inner=RTRL", "meta=BPTT"): (rtrl, bptt),
+        ("inner=RTRL", "meta=RTRL"): (rtrl, rtrl),
+    }
+
+    results = {
+        labels: run_two_level_meta(make_two_level_config(im, mm, META_INNER_STEPS))
+        for labels, (im, mm) in combos.items()
+    }
+
+    _, ref_init, ref_after = results[("inner=BPTT", "meta=BPTT")]
+    for (inner_lbl, meta_lbl), (norm, _, hp_after) in results.items():
+        div = hypergradient_rel_divergence(ref_init, hp_after, ref_after)
+        print(f"  {inner_lbl} / {meta_lbl}: norm={norm:.10f}  rel_div_vs_BPTT/BPTT={div:.3e}")
+
+    for _, (norm, _, _) in results.items():
+        assert norm > 1e-8, "degenerate run (zero hypergradient)"
+
+
+# ============================================================================
+# TEST 1g: RTRL-over-RTRL divergence vs inner trajectory length
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_rtrl_over_rtrl_divergence_vs_trajectory_length():
+    print("=" * 60)
+    print("RTRL-over-RTRL divergence vs META_INNER_STEPS (T)")
+    print("=" * 60)
+
+    bptt = BPTTConfig(truncate_at=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+
+    for T in [1, 2, 3, 4]:
+        _, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, T))
+        _, _, hp_after_rtrl = run_two_level_meta(make_two_level_config(rtrl, rtrl, T))
+        div = hypergradient_rel_divergence(hp_init, hp_after_rtrl, hp_after_truth)
+        print(f"  T={T}: rel_div(RTRL/RTRL vs BPTT/BPTT) = {div:.3e}")
 
 
 # ============================================================================
@@ -856,6 +959,8 @@ if __name__ == "__main__":
     test_meta_hypergradient_rtrl_vs_bptt()
     test_meta_hypergradient_finite_difference_rtrl()
     test_finite_difference_oho_divergence()
+    test_meta_hypergradient_matrix()
+    test_rtrl_over_rtrl_divergence_vs_trajectory_length()
     test_reset_state()
     test_reset_preserves_params()
     test_reset_zeros_influence_tensor()

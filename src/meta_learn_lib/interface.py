@@ -59,6 +59,7 @@ class GodInterface[ENV]:
     weight_decay: Accessor[ENV, jax.Array]
     momentum: Accessor[ENV, jax.Array]
     kl_regularizer_beta: Accessor[ENV, jax.Array]
+    param_layout: Callable[[ENV], list[tuple[str, int]]]
 
     def advance_tick(self: "GodInterface[ENV]", env: ENV) -> ENV:
         return self.tick.put(env, self.tick.get(env) + 1)
@@ -111,4 +112,5 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         weight_decay=noop(),
         momentum=noop(),
         kl_regularizer_beta=noop(),
+        param_layout=lambda env: [],
     )

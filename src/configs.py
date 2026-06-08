@@ -5395,7 +5395,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
     ),
     hyperparameters={
         "meta1_enc_lr": HyperparameterConfig(
-            value=1e-4,
+            value=1e-5,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -5425,7 +5425,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
             parametrizes_transition=True,
         ),
         "meta1_dec_lr": HyperparameterConfig(
-            value=1e-4,
+            value=1e-5,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -5594,6 +5594,39 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
     ),
     readout_graph=VAE_ARCH_3CONV_LOWCAP_DEC["readout_graph"],
     nodes=VAE_ARCH_3CONV_LOWCAP_DEC["nodes"],
+    hyperparameters={
+        **SOS_BETA_OHO_WIDE.hyperparameters,
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=1e-5,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=1e-6,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_beta": HyperparameterConfig(
+            value=0.01,
+            kind="kl_regularizer_beta",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+    },
     levels=[
         dataclasses.replace(
             SOS_BETA_OHO_WIDE.levels[0],
@@ -5626,6 +5659,19 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                     add_clip=None,
                     scale=1.0,
                 ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_beta", "meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        optimizer=AdamConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=0.0,
+                        ),
+                    ),
+                },
             ),
         ),
         SOS_BETA_OHO_WIDE.levels[2],

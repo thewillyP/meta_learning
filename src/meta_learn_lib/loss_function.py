@@ -97,8 +97,6 @@ def get_env_stats[ENV](
         stat[f"level{level}/hessian_contains_nans"] = scalar(jax.lax.stop_gradient(logs.hessian_contains_nans))
     if logs.largest_jac_eigenvalue is not None:
         stat[f"level{level}/largest_jac_eigenvalue"] = scalar(jax.lax.stop_gradient(logs.largest_jac_eigenvalue))
-    if logs.influence_tensor_norm is not None:
-        stat[f"level{level}/influence_tensor_norm"] = scalar(jax.lax.stop_gradient(logs.influence_tensor_norm))
 
     return stat
 

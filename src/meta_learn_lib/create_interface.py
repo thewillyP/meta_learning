@@ -14,6 +14,31 @@ from meta_learn_lib.constants import *
 from meta_learn_lib.lib_types import *
 
 
+def format_param_name(path) -> str:
+    # `path` indexes into the (model_states, learning_states, meta_parameters) tuple
+    # built by make_lens, so the leading SequenceKey selects the category.
+    category = ("model_state", "learning_state", "param")
+    parts: list[str] = []
+    for i, k in enumerate(path):
+        match k:
+            case jax.tree_util.SequenceKey(idx) if i == 0:
+                parts.append(category[idx])
+            case jax.tree_util.SequenceKey(idx):
+                parts.append(str(idx))
+            case jax.tree_util.GetAttrKey(name) if name != "value":
+                parts.append(name)
+            case jax.tree_util.GetAttrKey():
+                pass
+            case jax.tree_util.DictKey(key):
+                parts.append(str(key[0]) if isinstance(key, tuple) else str(key))
+    return "/".join(parts)
+
+
+def layout_of_filtered(filtered: PyTree) -> list[tuple[str, int]]:
+    leaves = jax.tree_util.tree_flatten_with_path(filtered)[0]
+    return [(format_param_name(path), leaf.size) for path, leaf in leaves if eqx.is_inexact_array(leaf)]
+
+
 def make_param_lens(owned: list[Accessor[GodState, PyTree]]) -> Accessor[GodState, jax.Array]:
     is_leaf = lambda x: x is None or isinstance(x, Tagged)
 
@@ -448,6 +473,7 @@ def midpoint_buffer(i: S_ID, level: int) -> Accessor[GodState, MidpointBuffer]:
 class Lens:
     get: Callable[[GodState], jax.Array]
     put: Callable[[GodState, jax.Array], GodState]
+    layout: Callable[[GodState], list[tuple[str, int]]]
 
 
 def make_lens(model_states: slice, learning_states: slice, params: slice) -> Lens:
@@ -487,7 +513,16 @@ def make_lens(model_states: slice, learning_states: slice, params: slice) -> Len
             meta_parameters=env.meta_parameters[: params.start] + new_params + env.meta_parameters[params.stop :],
         )
 
-    return Lens(get=get, put=put)
+    def layout(env: GodState) -> list[tuple[str, int]]:
+        combined = (
+            env.model_states[model_states],
+            env.learning_states[learning_states],
+            env.meta_parameters[params],
+        )
+        filtered, _ = eqx.partition(combined, predicate, is_leaf=is_leaf)
+        return layout_of_filtered(filtered)
+
+    return Lens(get=get, put=put, layout=layout)
 
 
 # ============================================================================
@@ -767,7 +802,10 @@ def build_interfaces(
                     new1, new2 = to_vector((pl1.get(env), pl2.get(env))).to_param(vector)
                     return pl2.put(pl1.put(env, new1), new2)
 
-                param_lens = Lens(get=get_param, put=put_param)
+                def layout_param(env, pl1=param_lens1, pl2=param_lens2):
+                    return pl1.layout(env) + pl2.layout(env)
+
+                param_lens = Lens(get=get_param, put=put_param, layout=layout_param)
             else:
                 state_lens = make_lens(slice(0, level), slice(0, level), slice(0, level))
                 param_lens = make_lens(slice(level, level), slice(level, level), slice(level, level + 1))
@@ -777,6 +815,7 @@ def build_interfaces(
                 iface,
                 state=Accessor(get=state_lens.get, put=state_lens.put, put_tagged=noop_put_tagged),
                 param=Accessor(get=param_lens.get, put=param_lens.put, put_tagged=noop_put_tagged),
+                param_layout=param_lens.layout,
             )
 
     return interfaces

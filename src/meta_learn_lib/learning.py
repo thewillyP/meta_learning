@@ -58,6 +58,22 @@ class LearningArg[ENV, TR_DATA, VL_DATA, READOUT]:
     ]
     track_logs: TrackLogs
     scan_tag: Tag
+    log_prefix: str
+
+
+def influence_column_norm_stats(
+    column_norms: jax.Array,
+    layout: list[tuple[str, int]],
+    prefix: str,
+) -> STAT:
+    """Split a (param_dim,) vector of per-column norms into one named scalar per parameter leaf."""
+    stat: STAT = {}
+    start = 0
+    for name, size in layout:
+        block = column_norms[start : start + size]
+        stat[f"{prefix}/influence_column_norm/{name}"] = scalar(jax.lax.stop_gradient(jnp.linalg.norm(block)))
+        start += size
+    return stat
 
 
 def get_forward_mode[ENV, TR_DATA, VL_DATA](
@@ -158,9 +174,9 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
 
         new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
         if args.track_logs.influence_tensor_norm:
-            influence_tensor_norm: jax.Array = jnp.linalg.norm(new_influence_tensor)
-            new_env = args.learn_interface.logs.put(
-                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            column_norms = jnp.linalg.norm(new_influence_tensor, axis=0)
+            trans_stat = trans_stat | influence_column_norm_stats(
+                column_norms, args.learn_interface.param_layout(new_env), args.log_prefix
             )
         return new_env, trans_stat
 
@@ -327,9 +343,9 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
 
         if args.track_logs.influence_tensor_norm:
             readout_tensor = 0.5 * (new_influence_tensor + influence_tensor)
-            influence_tensor_norm = jnp.linalg.norm(readout_tensor)
-            new_env = args.learn_interface.logs.put(
-                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            column_norms = jnp.linalg.norm(readout_tensor, axis=0)
+            trans_stat = trans_stat | influence_column_norm_stats(
+                column_norms, args.learn_interface.param_layout(new_env), args.log_prefix
             )
 
         return new_env, trans_stat
@@ -412,9 +428,9 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
             MidpointBuffer(P_prev=mb.P_prev, predictor=new_predictor),
         )
         if args.track_logs.influence_tensor_norm:
-            influence_tensor_norm = jnp.linalg.norm(new_influence_tensor)
-            new_env = args.learn_interface.logs.put(
-                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            column_norms = jnp.linalg.norm(new_influence_tensor, axis=0)
+            trans_stat = trans_stat | influence_column_norm_stats(
+                column_norms, args.learn_interface.param_layout(new_env), args.log_prefix
             )
         return new_env, trans_stat
 
@@ -543,9 +559,10 @@ def uoro[ENV, TR_DATA, VL_DATA](
 
         new_env = args.learn_interface.uoro_state.put(new_env, UOROState(A=A_new, B=B_new))
         if args.track_logs.influence_tensor_norm:
-            influence_tensor_norm = jnp.linalg.norm(A_new) * jnp.linalg.norm(B_new)
-            new_env = args.learn_interface.logs.put(
-                new_env, args.learn_interface.logs.get(new_env).set(influence_tensor_norm=influence_tensor_norm)
+            # Rank-1 estimate P ≈ A Bᵀ, so column j of P is A * B_j and ‖P[:,j]‖ = ‖A‖·|B_j|.
+            column_norms = jnp.linalg.norm(A_new) * jnp.abs(B_new)
+            trans_stat = trans_stat | influence_column_norm_stats(
+                column_norms, args.learn_interface.param_layout(new_env), args.log_prefix
             )
         return new_env, trans_stat
 
@@ -789,6 +806,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
                     vmap_this=lambda f: f,
                     track_logs=track_logs,
                     scan_tag="time",
+                    log_prefix=f"level{level}",
                 ),
                 BPTTConfig(truncate_at=None),
             )
@@ -803,6 +821,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
             vmap_this=lambda f: f,
             track_logs=track_logs,
             scan_tag="time",
+            log_prefix=f"level{level}",
         )
         args_gr = dataclasses.replace(args_loss, readout=readout_gr)
 
@@ -883,6 +902,7 @@ def create_meta_learner[ENV](
             vmap_this=vmap_this,
             track_logs=track_logs,
             scan_tag="scan",
+            log_prefix=f"level{level}",
         )
         args_gr = dataclasses.replace(args_loss, readout=readout_gr)
         grad_fn = dispatch_learner(method, args_gr, args_loss)

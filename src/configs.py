@@ -5543,8 +5543,8 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=1e-6,
-                        beta=1.0,
-                        use_finite_hvp=None,
+                        beta=0.1,
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5653,8 +5653,8 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=1e-6,
-                        beta=1.0,
-                        use_finite_hvp=None,
+                        beta=0.1,
+                        use_finite_hvp=1e-3,
                     ),
                     add_clip=None,
                     scale=1.0,

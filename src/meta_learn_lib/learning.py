@@ -76,6 +76,28 @@ def influence_column_norm_stats(
     return stat
 
 
+def influence_column_cosine_stats(
+    new_tensor: jax.Array,
+    old_tensor: jax.Array,
+    layout: list[tuple[str, int]],
+    prefix: str,
+) -> STAT:
+    """Per-parameter cosine similarity between consecutive influence tensors.
+    cos = ⟨J_t^{[block]}, J_{t-1}^{[block]}⟩ / (‖·‖·‖·‖). 1.0 = same direction, 0 = orthogonal, -1 = flipped."""
+    stat: STAT = {}
+    start = 0
+    for name, size in layout:
+        new_block = new_tensor[:, start : start + size].reshape(-1)
+        old_block = old_tensor[:, start : start + size].reshape(-1)
+        new_norm = jnp.linalg.norm(new_block)
+        old_norm = jnp.linalg.norm(old_block)
+        denom = jnp.maximum(new_norm * old_norm, 1e-30)
+        cos = jnp.dot(new_block, old_block) / denom
+        stat[f"{prefix}/influence_column_cosine/{name}"] = scalar(jax.lax.stop_gradient(cos))
+        start += size
+    return stat
+
+
 def get_forward_mode[ENV, TR_DATA, VL_DATA](
     args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     update_influence: Callable[
@@ -175,8 +197,10 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
         if args.track_logs.influence_tensor_norm:
             column_norms = jnp.linalg.norm(new_influence_tensor, axis=0)
-            trans_stat = trans_stat | influence_column_norm_stats(
-                column_norms, args.learn_interface.param_layout(new_env), args.log_prefix
+            layout = args.learn_interface.param_layout(new_env)
+            trans_stat = trans_stat | influence_column_norm_stats(column_norms, layout, args.log_prefix)
+            trans_stat = trans_stat | influence_column_cosine_stats(
+                new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
         return new_env, trans_stat
 
@@ -344,8 +368,10 @@ def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
         if args.track_logs.influence_tensor_norm:
             readout_tensor = 0.5 * (new_influence_tensor + influence_tensor)
             column_norms = jnp.linalg.norm(readout_tensor, axis=0)
-            trans_stat = trans_stat | influence_column_norm_stats(
-                column_norms, args.learn_interface.param_layout(new_env), args.log_prefix
+            layout = args.learn_interface.param_layout(new_env)
+            trans_stat = trans_stat | influence_column_norm_stats(column_norms, layout, args.log_prefix)
+            trans_stat = trans_stat | influence_column_cosine_stats(
+                new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
 
         return new_env, trans_stat
@@ -429,8 +455,10 @@ def heun_rtrl[ENV, TR_DATA, VL_DATA](
         )
         if args.track_logs.influence_tensor_norm:
             column_norms = jnp.linalg.norm(new_influence_tensor, axis=0)
-            trans_stat = trans_stat | influence_column_norm_stats(
-                column_norms, args.learn_interface.param_layout(new_env), args.log_prefix
+            layout = args.learn_interface.param_layout(new_env)
+            trans_stat = trans_stat | influence_column_norm_stats(column_norms, layout, args.log_prefix)
+            trans_stat = trans_stat | influence_column_cosine_stats(
+                new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
         return new_env, trans_stat
 

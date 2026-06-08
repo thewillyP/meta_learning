@@ -583,7 +583,10 @@ def test_validation_gradient_jacobian_consistency():
 
 def run_two_level_meta(config: GodConfig) -> tuple[jax.Array, jax.Array, jax.Array]:
     stuff = setup_env_and_fns(config)
-    env_after, stats = stuff.meta_learner(stuff.env, stuff.data_sample)
+    data = jax.tree.map(
+        lambda x: x.astype(jnp.float64) if jnp.issubdtype(x.dtype, jnp.floating) else x, stuff.data_sample
+    )
+    env_after, stats = stuff.meta_learner(stuff.env, data)
     iface = stuff.interfaces[(OPTIMIZER_LEARNER, 1)]
     hp_init = iface.param.get(stuff.env)
     hp_after = iface.param.get(env_after)

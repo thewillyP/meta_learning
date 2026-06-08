@@ -5455,7 +5455,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
             parametrizes_transition=True,
         ),
         "meta1_beta": HyperparameterConfig(
-            value=0.01,
+            value=1.0,
             kind="kl_regularizer_beta",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.softplus(),
@@ -5465,7 +5465,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=0.001,
+            value=0.01,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -5508,8 +5508,18 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
     levels=[
         dataclasses.replace(
             SOS_BETA_OHO_WIDE.levels[0],
+            dataset_source=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[0].dataset_source,
+                region=(9.0, 19.0, 9.0, 19.0),
+                region_mode="exclude_region",
+            ),
             learner=dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[0].learner,
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(threshold=1.0),
+                    scale=1.0,
+                ),
                 optimizer={
                     "meta1_sgd1_enc": OptimizerAssignment(
                         target=frozenset(VAE_3CONV_WIDE["encoder"]["learnable"]),
@@ -5532,6 +5542,16 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
         ),
         dataclasses.replace(
             SOS_BETA_OHO_WIDE.levels[1],
+            dataset_source=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[1].dataset_source,
+                region=(9.0, 14.0, 9.0, 19.0),
+                region_mode="only_region",
+                n=50_000,
+            ),
+            dataset=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[1].dataset,
+                num_examples_total=50_000,
+            ),
             learner=dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[1].learner,
                 model_learner=GradientConfig(
@@ -5543,8 +5563,8 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=1e-6,
-                        beta=0.1,
-                        use_finite_hvp=1e-3,
+                        beta=0.01,
+                        use_finite_hvp=1e-4,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5574,7 +5594,19 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
                 },
             ),
         ),
-        SOS_BETA_OHO_WIDE.levels[2],
+        dataclasses.replace(
+            SOS_BETA_OHO_WIDE.levels[2],
+            dataset_source=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[2].dataset_source,
+                region=(14.0, 19.0, 9.0, 19.0),
+                region_mode="only_region",
+                n=50_000,
+            ),
+            dataset=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[2].dataset,
+                num_examples_total=50_000,
+            ),
+        ),
     ],
 )
 
@@ -5617,7 +5649,7 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
             parametrizes_transition=True,
         ),
         "meta1_beta": HyperparameterConfig(
-            value=0.01,
+            value=1.0,
             kind="kl_regularizer_beta",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.softplus(),
@@ -5626,12 +5658,32 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
             level=1,
             parametrizes_transition=True,
         ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=0.01,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
     },
     levels=[
         dataclasses.replace(
             SOS_BETA_OHO_WIDE.levels[0],
+            dataset_source=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[0].dataset_source,
+                region=(9.0, 19.0, 9.0, 19.0),
+                region_mode="exclude_region",
+            ),
             learner=dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[0].learner,
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(threshold=1.0),
+                    scale=1.0,
+                ),
                 optimizer={
                     "meta1_sgd1": dataclasses.replace(
                         SOS_BETA_OHO_WIDE.levels[0].learner.optimizer["meta1_sgd1"],
@@ -5642,6 +5694,16 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
         ),
         dataclasses.replace(
             SOS_BETA_OHO_WIDE.levels[1],
+            dataset_source=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[1].dataset_source,
+                region=(9.0, 14.0, 9.0, 19.0),
+                region_mode="only_region",
+                n=50_000,
+            ),
+            dataset=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[1].dataset,
+                num_examples_total=50_000,
+            ),
             learner=dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[1].learner,
                 model_learner=GradientConfig(
@@ -5653,8 +5715,8 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=1e-6,
-                        beta=0.1,
-                        use_finite_hvp=1e-3,
+                        beta=0.01,
+                        use_finite_hvp=1e-4,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5674,7 +5736,19 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                 },
             ),
         ),
-        SOS_BETA_OHO_WIDE.levels[2],
+        dataclasses.replace(
+            SOS_BETA_OHO_WIDE.levels[2],
+            dataset_source=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[2].dataset_source,
+                region=(14.0, 19.0, 9.0, 19.0),
+                region_mode="only_region",
+                n=50_000,
+            ),
+            dataset=dataclasses.replace(
+                SOS_BETA_OHO_WIDE.levels[2].dataset,
+                num_examples_total=50_000,
+            ),
+        ),
     ],
 )
 

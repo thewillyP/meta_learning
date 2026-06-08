@@ -106,6 +106,7 @@ def create_loss_fn[ENV](
     label_mask_value: float,
     unlabeled_mask_value: float,
     task_interface: GodInterface[ENV],
+    hyperparameters: dict[HP, HyperparameterConfig],
 ) -> Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], tuple[LOSS, STAT]]:
 
     def reduce(masked: jax.Array, mask: jax.Array, reduction: Reduction) -> jax.Array:
@@ -169,7 +170,10 @@ def create_loss_fn[ENV](
                 return loss, {"loss": scalar(nan_if_masked(loss, has_label))}
 
         case ELBOObjective(beta_hp, likelihood, posterior, prior):
-            inner_loss_fn = create_loss_fn(likelihood, label_mask_value, label_mask_value, task_interface)
+            inner_loss_fn = create_loss_fn(
+                likelihood, label_mask_value, label_mask_value, task_interface, hyperparameters
+            )
+            beta_forward, _ = hyperparameter_reparametrization(hyperparameters[beta_hp].hyperparameter_parametrization)
 
             def loss_fn(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array]) -> tuple[LOSS, STAT]:
                 x, target = data
@@ -181,7 +185,7 @@ def create_loss_fn[ENV](
                 masked_x = jnp.where(pixel_mask, x, label_mask_value)
                 recon_loss, stats = inner_loss_fn(env, outputs, (x, masked_x))
 
-                beta = task_interface.kl_regularizer_beta.get(env)[0]
+                beta = beta_forward(task_interface.kl_regularizer_beta.get(env))[0]
                 match likelihood:
                     case RegressionObjective(likelihood_reduction) | BernoulliObjective(likelihood_reduction):
                         kl_value = kl(posterior, prior, outputs, example_mask, likelihood_reduction)
@@ -238,6 +242,7 @@ def create_readout_loss_fns[ENV](
                 config.label_mask_value,
                 config.unlabeled_mask_value,
                 interfaces[(TASK, level)],
+                config.hyperparameters,
             ),
             readout,
             level,

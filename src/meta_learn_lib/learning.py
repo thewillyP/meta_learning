@@ -578,7 +578,12 @@ def uoro[ENV, TR_DATA, VL_DATA](
 def rflo[ENV, TR_DATA, VL_DATA](
     args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     config: RFLOConfig,
+    hyperparameters: dict[HP, HyperparameterConfig],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    tc_forward, _ = hyperparameter_reparametrization(
+        hyperparameters[config.time_constant].hyperparameter_parametrization
+    )
+
     def update_tensor(
         state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
         s: jax.Array,
@@ -588,7 +593,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
     ) -> jax.Array:
         mu = config.damping
         beta = config.beta
-        alpha = args.learn_interface.time_constant.get(env)
+        alpha = tc_forward(args.learn_interface.time_constant.get(env))
         naive = (1 - alpha) * influence_tensor + dhdp - mu * influence_tensor
         return beta * naive + (1 - beta) * influence_tensor
 
@@ -710,6 +715,7 @@ def dispatch_learner[ENV, TR_DATA, VL_DATA](
     method: GradientMethod,
     args_gr: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     args_loss: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+    hyperparameters: dict[HP, HyperparameterConfig],
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     match method:
         case RTRLConfig():
@@ -727,7 +733,7 @@ def dispatch_learner[ENV, TR_DATA, VL_DATA](
         case UOROConfig():
             return uoro(args_gr, method)
         case RFLOConfig():
-            return rflo(args_gr, method)
+            return rflo(args_gr, method, hyperparameters)
         case ImmediateLearnerConfig():
             return immediate(args_gr)
         case BPTTConfig():
@@ -825,7 +831,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         )
         args_gr = dataclasses.replace(args_loss, readout=readout_gr)
 
-        gradient_fns.append(dispatch_learner(method, args_gr, args_loss))
+        gradient_fns.append(dispatch_learner(method, args_gr, args_loss, config.hyperparameters))
         loss_fns.append(get_backward_mode(args_loss, truncate_at=None))
 
     return gradient_fns, loss_fns
@@ -905,7 +911,7 @@ def create_meta_learner[ENV](
             log_prefix=f"level{level}",
         )
         args_gr = dataclasses.replace(args_loss, readout=readout_gr)
-        grad_fn = dispatch_learner(method, args_gr, args_loss)
+        grad_fn = dispatch_learner(method, args_gr, args_loss, config.hyperparameters)
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)

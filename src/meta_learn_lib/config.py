@@ -293,7 +293,7 @@ type GradientMethod = Union[
 
 class GradientConfig(eqx.Module):
     method: GradientMethod
-    add_clip: Optional[Union[HardClip, SoftClip]]  # these are placed here because vl_gr could also want to be clipped
+    add_clip: Optional[Union[HardClip, HardClipElementwise, SoftClip]]
     scale: jax.Array
 
 

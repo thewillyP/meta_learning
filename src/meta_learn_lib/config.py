@@ -177,6 +177,10 @@ class HardClip(eqx.Module):
     threshold: jax.Array
 
 
+class HardClipElementwise(eqx.Module):
+    threshold: jax.Array
+
+
 @dataclass(frozen=True)
 class SGDConfig:
     learning_rate: HP
@@ -215,6 +219,7 @@ type Optimizer = Union[
 class OptimizerAssignment(eqx.Module):
     target: frozenset[Canon]
     optimizer: Optimizer
+    add_clip: Optional[HardClip | HardClipElementwise | SoftClip]
 
 
 class RTRLConfig(eqx.Module):

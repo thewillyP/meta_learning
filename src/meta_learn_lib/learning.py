@@ -24,6 +24,8 @@ def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
         case HardClip(threshold):
             norm = jnp.linalg.norm(g)
             g = GRADIENT(g * jnp.minimum(1.0, threshold / jnp.maximum(norm, 1e-8)))
+        case HardClipElementwise(threshold):
+            g = GRADIENT(jnp.clip(g, -threshold, threshold))
         case SoftClip(threshold, sharpness):
             g = softclip(g, a=None, b=threshold, sharpness=sharpness)
         case None:

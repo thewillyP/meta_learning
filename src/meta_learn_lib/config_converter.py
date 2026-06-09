@@ -131,11 +131,11 @@ def make_converter() -> Converter:
     setup_flattened_union(converter, Union[SGDConfig, AdamConfig])
 
     # -- Clip --
-    setup_flattened_union(converter, Union[HardClip, SoftClip])
-    # GradientConfig.add_clip is HardClip | SoftClip | None — cattrs sees this as
-    # Union[HardClip, SoftClip, NoneType], a different type. Reuse the same hook.
-    clip_hook = converter._structure_func.dispatch(Union[HardClip, SoftClip])
-    converter.register_structure_hook(Union[HardClip, SoftClip, None], clip_hook)
+    setup_flattened_union(converter, Union[HardClip, HardClipElementwise, SoftClip])
+    # GradientConfig.add_clip is HardClip | HardClipElementwise | SoftClip | None — cattrs sees this as
+    # Union[..., NoneType], a different type. Reuse the same hook.
+    clip_hook = converter._structure_func.dispatch(Union[HardClip, HardClipElementwise, SoftClip])
+    converter.register_structure_hook(Union[HardClip, HardClipElementwise, SoftClip, None], clip_hook)
 
     # -- Norm --
     setup_flattened_union(converter, Union[LayerNorm, GroupNorm])

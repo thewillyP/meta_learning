@@ -7,7 +7,7 @@ from meta_learn_lib.env import *
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
-from meta_learn_lib.util import Vector, hyperparameter_reparametrization, to_vector
+from meta_learn_lib.util import Vector, hyperparameter_reparametrization, softclip, to_vector
 
 
 def project_parameters[ENV](env: ENV) -> ENV:
@@ -63,12 +63,38 @@ def add_scalar_wd(wd_value) -> optax.GradientTransformationExtraArgs:
     return optax.GradientTransformationExtraArgs(init_fn, update_fn)
 
 
+def make_clip_transform(
+    add_clip: Optional[HardClip | HardClipElementwise | SoftClip],
+) -> optax.GradientTransformation:
+    """Build an optax transform that clips the incoming update by add_clip's policy.
+    Inserted post-wd in get_opt's chain so the clip sees ∇L + wd·θ, not just ∇L.
+    Returns optax.identity() when add_clip is None (no-op)."""
+    match add_clip:
+        case None:
+            return optax.identity()
+        case HardClip(threshold):
+            return optax.clip_by_global_norm(threshold)
+        case HardClipElementwise(threshold):
+            return optax.clip(threshold)
+        case SoftClip(threshold, sharpness):
+
+            def init_fn(params):
+                return None
+
+            def update_fn(updates, state, params=None):
+                new_updates = jax.tree.map(lambda u: softclip(u, a=None, b=threshold, sharpness=sharpness), updates)
+                return new_updates, state
+
+            return optax.GradientTransformation(init_fn, update_fn)
+
+
 def get_opt[ENV](
     assignment: OptimizerAssignment,
     env: ENV,
     interface: GodInterface[ENV],
     hps: dict[HP, HyperparameterConfig],
 ) -> optax.GradientTransformation:
+    post_wd_clip = make_clip_transform(assignment.add_clip)
     match assignment.optimizer:
         case SGDConfig(learning_rate, weight_decay, momentum):
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
@@ -79,6 +105,7 @@ def get_opt[ENV](
             m = interface.momentum.get(env)
             return optax.chain(
                 optax.add_decayed_weights(wd_forward(wd)),
+                post_wd_clip,
                 optax.sgd(lr_forward(lr), momentum=m_forward(m)),
             )
         case SGDNormalizedConfig(learning_rate, weight_decay, momentum):
@@ -91,6 +118,7 @@ def get_opt[ENV](
             return optax.chain(
                 optax.normalize_by_update_norm(scale_factor=1.0),
                 optax.add_decayed_weights(wd_forward(wd)),
+                post_wd_clip,
                 optax.sgd(lr_forward(lr), momentum=m_forward(m)),
             )
         case AdamConfig(learning_rate, weight_decay, momentum, second_momentum, eps, eps_root):
@@ -101,14 +129,15 @@ def get_opt[ENV](
             wd = interface.weight_decay.get(env)
             m = interface.momentum.get(env)
             return optax.chain(
-                optax.adamw(
-                    lr_forward(lr),
-                    weight_decay=wd_forward(wd),
+                optax.add_decayed_weights(wd_forward(wd)),
+                post_wd_clip,
+                optax.scale_by_adam(
                     b1=m_forward(m),
                     b2=second_momentum,
                     eps=eps,
                     eps_root=eps_root,
                 ),
+                optax.scale(-lr_forward(lr)),
             )
         case ExponentiatedGradientConfig(base):
             lr_forward, _ = hyperparameter_reparametrization(hps[base.learning_rate].hyperparameter_parametrization)
@@ -130,6 +159,7 @@ def get_opt[ENV](
             return optax.chain(
                 scale_by_sign_of_param(),
                 add_scalar_wd(wd_forward(wd)),
+                post_wd_clip,
                 inner,
                 optax.scale(-lr_forward(lr)),
             )

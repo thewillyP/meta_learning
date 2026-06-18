@@ -181,6 +181,17 @@ class HardClipElementwise(eqx.Module):
     threshold: jax.Array
 
 
+class SoftNormClip(eqx.Module):
+    bound: jax.Array
+    ema_decay: jax.Array
+    headroom: jax.Array
+    init_ema: jax.Array
+    eps_root: jax.Array
+
+
+type Clip = Union[HardClip, HardClipElementwise, SoftClip, SoftNormClip]
+
+
 @dataclass(frozen=True)
 class SGDConfig:
     learning_rate: HP
@@ -219,7 +230,7 @@ type Optimizer = Union[
 class OptimizerAssignment(eqx.Module):
     target: frozenset[Canon]
     optimizer: Optimizer
-    add_clip: Optional[HardClip | HardClipElementwise | SoftClip]
+    add_clip: Optional[Clip]
 
 
 class RTRLConfig(eqx.Module):
@@ -293,7 +304,7 @@ type GradientMethod = Union[
 
 class GradientConfig(eqx.Module):
     method: GradientMethod
-    add_clip: Optional[Union[HardClip, HardClipElementwise, SoftClip]]
+    add_clip: Optional[Clip]
     scale: jax.Array
 
 

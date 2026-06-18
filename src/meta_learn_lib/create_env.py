@@ -16,7 +16,7 @@ from meta_learn_lib.env import *
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
-from meta_learn_lib.optimizer import init_opt_state
+from meta_learn_lib.optimizer import init_opt_state, make_grad_transform
 from meta_learn_lib.util import filter_cond, get_activation_fn, hyperparameter_reparametrization
 
 
@@ -546,7 +546,7 @@ def create_hyperparameters[ENV](
 
 def create_learner_states[ENV](
     factory: Callable[[ENV, PRNG], ENV],
-    method: GradientMethod,
+    grad_config: GradientConfig,
     interfaces: dict[S_ID, GodInterface[ENV]],
     learner_key: S_ID,
     track_influence_in: frozenset[int],
@@ -556,7 +556,7 @@ def create_learner_states[ENV](
     interface = interfaces[learner_key]
     state_meta = StateMeta(is_stateful=track_influence_in)
 
-    match method:
+    match grad_config.method:
         case (
             RTRLConfig()
             | TikhonovRTRLConfig()
@@ -620,6 +620,9 @@ def create_learner_states[ENV](
             env = factory(env, k1)
             env = interface.prng.put_tagged(env, Tagged(value=k2, meta=StateMeta(is_stateful=frozenset())))
 
+    env = interface.opt_state.put_tagged(
+        env, Tagged(value=make_grad_transform(grad_config).init(None), meta=state_meta)
+    )
     env = interface.tick.put_tagged(env, Tagged(value=jnp.array(0), meta=StateMeta(is_stateful=frozenset())))
     return env
 
@@ -690,7 +693,7 @@ def reset_validation[ENV](
         k1, k2, prng = jax.random.split(prng, 3)
         env = create_learner_states(
             factory,
-            meta_config.learner.model_learner.method,
+            meta_config.learner.model_learner,
             interfaces,
             (MODEL_LEARNER, level),
             track_influence_in,
@@ -772,7 +775,7 @@ def reset_nested_learner[ENV](
 
         env = create_learner_states(
             factory,
-            meta_config.learner.optimizer_learner.method,
+            meta_config.learner.optimizer_learner,
             interfaces,
             (OPTIMIZER_LEARNER, level),
             track_influence_in,

@@ -63,12 +63,7 @@ def add_scalar_wd(wd_value) -> optax.GradientTransformationExtraArgs:
     return optax.GradientTransformationExtraArgs(init_fn, update_fn)
 
 
-def make_clip_transform(
-    add_clip: Optional[HardClip | HardClipElementwise | SoftClip],
-) -> optax.GradientTransformation:
-    """Build an optax transform that clips the incoming update by add_clip's policy.
-    Inserted post-wd in get_opt's chain so the clip sees ∇L + wd·θ, not just ∇L.
-    Returns optax.identity() when add_clip is None (no-op)."""
+def make_clip_transform(add_clip: Optional[Clip]) -> optax.GradientTransformation:
     match add_clip:
         case None:
             return optax.identity()
@@ -82,10 +77,25 @@ def make_clip_transform(
                 return None
 
             def update_fn(updates, state, params=None):
-                new_updates = jax.tree.map(lambda u: softclip(u, a=None, b=threshold, sharpness=sharpness), updates)
-                return new_updates, state
+                return jax.tree.map(lambda u: softclip(u, a=None, b=threshold, sharpness=sharpness), updates), state
 
             return optax.GradientTransformation(init_fn, update_fn)
+        case SoftNormClip(bound, ema_decay, headroom, init_ema, eps_root):
+
+            def init_fn(params):
+                return jnp.asarray(init_ema)
+
+            def update_fn(updates, state, params=None):
+                sumsq = sum(jnp.sum(jnp.square(u)) for u in jax.tree.leaves(updates))
+                s = headroom * state
+                clipped = jax.tree.map(lambda u: bound * u / jnp.sqrt(s**2 + sumsq + eps_root), updates)
+                return clipped, ema_decay * state + (1.0 - ema_decay) * jnp.sqrt(sumsq + eps_root)
+
+            return optax.GradientTransformation(init_fn, update_fn)
+
+
+def make_grad_transform(grad_config: GradientConfig) -> optax.GradientTransformation:
+    return optax.chain(optax.scale(grad_config.scale), make_clip_transform(grad_config.add_clip))
 
 
 def get_opt[ENV](
@@ -94,7 +104,7 @@ def get_opt[ENV](
     interface: GodInterface[ENV],
     hps: dict[HP, HyperparameterConfig],
 ) -> optax.GradientTransformation:
-    post_wd_clip = make_clip_transform(assignment.add_clip)
+    post_clip = make_clip_transform(assignment.add_clip)
     match assignment.optimizer:
         case SGDConfig(learning_rate, weight_decay, momentum):
             lr_forward, _ = hyperparameter_reparametrization(hps[learning_rate].hyperparameter_parametrization)
@@ -104,8 +114,8 @@ def get_opt[ENV](
             wd = interface.weight_decay.get(env)
             m = interface.momentum.get(env)
             return optax.chain(
+                post_clip,
                 optax.add_decayed_weights(wd_forward(wd)),
-                post_wd_clip,
                 optax.sgd(lr_forward(lr), momentum=m_forward(m)),
             )
         case SGDNormalizedConfig(learning_rate, weight_decay, momentum):
@@ -116,9 +126,9 @@ def get_opt[ENV](
             wd = interface.weight_decay.get(env)
             m = interface.momentum.get(env)
             return optax.chain(
+                post_clip,
                 optax.normalize_by_update_norm(scale_factor=1.0),
                 optax.add_decayed_weights(wd_forward(wd)),
-                post_wd_clip,
                 optax.sgd(lr_forward(lr), momentum=m_forward(m)),
             )
         case AdamConfig(learning_rate, weight_decay, momentum, second_momentum, eps, eps_root):
@@ -129,15 +139,15 @@ def get_opt[ENV](
             wd = interface.weight_decay.get(env)
             m = interface.momentum.get(env)
             return optax.chain(
-                optax.add_decayed_weights(wd_forward(wd)),
-                post_wd_clip,
-                optax.scale_by_adam(
+                post_clip,
+                optax.adamw(
+                    lr_forward(lr),
                     b1=m_forward(m),
                     b2=second_momentum,
                     eps=eps,
                     eps_root=eps_root,
+                    weight_decay=wd_forward(wd),
                 ),
-                optax.scale(-lr_forward(lr)),
             )
         case ExponentiatedGradientConfig(base):
             lr_forward, _ = hyperparameter_reparametrization(hps[base.learning_rate].hyperparameter_parametrization)
@@ -158,8 +168,8 @@ def get_opt[ENV](
                     )
             return optax.chain(
                 scale_by_sign_of_param(),
+                post_clip,
                 add_scalar_wd(wd_forward(wd)),
-                post_wd_clip,
                 inner,
                 optax.scale(-lr_forward(lr)),
             )

@@ -751,6 +751,7 @@ def build_interfaces(
                 prng=prng_accessor(li, level),
                 tick=tick_acc,
                 logs=logs_acc,
+                opt_state=opt_state(li, level),
             )
 
             match learner.method:

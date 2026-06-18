@@ -14,23 +14,18 @@ from meta_learn_lib.create_env import env_resetters, env_validation_resetters, m
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
-from meta_learn_lib.optimizer import get_opt_step
+from meta_learn_lib.optimizer import get_opt_step, make_grad_transform
 from meta_learn_lib.util import *
 
 
-def process_gradient(grad: GRADIENT, grad_config: GradientConfig) -> GRADIENT:
-    g = grad * grad_config.scale
-    match grad_config.add_clip:
-        case HardClip(threshold):
-            norm = jnp.linalg.norm(g)
-            g = GRADIENT(g * jnp.minimum(1.0, threshold / jnp.maximum(norm, 1e-8)))
-        case HardClipElementwise(threshold):
-            g = GRADIENT(jnp.clip(g, -threshold, threshold))
-        case SoftClip(threshold, sharpness):
-            g = softclip(g, a=None, b=threshold, sharpness=sharpness)
-        case None:
-            pass
-    return GRADIENT(g)
+def process_gradient[ENV](
+    grad: GRADIENT, grad_config: GradientConfig, interface: GodInterface[ENV], env: ENV
+) -> tuple[GRADIENT, ENV]:
+    tx = make_grad_transform(grad_config)
+    state = interface.opt_state.get(env)
+    g, new_state = tx.update(grad, state)
+    env = interface.opt_state.put(env, new_state)
+    return GRADIENT(g), env
 
 
 def compute_dhdp[ENV](
@@ -155,7 +150,7 @@ def get_forward_mode[ENV, TR_DATA, VL_DATA](
         )
         env = eqx.combine(arr, static)
         total_grad = GRADIENT(jnp.sum(grads, axis=tuple(range(grads.ndim - 1))))
-        total_grad = process_gradient(total_grad, args.grad_config)
+        total_grad, env = process_gradient(total_grad, args.grad_config, args.learn_interface, env)
         return env, total_grad, stats
 
     return gradient_fn
@@ -715,7 +710,8 @@ def get_backward_mode_with_grad[ENV, TR_DATA, VL_DATA](
 
         grad, (env, stats) = loss_to_grad(loss_fn, param, ds_init)
         env = args.learn_interface.param.put(env, param)
-        return env, process_gradient(GRADIENT(grad), args.grad_config), stats
+        grad, env = process_gradient(GRADIENT(grad), args.grad_config, args.learn_interface, env)
+        return env, grad, stats
 
     return gradient_fn
 
@@ -795,7 +791,7 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
 
         return wrapper
 
-    def make_readout_interface(interface: GodInterface[ENV]) -> GodInterface[ENV]:
+    def make_readout_interface(interface: GodInterface[ENV], grad_config: GradientConfig) -> GodInterface[ENV]:
         state_acc = interface.state
         param_acc = interface.param
 
@@ -809,10 +805,12 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
             return env
 
         noop_put_tagged = lambda env, v: env
+        readout_state = make_grad_transform(grad_config).init(None)
         return copy.replace(
             interface,
             state=Accessor(get=lambda env: jnp.empty(0), put=lambda env, s: env, put_tagged=noop_put_tagged),
             param=Accessor(get=get_param, put=put_param, put_tagged=noop_put_tagged),
+            opt_state=Accessor(get=lambda env: readout_state, put=lambda env, v: env, put_tagged=noop_put_tagged),
         )
 
     gradient_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]] = []
@@ -830,14 +828,15 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         model_grad_config = meta_config.learner.model_learner
         length = meta_config.validation.num_steps
         track_logs = meta_config.track_logs
-        readout_interface = make_readout_interface(interface)
+        readout_grad_config = GradientConfig(method=BPTTConfig(truncate_at=None), add_clip=None, scale=1.0)
+        readout_interface = make_readout_interface(interface, readout_grad_config)
         readout_gr = shim_expand_time(
             bptt(
                 LearningArg(
                     transition=identity_transition,
                     readout=readout_fn,
                     learn_interface=readout_interface,
-                    grad_config=GradientConfig(method=BPTTConfig(truncate_at=None), add_clip=None, scale=1.0),
+                    grad_config=readout_grad_config,
                     length=1,
                     vmap_this=lambda f: f,
                     track_logs=track_logs,

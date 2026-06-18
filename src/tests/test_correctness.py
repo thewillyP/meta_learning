@@ -52,7 +52,7 @@ RNN_SIZE = 8
 NUM_CLASSES = 10
 
 
-def make_single_level_config(method: GradientMethod) -> GodConfig:
+def make_single_level_config(method: GradientMethod, model_clip: Optional[Clip] = None) -> GodConfig:
     """Single-level config. `method` is the model_learner method at level 0."""
     return GodConfig(
         seed=SeedConfig(global_seed=42, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
@@ -176,7 +176,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                 learner=LearnConfig(
                     model_learner=GradientConfig(
                         method=method,
-                        add_clip=None,
+                        add_clip=model_clip,
                         scale=1.0,
                     ),
                     optimizer_learner=GradientConfig(
@@ -192,6 +192,7 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
                                 weight_decay="hp_wd",
                                 momentum="hp_mom",
                             ),
+                            add_clip=None,
                         ),
                     },
                 ),
@@ -220,10 +221,21 @@ def make_single_level_config(method: GradientMethod) -> GodConfig:
 META_INNER_STEPS = 4
 
 
-def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMethod, inner_steps: int) -> GodConfig:
+def make_two_level_config(
+    inner_method: GradientMethod,
+    meta_method: GradientMethod,
+    inner_steps: int,
+    level0_clip: Optional[Clip] = None,
+    level1_clip: Optional[Clip] = None,
+    outer_val_clip: Optional[Clip] = None,
+    track0: frozenset[int] = frozenset({0}),
+    track1: frozenset[int] = frozenset({1}),
+    validation_steps: int = 28,
+) -> GodConfig:
     immediate = GradientConfig(method=ImmediateLearnerConfig(), add_clip=None, scale=1.0)
-    inner_grad = GradientConfig(method=inner_method, add_clip=None, scale=1.0)
-    meta_grad = GradientConfig(method=meta_method, add_clip=None, scale=1.0)
+    level0_model = GradientConfig(method=inner_method, add_clip=level0_clip, scale=1.0)
+    level1_model = GradientConfig(method=inner_method, add_clip=outer_val_clip, scale=1.0)
+    meta_grad = GradientConfig(method=meta_method, add_clip=level1_clip, scale=1.0)
 
     def hp(value: float, kind: HyperparameterConfig.Kind, level: int, max_value: float) -> HyperparameterConfig:
         return HyperparameterConfig(
@@ -254,7 +266,9 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
                 augment=False,
                 shuffle=True,
             ),
-            validation=StepConfig(num_steps=28, batch=1, reset_t=28, track_influence_in=track),
+            validation=StepConfig(
+                num_steps=validation_steps, batch=1, reset_t=validation_steps, track_influence_in=track
+            ),
             nested=StepConfig(num_steps=num_steps, batch=1, reset_t=None, track_influence_in=track),
             learner=learner,
             track_logs=TrackLogs(
@@ -320,9 +334,9 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
         levels=[
             meta_level(
                 num_steps=1,
-                track=frozenset({0}),
+                track=track0,
                 learner=LearnConfig(
-                    model_learner=inner_grad,
+                    model_learner=level0_model,
                     optimizer_learner=immediate,
                     optimizer={
                         "meta1_sgd1": OptimizerAssignment(
@@ -330,15 +344,16 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
                             optimizer=SGDConfig(
                                 learning_rate="meta1_lr", weight_decay="meta1_wd", momentum="meta1_mom"
                             ),
+                            add_clip=None,
                         ),
                     },
                 ),
             ),
             meta_level(
                 num_steps=inner_steps,
-                track=frozenset({1}),
+                track=track1,
                 learner=LearnConfig(
-                    model_learner=inner_grad,
+                    model_learner=level1_model,
                     optimizer_learner=meta_grad,
                     optimizer={
                         "meta2_sgd1": OptimizerAssignment(
@@ -346,6 +361,7 @@ def make_two_level_config(inner_method: GradientMethod, meta_method: GradientMet
                             optimizer=SGDConfig(
                                 learning_rate="meta2_lr", weight_decay="meta2_wd", momentum="meta2_mom"
                             ),
+                            add_clip=None,
                         ),
                     },
                 ),
@@ -583,7 +599,7 @@ def test_validation_gradient_jacobian_consistency():
 
 def run_two_level_meta(config: GodConfig) -> tuple[jax.Array, jax.Array, jax.Array]:
     stuff = setup_env_and_fns(config)
-    env_after, stats = stuff.meta_learner(stuff.env, stuff.data_sample)
+    env_after, stats = eqx.filter_jit(stuff.meta_learner)(stuff.env, stuff.data_sample)
     iface = stuff.interfaces[(OPTIMIZER_LEARNER, 1)]
     hp_init = iface.param.get(stuff.env)
     hp_after = iface.param.get(env_after)
@@ -760,6 +776,79 @@ def test_rtrl_over_rtrl_divergence_vs_trajectory_length():
         _, _, hp_after_rtrl = run_two_level_meta(make_two_level_config(rtrl, rtrl, T))
         div = hypergradient_rel_divergence(hp_init, hp_after_rtrl, hp_after_truth)
         print(f"  T={T}: rel_div(RTRL/RTRL vs BPTT/BPTT) = {div:.3e}")
+
+
+# ============================================================================
+# TEST 1h: stateful clip on each inner SGD step — outer RTRL tracks its EMA
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_inner_stateful_clip_tracked():
+    print("=" * 60)
+    print("Inner stateful SoftNormClip: inner=BPTT, meta=RTRL vs meta=BPTT")
+    print("=" * 60)
+
+    clip = SoftNormClip(
+        bound=jnp.array(1.0),
+        ema_decay=jnp.array(0.9),
+        headroom=jnp.array(1.0),
+        init_ema=jnp.array(0.1),
+        eps_root=jnp.array(1e-8),
+    )
+    bptt = BPTTConfig(truncate_at=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+
+    norm_bptt, hp_init, hp_after_bptt = run_two_level_meta(
+        make_two_level_config(bptt, bptt, META_INNER_STEPS, level0_clip=clip)
+    )
+    norm_rtrl, _, hp_after_rtrl = run_two_level_meta(
+        make_two_level_config(bptt, rtrl, META_INNER_STEPS, level0_clip=clip)
+    )
+    _, _, hp_after_noclip = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
+
+    rel = hypergradient_rel_divergence(hp_init, hp_after_rtrl, hp_after_bptt)
+    clip_effect = jnp.linalg.norm(hp_after_bptt - hp_after_noclip)
+    print(f"  hypergrad norm BPTT={norm_bptt:.8f} RTRL={norm_rtrl:.8f}")
+    print(f"  clip effect (vs no-clip): {clip_effect:.3e}")
+    print(f"  meta RTRL vs BPTT rel:    {rel:.3e}")
+
+    assert norm_bptt > 1e-8, "degenerate hypergradient"
+    assert clip_effect > 1e-5, f"clip is inert — test is vacuous: {clip_effect:.3e}"
+    assert rel < 1e-4, f"RTRL does not track the inner stateful clip's EMA (vs BPTT): {rel:.3e}"
+
+
+# ============================================================================
+# TEST 1i: outer validation clip's EMA must not enter the level-1 RTRL state
+# ============================================================================
+
+
+def test_outer_validation_clip_not_in_rtrl_state():
+    print("=" * 60)
+    print("Outer validation SoftNormClip: EMA must not leak into level-1 RTRL state")
+    print("=" * 60)
+
+    clip = SoftNormClip(
+        bound=jnp.array(1.0),
+        ema_decay=jnp.array(0.9),
+        headroom=jnp.array(1.0),
+        init_ema=jnp.array(0.1),
+        eps_root=jnp.array(1e-8),
+    )
+    bptt = BPTTConfig(truncate_at=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+
+    def state_dims(config):
+        stuff = setup_env_and_fns(config)
+        iface = stuff.interfaces[(OPTIMIZER_LEARNER, 1)]
+        return iface.forward_mode_jacobian.get(stuff.env).shape, iface.state.get(stuff.env).shape
+
+    base = state_dims(make_two_level_config(bptt, rtrl, META_INNER_STEPS))
+    clipped = state_dims(make_two_level_config(bptt, rtrl, META_INNER_STEPS, outer_val_clip=clip))
+    print(f"  level-1 RTRL (influence, state) dims  no clip: {base}")
+    print(f"  level-1 RTRL (influence, state) dims with clip: {clipped}")
+
+    assert base == clipped, f"outer validation clip leaked its EMA into the level-1 RTRL state: {base} vs {clipped}"
 
 
 # ============================================================================
@@ -961,6 +1050,8 @@ if __name__ == "__main__":
     test_finite_difference_oho_divergence()
     test_meta_hypergradient_matrix()
     test_rtrl_over_rtrl_divergence_vs_trajectory_length()
+    test_inner_stateful_clip_tracked()
+    test_outer_validation_clip_not_in_rtrl_state()
     test_reset_state()
     test_reset_preserves_params()
     test_reset_zeros_influence_tensor()

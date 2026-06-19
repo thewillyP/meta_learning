@@ -104,7 +104,9 @@ def get_env_stats[ENV](
         opt_state = interfaces[(slot_name, level)].opt_state.get(env)
         for sub in jax.tree.leaves(opt_state, is_leaf=is_clip_state):
             if is_clip_state(sub):
-                stat[f"level{level}/clip_ema/{slot_name}"] = scalar(jax.lax.stop_gradient(sub.ema))
+                ema = jnp.atleast_1d(sub.ema)
+                for i in range(ema.shape[0]):
+                    stat[f"level{level}/clip_ema/{slot_name}/{i}"] = scalar(jax.lax.stop_gradient(ema[i]))
 
     return stat
 

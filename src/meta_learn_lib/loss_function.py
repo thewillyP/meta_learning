@@ -7,7 +7,8 @@ from meta_learn_lib.config import *
 from meta_learn_lib.env import Logs, Outputs
 from meta_learn_lib.interface import GodInterface
 from meta_learn_lib.lib_types import LOSS, NamedStat, STAT, S_ID
-from meta_learn_lib.constants import TASK
+from meta_learn_lib.constants import MODEL_LEARNER, OPTIMIZER_LEARNER, TASK
+from meta_learn_lib.optimizer import SoftNormClipState
 from meta_learn_lib.util import accuracy, hyperparameter_reparametrization, scalar
 
 
@@ -97,6 +98,13 @@ def get_env_stats[ENV](
         stat[f"level{level}/hessian_contains_nans"] = scalar(jax.lax.stop_gradient(logs.hessian_contains_nans))
     if logs.largest_jac_eigenvalue is not None:
         stat[f"level{level}/largest_jac_eigenvalue"] = scalar(jax.lax.stop_gradient(logs.largest_jac_eigenvalue))
+
+    is_clip_state = lambda x: type(x) is SoftNormClipState
+    for slot_name in [*config.levels[level].learner.optimizer.keys(), MODEL_LEARNER, OPTIMIZER_LEARNER]:
+        opt_state = interfaces[(slot_name, level)].opt_state.get(env)
+        for sub in jax.tree.leaves(opt_state, is_leaf=is_clip_state):
+            if is_clip_state(sub):
+                stat[f"level{level}/clip_ema/{slot_name}"] = scalar(jax.lax.stop_gradient(sub.ema))
 
     return stat
 

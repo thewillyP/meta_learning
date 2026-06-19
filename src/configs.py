@@ -5754,7 +5754,13 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                     "meta1_sgd1": dataclasses.replace(
                         SOS_BETA_OHO_WIDE.levels[0].learner.optimizer["meta1_sgd1"],
                         target=VAE_ARCH_3CONV_LOWCAP_DEC["learnable"],
-                        add_clip=HardClipElementwise(threshold=1.0),
+                        add_clip=SoftNormClip(
+                            bound=1.0,
+                            ema_decay=0.9,
+                            headroom=1.0,
+                            init_ema=0.0,
+                            eps_root=1e-8,
+                        ),
                     ),
                 },
             ),
@@ -5775,15 +5781,21 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[1].learner,
                 model_learner=GradientConfig(
                     method=BPTTConfig(None),
-                    add_clip=HardClipElementwise(threshold=1.0),
+                    add_clip=SoftNormClip(
+                        bound=1.0,
+                        ema_decay=0.9,
+                        headroom=1.0,
+                        init_ema=0.0,
+                        eps_root=1e-8,
+                    ),
                     scale=1.0,
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
-                        damping=1e-6,
-                        beta=0.1,
-                        use_finite_hvp=1e-3,
+                        damping=0.0,
+                        beta=1.0,
+                        use_finite_hvp=None,
                     ),
                     add_clip=None,
                     scale=1.0,
@@ -5820,11 +5832,39 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[2].learner,
                 model_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
-                    add_clip=HardClipElementwise(threshold=1.0),
+                    add_clip=SoftNormClip(
+                        bound=1.0,
+                        ema_decay=0.9,
+                        headroom=1.0,
+                        init_ema=0.0,
+                        eps_root=1e-8,
+                    ),
                     scale=1.0,
                 ),
             ),
         ),
+    ],
+)
+
+
+SOS_BETA_OHO_LOWCAP_DEC_NOOHO = dataclasses.replace(
+    SOS_BETA_OHO_LOWCAP_DEC,
+    log_title="sos_beta_oho_lowcap_dec_nooho",
+    levels=[
+        SOS_BETA_OHO_LOWCAP_DEC.levels[0],
+        dataclasses.replace(
+            SOS_BETA_OHO_LOWCAP_DEC.levels[1],
+            learner=dataclasses.replace(
+                SOS_BETA_OHO_LOWCAP_DEC.levels[1].learner,
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                ),
+                optimizer={},
+            ),
+        ),
+        SOS_BETA_OHO_LOWCAP_DEC.levels[2],
     ],
 )
 
@@ -10285,6 +10325,7 @@ if __name__ == "__main__":
         ("SOS_BETA_OHO_WIDE", SOS_BETA_OHO_WIDE),
         ("SOS_BETA_OHO_WIDE_SPLIT", SOS_BETA_OHO_WIDE_SPLIT),
         ("SOS_BETA_OHO_LOWCAP_DEC", SOS_BETA_OHO_LOWCAP_DEC),
+        ("SOS_BETA_OHO_LOWCAP_DEC_NOOHO", SOS_BETA_OHO_LOWCAP_DEC_NOOHO),
     ]:
         upload_config(name, config)
 

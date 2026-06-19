@@ -63,6 +63,10 @@ def add_scalar_wd(wd_value) -> optax.GradientTransformationExtraArgs:
     return optax.GradientTransformationExtraArgs(init_fn, update_fn)
 
 
+class SoftNormClipState(eqx.Module):
+    ema: jax.Array
+
+
 def make_clip_transform(add_clip: Optional[Clip]) -> optax.GradientTransformation:
     match add_clip:
         case None:
@@ -83,13 +87,14 @@ def make_clip_transform(add_clip: Optional[Clip]) -> optax.GradientTransformatio
         case SoftNormClip(bound, ema_decay, headroom, init_ema, eps_root):
 
             def init_fn(params):
-                return jnp.asarray(init_ema)
+                return SoftNormClipState(ema=jnp.asarray(init_ema))
 
             def update_fn(updates, state, params=None):
                 sumsq = sum(jnp.sum(jnp.square(u)) for u in jax.tree.leaves(updates))
-                s = headroom * state
+                s = headroom * state.ema
                 clipped = jax.tree.map(lambda u: bound * u / jnp.sqrt(s**2 + sumsq + eps_root), updates)
-                return clipped, ema_decay * state + (1.0 - ema_decay) * jnp.sqrt(sumsq + eps_root)
+                new_ema = ema_decay * state.ema + (1.0 - ema_decay) * jnp.sqrt(sumsq + eps_root)
+                return clipped, SoftNormClipState(ema=new_ema)
 
             return optax.GradientTransformation(init_fn, update_fn)
 

@@ -233,11 +233,18 @@ class OptimizerAssignment(eqx.Module):
     add_clip: Optional[Clip]
 
 
+class InfluenceColumnClip(eqx.Module):
+    threshold: jax.Array
+    eps_root: jax.Array
+    stop_gradient: bool
+
+
 class RTRLConfig(eqx.Module):
     start_at_step: int
     damping: jax.Array
     beta: jax.Array
     use_finite_hvp: jax.Array | None
+    influence_clip: InfluenceColumnClip | None
 
 
 class TikhonovRTRLConfig(eqx.Module):

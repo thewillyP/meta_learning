@@ -180,7 +180,13 @@ def make_single_level_config(method: GradientMethod, model_clip: Optional[Clip] 
                         scale=1.0,
                     ),
                     optimizer_learner=GradientConfig(
-                        method=RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None),
+                        method=RTRLConfig(
+                            start_at_step=0,
+                            damping=0.0,
+                            beta=1.0,
+                            use_finite_hvp=None,
+                            influence_clip=None,
+                        ),
                         add_clip=None,
                         scale=1.0,
                     ),
@@ -445,7 +451,9 @@ def test_rtrl_vs_bptt_level0():
     print("=" * 60)
 
     config_bptt = make_single_level_config(BPTTConfig(truncate_at=None))
-    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None))
+    config_rtrl = make_single_level_config(
+        RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
+    )
 
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
@@ -493,7 +501,9 @@ def test_validation_gradient_rtrl_vs_bptt():
     print("=" * 60)
 
     config_bptt = make_single_level_config(BPTTConfig(truncate_at=None))
-    config_rtrl = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None))
+    config_rtrl = make_single_level_config(
+        RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
+    )
 
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
@@ -556,7 +566,7 @@ def test_validation_gradient_jacobian_consistency():
 
     for label, method in [
         ("BPTT", BPTTConfig(truncate_at=None)),
-        ("RTRL", RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)),
+        ("RTRL", RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)),
     ]:
         config = make_single_level_config(method)
         stuff = setup_env_and_fns(config)
@@ -625,7 +635,7 @@ def test_meta_hypergradient_rtrl_vs_bptt():
     print("=" * 60)
 
     bptt = BPTTConfig(truncate_at=None)
-    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
 
     norm_bptt, hp_init_bptt, hp_after_bptt = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
     norm_rtrl, hp_init_rtrl, hp_after_rtrl = run_two_level_meta(make_two_level_config(rtrl, rtrl, META_INNER_STEPS))
@@ -666,7 +676,7 @@ def test_meta_hypergradient_finite_difference_rtrl():
 
     eps = 1e-3
     bptt = BPTTConfig(truncate_at=None)
-    fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps)
+    fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps, influence_clip=None)
 
     norm_truth, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
     norm_fd, _, hp_after_fd = run_two_level_meta(make_two_level_config(fd_rtrl, fd_rtrl, META_INNER_STEPS))
@@ -697,7 +707,7 @@ def test_finite_difference_oho_divergence():
     print("=" * 60)
 
     bptt = BPTTConfig(truncate_at=None)
-    exact_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    exact_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
     eps_values = [1e-2, 1e-4]
 
     _, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
@@ -708,7 +718,7 @@ def test_finite_difference_oho_divergence():
 
     div_finite = {}
     for eps in eps_values:
-        fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps)
+        fd_rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=eps, influence_clip=None)
         _, _, hp_after_fd = run_two_level_meta(make_two_level_config(bptt, fd_rtrl, META_INNER_STEPS))
         div = hypergradient_rel_divergence(hp_init, hp_after_fd, hp_after_truth)
         div_finite[eps] = div
@@ -735,7 +745,7 @@ def test_meta_hypergradient_matrix():
     print("=" * 60)
 
     bptt = BPTTConfig(truncate_at=None)
-    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
     combos = {
         ("inner=BPTT", "meta=BPTT"): (bptt, bptt),
         ("inner=BPTT", "meta=RTRL"): (bptt, rtrl),
@@ -769,7 +779,7 @@ def test_rtrl_over_rtrl_divergence_vs_trajectory_length():
     print("=" * 60)
 
     bptt = BPTTConfig(truncate_at=None)
-    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
 
     for T in [1, 2, 3, 4]:
         _, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, T))
@@ -797,7 +807,7 @@ def test_inner_stateful_clip_tracked():
         eps_root=jnp.array(1e-8),
     )
     bptt = BPTTConfig(truncate_at=None)
-    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
 
     norm_bptt, hp_init, hp_after_bptt = run_two_level_meta(
         make_two_level_config(bptt, bptt, META_INNER_STEPS, level0_clip=clip)
@@ -836,7 +846,7 @@ def test_outer_validation_clip_not_in_rtrl_state():
         eps_root=jnp.array(1e-8),
     )
     bptt = BPTTConfig(truncate_at=None)
-    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None)
+    rtrl = RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
 
     def state_dims(config):
         stuff = setup_env_and_fns(config)
@@ -924,7 +934,9 @@ def test_reset_zeros_influence_tensor():
     print("TEST 4: Reset zeros influence tensor")
     print("=" * 60)
 
-    config = make_single_level_config(RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None))
+    config = make_single_level_config(
+        RTRLConfig(start_at_step=0, damping=0.0, beta=1.0, use_finite_hvp=None, influence_clip=None)
+    )
     stuff = setup_env_and_fns(config)
     env = stuff.env
     val_interface = stuff.interfaces[(MODEL_LEARNER, 0)]

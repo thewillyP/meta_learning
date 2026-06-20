@@ -169,6 +169,7 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         JACOBIAN,
     ],
     start_at_step: int,
+    influence_clip: InfluenceColumnClip | None,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_influence(
         state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
@@ -190,6 +191,14 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             lambda _: influence_tensor,
             None,
         )
+
+        if influence_clip is not None:
+            col_norm = jnp.sqrt(
+                jnp.sum(jnp.square(new_influence_tensor), axis=0, keepdims=True) + influence_clip.eps_root
+            )
+            scale = jnp.minimum(1.0, influence_clip.threshold / col_norm)
+            scale = jax.lax.stop_gradient(scale) if influence_clip.stop_gradient else scale
+            new_influence_tensor = new_influence_tensor * scale
 
         new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
         if args.track_logs.influence_tensor_norm:
@@ -235,7 +244,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         updated = beta * (hmp + dhdp) + (1 - beta) * influence_tensor
         return updated
 
-    return rtrl_like(args, update_tensor, config.start_at_step)
+    return rtrl_like(args, update_tensor, config.start_at_step, config.influence_clip)
 
 
 def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
@@ -269,7 +278,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         updated = beta * target + (1 - beta) * influence_tensor
         return updated
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.influence_clip)
 
 
 def pade_rtrl[ENV, TR_DATA, VL_DATA](
@@ -299,7 +308,7 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         d_tau = hmp_jvp + dhdp
         return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp)
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.influence_clip)
 
 
 def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
@@ -533,7 +542,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
 
         return eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor)
 
-    return rtrl_like(args, update_tensor, rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, rtrl_config.start_at_step, rtrl_config.influence_clip)
 
 
 def uoro[ENV, TR_DATA, VL_DATA](
@@ -622,7 +631,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
         naive = (1 - alpha) * influence_tensor + dhdp - mu * influence_tensor
         return beta * naive + (1 - beta) * influence_tensor
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.influence_clip)
 
 
 def immediate[ENV, TR_DATA, VL_DATA](

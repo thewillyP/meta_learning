@@ -11,6 +11,7 @@ from matfree import decomp as matfree_decomp
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.create_env import env_resetters, env_validation_resetters, make_reset_checker, make_tick_advancer
+from meta_learn_lib.env import Logs
 from meta_learn_lib.interface import *
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
@@ -95,6 +96,15 @@ def influence_column_cosine_stats(
     return stat
 
 
+def largest_eigenvalue_estimate(
+    matvec: Callable[[jax.Array], jax.Array], init_vec: jax.Array, num_matvecs: int
+) -> jax.Array:
+    lanczos = matfree_decomp.tridiag_sym(num_matvecs, reortho="full", custom_vjp=False)
+    result = lanczos(matvec, init_vec)
+    ritz = jnp.linalg.eigvalsh(result.J_small)
+    return 1.0 - jnp.min(ritz)
+
+
 def get_forward_mode[ENV, TR_DATA, VL_DATA](
     args: LearningArg[ENV, TR_DATA, VL_DATA, GRADIENT],
     update_influence: Callable[
@@ -169,7 +179,6 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         JACOBIAN,
     ],
     start_at_step: int,
-    influence_clip: InfluenceColumnClip | None,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_influence(
         state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
@@ -192,14 +201,6 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             None,
         )
 
-        if influence_clip is not None:
-            col_norm = jnp.sqrt(
-                jnp.sum(jnp.square(new_influence_tensor), axis=0, keepdims=True) + influence_clip.eps_root
-            )
-            scale = jnp.minimum(1.0, influence_clip.threshold / col_norm)
-            scale = jax.lax.stop_gradient(scale) if influence_clip.stop_gradient else scale
-            new_influence_tensor = new_influence_tensor * scale
-
         new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
         if args.track_logs.influence_tensor_norm:
             column_norms = jnp.linalg.norm(new_influence_tensor, axis=0)
@@ -208,6 +209,10 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             trans_stat = trans_stat | influence_column_cosine_stats(
                 new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
+        if args.track_logs.largest_eigenvalue:
+            init_vec = jax.random.normal(jax.random.key(0), s.shape)
+            rho = largest_eigenvalue_estimate(lambda v: jvp(state_fn, s, v)[1], init_vec, min(30, s.shape[0]))
+            new_env = args.learn_interface.merge_logs(new_env, Logs(largest_eigenvalue=jax.lax.stop_gradient(rho)))
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
@@ -233,18 +238,32 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         mu = config.damping
         beta = config.beta
 
+        col_norm = jnp.linalg.norm(influence_tensor, axis=0, keepdims=True)
+        safe = jnp.where(col_norm == 0.0, 1.0, col_norm)
+        if config.influence_clip is None:
+            down = 1.0 / safe
+        else:
+            down = jnp.minimum(1.0, config.influence_clip.threshold / safe)
+        working = influence_tensor * down
+
         hmp: JACOBIAN
         match config.use_finite_hvp:
             case None:
-                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor)
-                hmp = hmp_jvp - mu * influence_tensor
+                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, working)
+                hmp = hmp_jvp / down - mu * influence_tensor
             case eps:
-                hmp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor, eps) - mu * influence_tensor
+                hmp = finite_difference_jmp(lambda x: state_fn(x)[0], s, working, eps) / down - mu * influence_tensor
+
+        if config.propagation_clip is not None:
+            hmp_norm = jnp.linalg.norm(hmp, axis=0, keepdims=True)
+            alpha = jnp.minimum(1.0, config.propagation_clip / jnp.where(hmp_norm == 0.0, 1.0, hmp_norm))
+            hmp = alpha * hmp
+            dhdp = alpha * dhdp
 
         updated = beta * (hmp + dhdp) + (1 - beta) * influence_tensor
         return updated
 
-    return rtrl_like(args, update_tensor, config.start_at_step, config.influence_clip)
+    return rtrl_like(args, update_tensor, config.start_at_step)
 
 
 def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
@@ -278,7 +297,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         updated = beta * target + (1 - beta) * influence_tensor
         return updated
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.influence_clip)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
 
 
 def pade_rtrl[ENV, TR_DATA, VL_DATA](
@@ -308,7 +327,7 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         d_tau = hmp_jvp + dhdp
         return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp)
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.influence_clip)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
 
 
 def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
@@ -542,7 +561,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
 
         return eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor)
 
-    return rtrl_like(args, update_tensor, rtrl_config.start_at_step, rtrl_config.influence_clip)
+    return rtrl_like(args, update_tensor, rtrl_config.start_at_step)
 
 
 def uoro[ENV, TR_DATA, VL_DATA](
@@ -631,7 +650,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
         naive = (1 - alpha) * influence_tensor + dhdp - mu * influence_tensor
         return beta * naive + (1 - beta) * influence_tensor
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.influence_clip)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
 
 
 def immediate[ENV, TR_DATA, VL_DATA](

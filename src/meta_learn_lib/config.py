@@ -246,6 +246,7 @@ class RTRLConfig(eqx.Module):
     use_finite_hvp: jax.Array | None
     influence_clip: InfluenceColumnClip | None
     propagation_clip: jax.Array | None
+    lr_edge_margin: jax.Array | None
 
 
 class TikhonovRTRLConfig(eqx.Module):

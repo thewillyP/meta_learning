@@ -970,10 +970,48 @@ def create_meta_learner[ENV](
         args_gr = dataclasses.replace(args_loss, readout=readout_gr)
         grad_fn = dispatch_learner(method, args_gr, args_loss, config.hyperparameters)
 
+        match method:
+            case RTRLConfig():
+                edge_margin = method.lr_edge_margin
+            case (
+                TikhonovRTRLConfig()
+                | PadeRTRLConfig()
+                | MidpointRTRLConfig()
+                | HeunRTRLConfig()
+                | ImplicitEulerRTRLConfig()
+                | RFLOConfig()
+                | UOROConfig()
+            ):
+                edge_margin = method.rtrl_config.lr_edge_margin
+            case _:
+                edge_margin = None
+        lr_targets = [
+            hp
+            for a in assignments.values()
+            for hp in a.target
+            if hp in config.hyperparameters
+            and config.hyperparameters[hp].kind == "learning_rate"
+            and edge_margin is not None
+            and track_logs.largest_eigenvalue
+        ]
+
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)
+            lr_pre = {hp: interfaces[(hp, level)].learning_rate.get(env) for hp in lr_targets}
             gr_env = nest_interface.param.put(env, gradient)
             env = get_opt_step(assignments, interfaces, level, env, gr_env, config.hyperparameters)
+            for hp in lr_targets:
+                forward, invert = hyperparameter_reparametrization(
+                    config.hyperparameters[hp].hyperparameter_parametrization
+                )
+                metric = nest_interface.logs.get(env).largest_eigenvalue
+                edge = jnp.where(
+                    metric > 1e-12,
+                    edge_margin * 2.0 * forward(lr_pre[hp]) / jnp.maximum(metric, 1e-30),
+                    jnp.inf,
+                )
+                iface = interfaces[(hp, level)]
+                env = iface.learning_rate.put(env, invert(jnp.minimum(forward(iface.learning_rate.get(env)), edge)))
             stat[f"level{level}/meta_gradient_norm"] = scalar(jax.lax.stop_gradient(jnp.linalg.norm(gradient)))
             return env, stat
 

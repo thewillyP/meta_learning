@@ -96,13 +96,30 @@ def influence_column_cosine_stats(
     return stat
 
 
-def largest_eigenvalue_estimate(
-    matvec: Callable[[jax.Array], jax.Array], init_vec: jax.Array, num_matvecs: int
-) -> jax.Array:
+def lanczos_ritz(matvec: Callable[[jax.Array], jax.Array], init_vec: jax.Array, num_matvecs: int) -> jax.Array:
     lanczos = matfree_decomp.tridiag_sym(num_matvecs, reortho="full", custom_vjp=False)
     result = lanczos(matvec, init_vec)
-    ritz = jnp.linalg.eigvalsh(result.J_small)
-    return 1.0 - jnp.min(ritz)
+    return jnp.linalg.eigvalsh(result.J_small)
+
+
+def ritz_scale_and_log(
+    margin: jax.Array | None,
+    track_largest: bool,
+    state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
+    s: jax.Array,
+) -> tuple[jax.Array, Logs]:
+    if margin is None and not track_largest:
+        scale, log = jnp.array(1.0), Logs()
+    else:
+        init_vec = jax.random.normal(jax.random.key(0), s.shape)
+        smallest = jnp.min(lanczos_ritz(lambda v: jvp(state_fn, s, v)[1], init_vec, min(30, s.shape[0])))
+        scale = (
+            jnp.minimum(1.0, margin / jnp.maximum(jnp.maximum(0.0, -smallest), 1e-30))
+            if margin is not None
+            else jnp.array(1.0)
+        )
+        log = Logs(largest_eigenvalue=jax.lax.stop_gradient(1.0 - smallest)) if track_largest else Logs()
+    return scale, log
 
 
 def get_forward_mode[ENV, TR_DATA, VL_DATA](
@@ -175,10 +192,12 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             JACOBIAN,
             JACOBIAN,
             ENV,
+            jax.Array,
         ],
         JACOBIAN,
     ],
     start_at_step: int,
+    margin: jax.Array | None,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_influence(
         state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
@@ -190,9 +209,11 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         p = args.learn_interface.param.get(env)
         influence_tensor = args.learn_interface.forward_mode_jacobian.get(env)
 
+        scale, log_fragment = ritz_scale_and_log(margin, args.track_logs.largest_eigenvalue, state_fn, s)
+
         dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
-        new_influence_tensor = update_tensor(state_fn, s, dhdp, influence_tensor, env)
+        new_influence_tensor = update_tensor(state_fn, s, dhdp, influence_tensor, env, scale)
 
         new_influence_tensor = filter_cond(
             args.learn_interface.tick.get(env) >= start_at_step,
@@ -209,10 +230,7 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             trans_stat = trans_stat | influence_column_cosine_stats(
                 new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
-        if args.track_logs.largest_eigenvalue:
-            init_vec = jax.random.normal(jax.random.key(0), s.shape)
-            rho = largest_eigenvalue_estimate(lambda v: jvp(state_fn, s, v)[1], init_vec, min(30, s.shape[0]))
-            new_env = args.learn_interface.merge_logs(new_env, Logs(largest_eigenvalue=jax.lax.stop_gradient(rho)))
+        new_env = args.learn_interface.merge_logs(new_env, log_fragment)
         return new_env, trans_stat
 
     def credit_gr_fn(credit_gr: GRADIENT, learn_interface: GodInterface[ENV], env: ENV) -> GRADIENT:
@@ -234,6 +252,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
+        scale: jax.Array,
     ) -> jax.Array:
         mu = config.damping
         beta = config.beta
@@ -244,7 +263,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             down = 1.0 / safe
         else:
             down = jnp.minimum(1.0, config.influence_clip.threshold / safe)
-        working = influence_tensor * down
+        working = influence_tensor * down * scale
 
         hmp: JACOBIAN
         match config.use_finite_hvp:
@@ -263,7 +282,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         updated = beta * (hmp + dhdp) + (1 - beta) * influence_tensor
         return updated
 
-    return rtrl_like(args, update_tensor, config.start_at_step)
+    return rtrl_like(args, update_tensor, config.start_at_step, config.unit_circle_margin)
 
 
 def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
@@ -276,6 +295,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
+        scale: jax.Array,
     ) -> jax.Array:
         mu = config.rtrl_config.damping
         beta = config.rtrl_config.beta
@@ -283,9 +303,9 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         hmp_jvp: JACOBIAN
         match config.rtrl_config.use_finite_hvp:
             case None:
-                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor)
+                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor * scale)
             case eps:
-                hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor, eps)
+                hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor * scale, eps)
 
         d_tau = hmp_jvp + dhdp
         error = influence_tensor - d_tau
@@ -297,7 +317,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         updated = beta * target + (1 - beta) * influence_tensor
         return updated
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.unit_circle_margin)
 
 
 def pade_rtrl[ENV, TR_DATA, VL_DATA](
@@ -310,6 +330,7 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
+        scale: jax.Array,
     ) -> jax.Array:
         # JVP 1: dF/dz @ Gamma (for D_tau)
         # JVP 2: dF/dz @ dF/dphi (extra cost for Pade)
@@ -317,17 +338,17 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         dhdz_dhdp: JACOBIAN
         match config.rtrl_config.use_finite_hvp:
             case None:
-                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor)
+                _primals, hmp_jvp, _aux = jacobian_matrix_product(state_fn, s, influence_tensor * scale)
                 _primals2, dhdz_dhdp, _aux2 = jacobian_matrix_product(state_fn, s, dhdp)
             case eps:
-                hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor, eps)
+                hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor * scale, eps)
                 dhdz_dhdp = finite_difference_jmp(lambda x: state_fn(x)[0], s, dhdp, eps)
 
         # Pade [1,1]: Gamma_{t+1} = 1/2 * D_tau + 1/2 * (I + dF/dz) * dF/dphi
         d_tau = hmp_jvp + dhdp
         return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp)
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.unit_circle_margin)
 
 
 def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
@@ -509,6 +530,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
+        scale: jax.Array,
     ) -> jax.Array:
         mu = rtrl_config.damping
 
@@ -537,7 +559,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
 
         arnoldi = matfree_decomp.hessenberg(num_arnoldi_iters, reortho="full", custom_vjp=False)
 
-        rhs = influence_tensor + dhdp  # (state_dim, param_dim)
+        rhs = influence_tensor * scale + dhdp  # (state_dim, param_dim)
 
         @jax.checkpoint
         def solve_column(rhs_col: jax.Array, x0_col: jax.Array) -> jax.Array:
@@ -561,7 +583,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
 
         return eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor)
 
-    return rtrl_like(args, update_tensor, rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, rtrl_config.start_at_step, rtrl_config.unit_circle_margin)
 
 
 def uoro[ENV, TR_DATA, VL_DATA](
@@ -643,14 +665,15 @@ def rflo[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         env: ENV,
+        scale: jax.Array,
     ) -> jax.Array:
         mu = config.damping
         beta = config.beta
         alpha = tc_forward(args.learn_interface.time_constant.get(env))
-        naive = (1 - alpha) * influence_tensor + dhdp - mu * influence_tensor
+        naive = (1 - alpha) * influence_tensor * scale + dhdp - mu * influence_tensor
         return beta * naive + (1 - beta) * influence_tensor
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step)
+    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.unit_circle_margin)
 
 
 def immediate[ENV, TR_DATA, VL_DATA](

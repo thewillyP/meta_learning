@@ -188,6 +188,7 @@ def make_single_level_config(method: GradientMethod, model_clip: Optional[Clip] 
                             influence_clip=None,
                             propagation_clip=None,
                             lr_edge_margin=None,
+                            unit_circle_margin=None,
                         ),
                         add_clip=None,
                         scale=1.0,
@@ -462,6 +463,7 @@ def test_rtrl_vs_bptt_level0():
             influence_clip=None,
             propagation_clip=None,
             lr_edge_margin=None,
+            unit_circle_margin=None,
         )
     )
 
@@ -520,6 +522,7 @@ def test_validation_gradient_rtrl_vs_bptt():
             influence_clip=None,
             propagation_clip=None,
             lr_edge_margin=None,
+            unit_circle_margin=None,
         )
     )
 
@@ -594,6 +597,7 @@ def test_validation_gradient_jacobian_consistency():
                 influence_clip=None,
                 propagation_clip=None,
                 lr_edge_margin=None,
+                unit_circle_margin=None,
             ),
         ),
     ]:
@@ -672,6 +676,7 @@ def test_meta_hypergradient_rtrl_vs_bptt():
         influence_clip=None,
         propagation_clip=None,
         lr_edge_margin=None,
+        unit_circle_margin=None,
     )
 
     norm_bptt, hp_init_bptt, hp_after_bptt = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
@@ -721,6 +726,7 @@ def test_meta_hypergradient_finite_difference_rtrl():
         influence_clip=None,
         propagation_clip=None,
         lr_edge_margin=None,
+        unit_circle_margin=None,
     )
 
     norm_truth, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
@@ -760,6 +766,7 @@ def test_finite_difference_oho_divergence():
         influence_clip=None,
         propagation_clip=None,
         lr_edge_margin=None,
+        unit_circle_margin=None,
     )
     eps_values = [1e-2, 1e-4]
 
@@ -779,6 +786,7 @@ def test_finite_difference_oho_divergence():
             influence_clip=None,
             propagation_clip=None,
             lr_edge_margin=None,
+            unit_circle_margin=None,
         )
         _, _, hp_after_fd = run_two_level_meta(make_two_level_config(bptt, fd_rtrl, META_INNER_STEPS))
         div = hypergradient_rel_divergence(hp_init, hp_after_fd, hp_after_truth)
@@ -814,6 +822,7 @@ def test_meta_hypergradient_matrix():
         influence_clip=None,
         propagation_clip=None,
         lr_edge_margin=None,
+        unit_circle_margin=None,
     )
     combos = {
         ("inner=BPTT", "meta=BPTT"): (bptt, bptt),
@@ -856,6 +865,7 @@ def test_rtrl_over_rtrl_divergence_vs_trajectory_length():
         influence_clip=None,
         propagation_clip=None,
         lr_edge_margin=None,
+        unit_circle_margin=None,
     )
 
     for T in [1, 2, 3, 4]:
@@ -892,6 +902,7 @@ def test_inner_stateful_clip_tracked():
         influence_clip=None,
         propagation_clip=None,
         lr_edge_margin=None,
+        unit_circle_margin=None,
     )
 
     norm_bptt, hp_init, hp_after_bptt = run_two_level_meta(
@@ -939,6 +950,7 @@ def test_outer_validation_clip_not_in_rtrl_state():
         influence_clip=None,
         propagation_clip=None,
         lr_edge_margin=None,
+        unit_circle_margin=None,
     )
 
     def state_dims(config):
@@ -1036,6 +1048,7 @@ def test_reset_zeros_influence_tensor():
             influence_clip=None,
             propagation_clip=None,
             lr_edge_margin=None,
+            unit_circle_margin=None,
         )
     )
     stuff = setup_env_and_fns(config)

@@ -239,6 +239,11 @@ class InfluenceColumnClip(eqx.Module):
     stop_gradient: bool
 
 
+class UnitCircleClip(eqx.Module):
+    margin: jax.Array
+    measure: Literal["eigenvalue", "growth"]
+
+
 class RTRLConfig(eqx.Module):
     start_at_step: int
     damping: jax.Array
@@ -247,7 +252,7 @@ class RTRLConfig(eqx.Module):
     influence_clip: InfluenceColumnClip | None
     propagation_clip: jax.Array | None
     lr_edge_margin: jax.Array | None
-    unit_circle_margin: jax.Array | None
+    unit_circle_clip: UnitCircleClip | None
 
 
 class TikhonovRTRLConfig(eqx.Module):

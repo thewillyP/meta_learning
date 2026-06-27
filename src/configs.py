@@ -1755,7 +1755,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                 use_bias=True,
                 init="lecun_normal",
             ),
-            layer_norm=LayerNorm(epsilon=1e-5, use_weight=True, use_bias=True),
+            layer_norm=LayerNorm(epsilon=1e-3, use_weight=True, use_bias=True),
             use_random_init=False,
             time_constant="meta1_rnn1_time_constant",
         ),

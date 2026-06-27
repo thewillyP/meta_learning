@@ -231,6 +231,14 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             trans_stat = trans_stat | influence_column_cosine_stats(
                 new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
+        if args.track_logs.largest_eigenvalue:
+            probe = jax.random.normal(jax.random.key(0), s.shape)
+            jv = jvp(state_fn, s, probe)[1]
+            trans_stat = trans_stat | {
+                f"{args.log_prefix}/raw_jv_gain": scalar(
+                    jax.lax.stop_gradient(jnp.linalg.norm(jv) / jnp.maximum(jnp.linalg.norm(probe), 1e-30))
+                )
+            }
         new_env = args.learn_interface.merge_logs(new_env, log_fragment)
         return new_env, trans_stat
 

@@ -88,6 +88,7 @@ class Parameters(PClass):
 
 class LearningStates(PClass):
     influence_tensors: PMap[S_ID, Tagged[JACOBIAN]] = field(serializer=deep_serialize)
+    unit_circle_emas: PMap[S_ID, Tagged[jax.Array]] = field(serializer=deep_serialize)
     uoros: PMap[S_ID, Tagged[UOROState]] = field(serializer=deep_serialize)
     midpoint_buffers: PMap[S_ID, Tagged[MidpointBuffer]] = field(serializer=deep_serialize)
     opt_states: PMap[S_ID, Tagged[optax.OptState]] = field(serializer=deep_serialize)

@@ -242,6 +242,7 @@ class InfluenceColumnClip(eqx.Module):
 class UnitCircleClip(eqx.Module):
     margin: jax.Array
     measure: Literal["eigenvalue", "growth"]
+    ema_decay: jax.Array | None
 
 
 class RTRLConfig(eqx.Module):

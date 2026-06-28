@@ -1809,7 +1809,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=1e-5,
+            value=1e-4,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -1941,19 +1941,19 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=0.0,
-                        beta=1.0,
-                        use_finite_hvp=None,
-                        influence_clip=InfluenceColumnClip(threshold=1.0, eps_root=1e-8, stop_gradient=False),
+                        beta=0.01,
+                        use_finite_hvp=1e-4,
+                        influence_clip=InfluenceColumnClip(threshold=0.01, eps_root=1e-8, stop_gradient=False),
                         propagation_clip=None,
                         lr_edge_margin=None,
-                        unit_circle_clip=UnitCircleClip(margin=0.95, measure="growth"),
+                        unit_circle_clip=None,
                     ),
                     add_clip=None,
                     scale=1.0,
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
-                        target=frozenset({"meta1_sgd1_lr"}),
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
                         optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
@@ -1966,7 +1966,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             track_logs=TrackLogs(
                 gradient=False,
                 hessian_contains_nans=False,
-                largest_eigenvalue=True,
+                largest_eigenvalue=False,
                 influence_tensor_norm=True,
                 immediate_influence_tensor=False,
                 largest_jac_eigenvalue=False,

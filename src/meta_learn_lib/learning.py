@@ -102,25 +102,40 @@ def lanczos_ritz(matvec: Callable[[jax.Array], jax.Array], init_vec: jax.Array, 
     return jnp.linalg.eigvalsh(result.J_small)
 
 
-def ritz_scale_and_log(
+def unit_circle_scale(clip: UnitCircleClip, g: jax.Array, g_ema: jax.Array) -> tuple[jax.Array, jax.Array]:
+    match clip.ema_decay:
+        case None:
+            g_ema_new = jnp.broadcast_to(g, g_ema.shape)
+        case decay:
+            g_ema_new = jnp.maximum(g, decay * g_ema)
+    scale = jnp.minimum(1.0, clip.margin / jnp.maximum(g_ema_new, 1e-30))
+    return scale, g_ema_new
+
+
+def ritz_danger_and_log(
     clip: UnitCircleClip | None,
     track_largest: bool,
+    use_finite_hvp: jax.Array | None,
     state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
     s: jax.Array,
 ) -> tuple[jax.Array, Logs]:
-    match clip, track_largest:
-        case None, False:
-            scale, log = jnp.array(1.0), Logs()
+    match clip:
+        case UnitCircleClip(measure="eigenvalue"):
+            needs_eigenvalue = True
         case _:
-            init_vec = jax.random.normal(jax.random.key(0), s.shape)
-            smallest = jnp.min(lanczos_ritz(lambda v: jvp(state_fn, s, v)[1], init_vec, min(30, s.shape[0])))
-            match clip:
-                case UnitCircleClip(margin=margin):
-                    scale = jnp.minimum(1.0, margin / jnp.maximum(jnp.maximum(0.0, -smallest), 1e-30))
-                case _:
-                    scale = jnp.array(1.0)
-            log = Logs(largest_eigenvalue=jax.lax.stop_gradient(1.0 - smallest)) if track_largest else Logs()
-    return scale, log
+            needs_eigenvalue = track_largest
+    if not needs_eigenvalue:
+        return jnp.array(0.0), Logs()
+    init_vec = jax.random.normal(jax.random.key(0), s.shape)
+    match use_finite_hvp:
+        case None:
+            matvec = lambda v: jvp(state_fn, s, v)[1]
+        case eps:
+            matvec = lambda v: finite_difference_jvp(lambda x: state_fn(x)[0], s, v, eps)
+    smallest = jnp.min(lanczos_ritz(matvec, init_vec, min(30, s.shape[0])))
+    danger = jnp.maximum(0.0, -smallest)
+    log = Logs(largest_eigenvalue=jax.lax.stop_gradient(1.0 - smallest)) if track_largest else Logs()
+    return danger, log
 
 
 def get_forward_mode[ENV, TR_DATA, VL_DATA](
@@ -194,11 +209,13 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             JACOBIAN,
             ENV,
             jax.Array,
+            jax.Array,
         ],
-        JACOBIAN,
+        tuple[JACOBIAN, jax.Array],
     ],
     start_at_step: int,
     clip: UnitCircleClip | None,
+    use_finite_hvp: jax.Array | None,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_influence(
         state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
@@ -209,12 +226,15 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         s = args.learn_interface.state.get(env)
         p = args.learn_interface.param.get(env)
         influence_tensor = args.learn_interface.forward_mode_jacobian.get(env)
+        g_ema = args.learn_interface.unit_circle_ema.get(env)
 
-        scale, log_fragment = ritz_scale_and_log(clip, args.track_logs.largest_eigenvalue, state_fn, s)
+        danger, log_fragment = ritz_danger_and_log(
+            clip, args.track_logs.largest_eigenvalue, use_finite_hvp, state_fn, s
+        )
 
         dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
-        new_influence_tensor = update_tensor(state_fn, s, dhdp, influence_tensor, env, scale)
+        new_influence_tensor, g_ema_new = update_tensor(state_fn, s, dhdp, influence_tensor, env, danger, g_ema)
 
         new_influence_tensor = filter_cond(
             args.learn_interface.tick.get(env) >= start_at_step,
@@ -224,6 +244,7 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
         )
 
         new_env = args.learn_interface.forward_mode_jacobian.put(new_env, new_influence_tensor)
+        new_env = args.learn_interface.unit_circle_ema.put(new_env, g_ema_new)
         if args.track_logs.influence_tensor_norm:
             column_norms = jnp.linalg.norm(new_influence_tensor, axis=0)
             layout = args.learn_interface.param_layout(new_env)
@@ -231,14 +252,6 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             trans_stat = trans_stat | influence_column_cosine_stats(
                 new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
-        if args.track_logs.largest_eigenvalue:
-            probe = jax.random.normal(jax.random.key(0), s.shape)
-            jv = jvp(state_fn, s, probe)[1]
-            trans_stat = trans_stat | {
-                f"{args.log_prefix}/raw_jv_gain": scalar(
-                    jax.lax.stop_gradient(jnp.linalg.norm(jv) / jnp.maximum(jnp.linalg.norm(probe), 1e-30))
-                )
-            }
         new_env = args.learn_interface.merge_logs(new_env, log_fragment)
         return new_env, trans_stat
 
@@ -261,8 +274,9 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
-        scale: jax.Array,
-    ) -> jax.Array:
+        danger: jax.Array,
+        g_ema: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
         mu = config.damping
         beta = config.beta
 
@@ -282,14 +296,16 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, working, eps)
 
         match config.unit_circle_clip:
-            case UnitCircleClip(margin=margin, measure="growth"):
+            case None:
+                scale, g_ema_new = jnp.array(1.0), g_ema
+            case UnitCircleClip(measure="growth") as clip:
                 growth = jnp.linalg.norm(hmp_jvp, axis=0, keepdims=True) / jnp.maximum(
                     jnp.linalg.norm(working, axis=0, keepdims=True), 1e-30
                 )
-                propagation_scale = jnp.minimum(1.0, margin / jnp.maximum(growth, 1e-30))
-            case _:
-                propagation_scale = scale
-        hmp = propagation_scale * hmp_jvp / down - mu * influence_tensor
+                scale, g_ema_new = unit_circle_scale(clip, growth, g_ema)
+            case UnitCircleClip(measure="eigenvalue") as clip:
+                scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
+        hmp = scale * hmp_jvp / down - mu * influence_tensor
 
         if config.propagation_clip is not None:
             hmp_norm = jnp.linalg.norm(hmp, axis=0, keepdims=True)
@@ -298,9 +314,9 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             dhdp = alpha * dhdp
 
         updated = beta * (hmp + dhdp) + (1 - beta) * influence_tensor
-        return updated
+        return updated, g_ema_new
 
-    return rtrl_like(args, update_tensor, config.start_at_step, config.unit_circle_clip)
+    return rtrl_like(args, update_tensor, config.start_at_step, config.unit_circle_clip, config.use_finite_hvp)
 
 
 def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
@@ -313,10 +329,17 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
-        scale: jax.Array,
-    ) -> jax.Array:
+        danger: jax.Array,
+        g_ema: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
         mu = config.rtrl_config.damping
         beta = config.rtrl_config.beta
+
+        match config.rtrl_config.unit_circle_clip:
+            case None:
+                scale, g_ema_new = jnp.array(1.0), g_ema
+            case clip:
+                scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
 
         hmp_jvp: JACOBIAN
         match config.rtrl_config.use_finite_hvp:
@@ -333,9 +356,15 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
 
         target = d_tau + correction - mu * influence_tensor
         updated = beta * target + (1 - beta) * influence_tensor
-        return updated
+        return updated, g_ema_new
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.unit_circle_clip)
+    return rtrl_like(
+        args,
+        update_tensor,
+        config.rtrl_config.start_at_step,
+        config.rtrl_config.unit_circle_clip,
+        config.rtrl_config.use_finite_hvp,
+    )
 
 
 def pade_rtrl[ENV, TR_DATA, VL_DATA](
@@ -348,8 +377,15 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
-        scale: jax.Array,
-    ) -> jax.Array:
+        danger: jax.Array,
+        g_ema: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
+        match config.rtrl_config.unit_circle_clip:
+            case None:
+                scale, g_ema_new = jnp.array(1.0), g_ema
+            case clip:
+                scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
+
         # JVP 1: dF/dz @ Gamma (for D_tau)
         # JVP 2: dF/dz @ dF/dphi (extra cost for Pade)
         hmp_jvp: JACOBIAN
@@ -364,9 +400,15 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
 
         # Pade [1,1]: Gamma_{t+1} = 1/2 * D_tau + 1/2 * (I + dF/dz) * dF/dphi
         d_tau = hmp_jvp + dhdp
-        return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp)
+        return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp), g_ema_new
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.unit_circle_clip)
+    return rtrl_like(
+        args,
+        update_tensor,
+        config.rtrl_config.start_at_step,
+        config.rtrl_config.unit_circle_clip,
+        config.rtrl_config.use_finite_hvp,
+    )
 
 
 def midpoint_rtrl[ENV, TR_DATA, VL_DATA](
@@ -548,9 +590,16 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         _env: ENV,
-        scale: jax.Array,
-    ) -> jax.Array:
+        danger: jax.Array,
+        g_ema: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
         mu = rtrl_config.damping
+
+        match rtrl_config.unit_circle_clip:
+            case None:
+                scale, g_ema_new = jnp.array(1.0), g_ema
+            case clip:
+                scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
 
         # JVP oracle: v -> J_t @ v (vector, not matrix)
         f_eval = lambda x: state_fn(x)[0]
@@ -599,9 +648,11 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
             y, _, _, _ = jnp.linalg.lstsq(H_bar, rhs_lstsq)
             return x0_col + Q @ y
 
-        return eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor)
+        return eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor), g_ema_new
 
-    return rtrl_like(args, update_tensor, rtrl_config.start_at_step, rtrl_config.unit_circle_clip)
+    return rtrl_like(
+        args, update_tensor, rtrl_config.start_at_step, rtrl_config.unit_circle_clip, rtrl_config.use_finite_hvp
+    )
 
 
 def uoro[ENV, TR_DATA, VL_DATA](
@@ -683,15 +734,27 @@ def rflo[ENV, TR_DATA, VL_DATA](
         dhdp: jax.Array,
         influence_tensor: jax.Array,
         env: ENV,
-        scale: jax.Array,
-    ) -> jax.Array:
+        danger: jax.Array,
+        g_ema: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
         mu = config.damping
         beta = config.beta
+        match config.rtrl_config.unit_circle_clip:
+            case None:
+                scale, g_ema_new = jnp.array(1.0), g_ema
+            case clip:
+                scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
         alpha = tc_forward(args.learn_interface.time_constant.get(env))
         naive = (1 - alpha) * influence_tensor * scale + dhdp - mu * influence_tensor
-        return beta * naive + (1 - beta) * influence_tensor
+        return beta * naive + (1 - beta) * influence_tensor, g_ema_new
 
-    return rtrl_like(args, update_tensor, config.rtrl_config.start_at_step, config.rtrl_config.unit_circle_clip)
+    return rtrl_like(
+        args,
+        update_tensor,
+        config.rtrl_config.start_at_step,
+        config.rtrl_config.unit_circle_clip,
+        config.rtrl_config.use_finite_hvp,
+    )
 
 
 def immediate[ENV, TR_DATA, VL_DATA](

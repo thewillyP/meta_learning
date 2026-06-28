@@ -582,6 +582,9 @@ def create_learner_states[ENV](
             else:
                 dhdp = eqx.filter_jacrev(infl_fn)(param)
             env = interface.forward_mode_jacobian.put_tagged(new_env, Tagged(value=dhdp, meta=state_meta))
+            env = interface.unit_circle_ema.put_tagged(
+                env, Tagged(value=jnp.zeros((1, dhdp.shape[1])), meta=state_meta)
+            )
             match gradient_method:
                 case MidpointRTRLConfig() | HeunRTRLConfig():
                     env = interface.midpoint_buffer.put_tagged(
@@ -824,6 +827,7 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
             [
                 LearningStates(
                     influence_tensors=pmap({}),
+                    unit_circle_emas=pmap({}),
                     uoros=pmap({}),
                     midpoint_buffers=pmap({}),
                     opt_states=pmap({}),

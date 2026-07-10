@@ -151,24 +151,24 @@ def spectral_clip_jmp(
     matvec: Callable[[jax.Array], jax.Array],
     working: jax.Array,
     hmp_jvp: jax.Array,
+    key: jax.Array,
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
     num_matvecs = min(clip.num_matvecs, working.shape[0])
-
-    def clip_column(gamma_col: jax.Array, a_gamma_col: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-        rnd = jax.random.normal(jax.random.key(0), gamma_col.shape)
-        norm = jnp.linalg.norm(gamma_col)
-        seed = jnp.where(norm > 1e-12, gamma_col + 1e-3 * norm * rnd, rnd)
-        theta, ritz_vectors, residuals = lanczos_ritz_pairs(matvec, seed, num_matvecs)
-        converged = residuals < clip.residual_tol * jnp.maximum(jnp.abs(theta), 1e-30)
-        explosive = jnp.abs(theta) > clip.margin
-        mask = converged & explosive
-        excess = jnp.where(mask, theta - jnp.sign(theta) * clip.margin, 0.0)
-        proj = ritz_vectors.T @ gamma_col
-        corrected = a_gamma_col - ritz_vectors @ (excess * proj)
-        growth = jnp.linalg.norm(corrected) / jnp.maximum(norm, 1e-30)
-        return corrected, jnp.sum(mask).astype(corrected.dtype), jnp.max(jnp.abs(theta)), growth
-
-    corrected, k, top, growth = eqx.filter_vmap(clip_column, in_axes=(1, 1), out_axes=(1, 0, 0, 0))(working, hmp_jvp)
+    k_mix, k_fallback = jax.random.split(key)
+    weights = jax.random.normal(k_mix, (working.shape[1],))
+    seed = working @ weights
+    fallback = jax.random.normal(k_fallback, (working.shape[0],))
+    seed = jnp.where(jnp.linalg.norm(seed) > 1e-30, seed, fallback)
+    theta, ritz_vectors, residuals = lanczos_ritz_pairs(matvec, seed, num_matvecs)
+    converged = residuals < clip.residual_tol * jnp.maximum(jnp.abs(theta), 1e-30)
+    explosive = jnp.abs(theta) > clip.margin
+    mask = converged & explosive
+    excess = jnp.where(mask, theta - jnp.sign(theta) * clip.margin, 0.0)
+    proj = ritz_vectors.T @ working
+    corrected = hmp_jvp - ritz_vectors @ (excess[:, None] * proj)
+    growth = jnp.linalg.norm(corrected, axis=0) / jnp.maximum(jnp.linalg.norm(working, axis=0), 1e-30)
+    k = jnp.broadcast_to(jnp.sum(mask).astype(corrected.dtype), (growth.shape[0],))
+    top = jnp.broadcast_to(jnp.max(jnp.abs(theta)), (growth.shape[0],))
     diag = {
         "spectral_k": k[None, :],
         "spectral_top_ritz": top[None, :],
@@ -285,11 +285,12 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             ENV,
             jax.Array,
             jax.Array,
+            jax.Array,
         ],
         tuple[JACOBIAN, jax.Array, dict[str, jax.Array]],
     ],
     start_at_step: int,
-    clip: UnitCircleClip | None,
+    clip: UnitCircleClip | SpectralClip | None,
     use_finite_hvp: jax.Array | None,
     immediate_ema_decay: jax.Array | None,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
@@ -317,8 +318,14 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             dhdp = immediate_ema_decay * b_ema + (1.0 - immediate_ema_decay) * dhdp
             new_env = args.learn_interface.immediate_ema.put(new_env, dhdp)
 
+        match clip:
+            case SpectralClip():
+                key, new_env = args.learn_interface.take_prng(new_env)
+            case _:
+                key = jax.random.key(0)
+
         new_influence_tensor, g_ema_new, clip_diag = update_tensor(
-            state_fn, s, dhdp, influence_tensor, env, danger, g_ema
+            state_fn, s, dhdp, influence_tensor, env, danger, g_ema, key
         )
 
         new_influence_tensor = filter_cond(
@@ -363,6 +370,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
+        key: jax.Array,
     ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = config.damping
         beta = config.beta
@@ -387,7 +395,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
                 scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
             case SpectralClip() as clip:
                 matvec = spectral_matvec(state_fn, s, config.use_finite_hvp)
-                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, working, hmp_jvp)
+                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, working, hmp_jvp, key)
                 scale, g_ema_new = jnp.array(1.0), g_ema
             case UnitCircleClip(measure="growth") as clip:
                 growth = jnp.linalg.norm(hmp_jvp, axis=0, keepdims=True) / jnp.maximum(
@@ -431,6 +439,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
+        key: jax.Array,
     ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = config.rtrl_config.damping
         beta = config.rtrl_config.beta
@@ -454,7 +463,8 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         match config.rtrl_config.unit_circle_clip:
             case SpectralClip() as clip:
                 matvec = spectral_matvec(state_fn, s, config.rtrl_config.use_finite_hvp)
-                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, influence_tensor, hmp_jvp)
+                key_forward, key_correction = jax.random.split(key)
+                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, influence_tensor, hmp_jvp, key_forward)
 
         d_tau = hmp_jvp + dhdp
         error = influence_tensor - d_tau
@@ -463,7 +473,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         correction = eqx.filter_vmap(lambda col: vjp_fn(col)[0], in_axes=1, out_axes=1)(error)
         match config.rtrl_config.unit_circle_clip:
             case SpectralClip() as clip:
-                correction, _ = spectral_clip_jmp(clip, matvec, error, correction)
+                correction, _ = spectral_clip_jmp(clip, matvec, error, correction, key_correction)
 
         target = d_tau + correction - mu * influence_tensor
         updated = beta * target + (1 - beta) * influence_tensor
@@ -491,6 +501,7 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
+        key: jax.Array,
     ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         match config.rtrl_config.unit_circle_clip:
             case None:
@@ -517,8 +528,9 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         match config.rtrl_config.unit_circle_clip:
             case SpectralClip() as clip:
                 matvec = spectral_matvec(state_fn, s, config.rtrl_config.use_finite_hvp)
-                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, influence_tensor, hmp_jvp)
-                dhdz_dhdp, _ = spectral_clip_jmp(clip, matvec, dhdp, dhdz_dhdp)
+                key_gamma, key_driver = jax.random.split(key)
+                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, influence_tensor, hmp_jvp, key_gamma)
+                dhdz_dhdp, _ = spectral_clip_jmp(clip, matvec, dhdp, dhdz_dhdp, key_driver)
 
         d_tau = hmp_jvp + dhdp
         return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp), g_ema_new, clip_diag
@@ -714,6 +726,7 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
+        key: jax.Array,
     ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = rtrl_config.damping
 
@@ -885,6 +898,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
         env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
+        key: jax.Array,
     ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = config.damping
         beta = config.beta

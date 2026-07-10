@@ -1459,7 +1459,7 @@ def test_spectral_clip_matches_dense_reference():
 
     clip = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3))
     gamma = jax.random.normal(k2, (n, 3))
-    corrected, diag = spectral_clip_jmp(clip, lambda v: a @ v, gamma, a @ gamma)
+    corrected, diag = spectral_clip_jmp(clip, lambda v: a @ v, gamma, a @ gamma, jax.random.key(3))
 
     exact = (evecs @ jnp.diag(jnp.clip(evals, -1.0, 1.0)) @ evecs.T) @ gamma
     rel_err = jnp.linalg.norm(corrected - exact) / jnp.linalg.norm(exact)

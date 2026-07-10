@@ -1962,7 +1962,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                         lr_edge_margin=None,
                         unit_circle_clip=SpectralClip(
                             margin=0.999,
-                            num_matvecs=30,
+                            num_matvecs=20,
                             residual_tol=1e-3,
                         ),
                         # unit_circle_clip=None,
@@ -1974,7 +1974,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
-                        target=frozenset({"meta1_sgd1_lr"}),
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
                         optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
@@ -1987,7 +1987,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             track_logs=TrackLogs(
                 gradient=False,
                 hessian_contains_nans=False,
-                largest_eigenvalue=True,
+                largest_eigenvalue=False,
                 influence_tensor_norm=True,
                 immediate_influence_tensor=False,
                 largest_jac_eigenvalue=False,
@@ -2289,7 +2289,7 @@ OHO_LSTM32_EDGE_BOUND = GodConfig(
                         lr_edge_margin=None,
                         unit_circle_clip=SpectralClip(
                             margin=0.999,
-                            num_matvecs=30,
+                            num_matvecs=20,
                             residual_tol=1e-3,
                         ),
                         # unit_circle_clip=None,
@@ -2301,7 +2301,7 @@ OHO_LSTM32_EDGE_BOUND = GodConfig(
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
-                        target=frozenset({"meta1_sgd1_lr"}),
+                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
                         optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
@@ -2314,7 +2314,7 @@ OHO_LSTM32_EDGE_BOUND = GodConfig(
             track_logs=TrackLogs(
                 gradient=False,
                 hessian_contains_nans=False,
-                largest_eigenvalue=True,
+                largest_eigenvalue=False,
                 influence_tensor_norm=True,
                 immediate_influence_tensor=False,
                 largest_jac_eigenvalue=False,

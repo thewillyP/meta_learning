@@ -1,5 +1,6 @@
 """Correctness tests for the meta-learning algorithm."""
 
+import dataclasses
 import random
 import os
 from typing import Callable, Iterator, NamedTuple
@@ -27,7 +28,14 @@ from meta_learn_lib.datasets import create_data_sources, create_dataloader, vali
 from meta_learn_lib.env import *
 from meta_learn_lib.inference import create_inference_and_readout
 from meta_learn_lib.interface import GodInterface
-from meta_learn_lib.learning import create_meta_learner, create_validation_learners
+from meta_learn_lib.learning import (
+    create_meta_learner,
+    create_validation_learners,
+    gauss_newton_value_and_grad,
+    ggn_vector_product,
+    natural_gradient_step,
+    spectral_clip_jmp,
+)
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.loss_function import create_readout_loss_fns
 
@@ -38,6 +46,7 @@ class Setup(NamedTuple):
     interfaces: dict[S_ID, GodInterface[GodState]]
     transition_fns: list[Callable[[GodState, tuple[jax.Array, jax.Array]], tuple[GodState, STAT]]]
     loss_fns: list[Callable[[GodState, tuple[jax.Array, jax.Array]], tuple[GodState, LOSS, STAT]]]
+    readout_output_fns: list[Callable[[GodState, tuple[jax.Array, jax.Array]], tuple[GodState, Outputs]]]
     inference_axes: list[GodState]
     data_sample: tuple
     dataloader: Iterator
@@ -174,11 +183,7 @@ def make_single_level_config(method: GradientMethod, model_clip: Optional[Clip] 
                     track_influence_in=frozenset({0}),
                 ),
                 learner=LearnConfig(
-                    model_learner=GradientConfig(
-                        method=method,
-                        add_clip=model_clip,
-                        scale=1.0,
-                    ),
+                    model_learner=GradientConfig(method=method, add_clip=model_clip, scale=1.0, hessian_mode="exact"),
                     optimizer_learner=GradientConfig(
                         method=RTRLConfig(
                             start_at_step=0,
@@ -189,9 +194,11 @@ def make_single_level_config(method: GradientMethod, model_clip: Optional[Clip] 
                             propagation_clip=None,
                             lr_edge_margin=None,
                             unit_circle_clip=None,
+                            immediate_ema_decay=None,
                         ),
                         add_clip=None,
                         scale=1.0,
+                        hessian_mode="exact",
                     ),
                     optimizer={
                         "sgd1": OptimizerAssignment(
@@ -216,6 +223,7 @@ def make_single_level_config(method: GradientMethod, model_clip: Optional[Clip] 
                 ),
                 test_seed=0,
                 collect_predictions=False,
+                natural_gradient=None,
             ),
         ],
         sample_generators=[],
@@ -241,10 +249,10 @@ def make_two_level_config(
     track1: frozenset[int] = frozenset({1}),
     validation_steps: int = 28,
 ) -> GodConfig:
-    immediate = GradientConfig(method=ImmediateLearnerConfig(), add_clip=None, scale=1.0)
-    level0_model = GradientConfig(method=inner_method, add_clip=level0_clip, scale=1.0)
-    level1_model = GradientConfig(method=inner_method, add_clip=outer_val_clip, scale=1.0)
-    meta_grad = GradientConfig(method=meta_method, add_clip=level1_clip, scale=1.0)
+    immediate = GradientConfig(method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact")
+    level0_model = GradientConfig(method=inner_method, add_clip=level0_clip, scale=1.0, hessian_mode="exact")
+    level1_model = GradientConfig(method=inner_method, add_clip=outer_val_clip, scale=1.0, hessian_mode="exact")
+    meta_grad = GradientConfig(method=meta_method, add_clip=level1_clip, scale=1.0, hessian_mode="exact")
 
     def hp(value: float, kind: HyperparameterConfig.Kind, level: int, max_value: float) -> HyperparameterConfig:
         return HyperparameterConfig(
@@ -291,6 +299,7 @@ def make_two_level_config(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         )
 
     return GodConfig(
@@ -425,8 +434,9 @@ def setup_env_and_fns(config: GodConfig):
 
     transition_fns = create_transition_fns(config, shapes, interfaces, list(transitions))
     loss_fns = create_readout_loss_fns(config, interfaces, list(readouts))
+    readout_output_fns = list(readouts)
 
-    meta_learner = create_meta_learner(config, shapes, transition_fns, loss_fns, interfaces, env)
+    meta_learner = create_meta_learner(config, shapes, transition_fns, loss_fns, readout_output_fns, interfaces, env)
 
     data_sample, dataloader = toolz.peek(dataloader)
 
@@ -436,6 +446,7 @@ def setup_env_and_fns(config: GodConfig):
         interfaces=interfaces,
         transition_fns=transition_fns,
         loss_fns=loss_fns,
+        readout_output_fns=readout_output_fns,
         inference_axes=inference_axes,
         data_sample=data_sample,
         dataloader=dataloader,
@@ -464,6 +475,7 @@ def test_rtrl_vs_bptt_level0():
             propagation_clip=None,
             lr_edge_margin=None,
             unit_circle_clip=None,
+            immediate_ema_decay=None,
         )
     )
 
@@ -523,17 +535,26 @@ def test_validation_gradient_rtrl_vs_bptt():
             propagation_clip=None,
             lr_edge_margin=None,
             unit_circle_clip=None,
+            immediate_ema_decay=None,
         )
     )
 
     stuff_bptt = setup_env_and_fns(config_bptt)
     stuff_rtrl = setup_env_and_fns(config_rtrl)
 
-    vl_learners_bptt, _ = create_validation_learners(
-        stuff_bptt.transition_fns, stuff_bptt.loss_fns, stuff_bptt.interfaces, config_bptt
+    vl_learners_bptt, _, _ = create_validation_learners(
+        stuff_bptt.transition_fns,
+        stuff_bptt.loss_fns,
+        stuff_bptt.readout_output_fns,
+        stuff_bptt.interfaces,
+        config_bptt,
     )
-    vl_learners_rtrl, _ = create_validation_learners(
-        stuff_rtrl.transition_fns, stuff_rtrl.loss_fns, stuff_rtrl.interfaces, config_rtrl
+    vl_learners_rtrl, _, _ = create_validation_learners(
+        stuff_rtrl.transition_fns,
+        stuff_rtrl.loss_fns,
+        stuff_rtrl.readout_output_fns,
+        stuff_rtrl.interfaces,
+        config_rtrl,
     )
     vl_bptt = vl_learners_bptt[0]
     vl_rtrl = vl_learners_rtrl[0]
@@ -598,12 +619,15 @@ def test_validation_gradient_jacobian_consistency():
                 propagation_clip=None,
                 lr_edge_margin=None,
                 unit_circle_clip=None,
+                immediate_ema_decay=None,
             ),
         ),
     ]:
         config = make_single_level_config(method)
         stuff = setup_env_and_fns(config)
-        vl_learners, _ = create_validation_learners(stuff.transition_fns, stuff.loss_fns, stuff.interfaces, config)
+        vl_learners, _, _ = create_validation_learners(
+            stuff.transition_fns, stuff.loss_fns, stuff.readout_output_fns, stuff.interfaces, config
+        )
         vl = vl_learners[0]
         iface = stuff.interfaces[(MODEL_LEARNER, 0)]
 
@@ -633,6 +657,248 @@ def test_validation_gradient_jacobian_consistency():
 
         if label == "BPTT":
             assert rel < 1e-8, f"BPTT 2nd-order inconsistent (control should pass): {rel:.3e}"
+
+
+# ============================================================================
+# TEST 1g0: Gauss-Newton core — custom_jvp tangent equals J_f^T H_l J_f v
+# ============================================================================
+
+
+def test_gauss_newton_value_and_grad_matches_reference():
+    """The custom_jvp on gauss_newton_value_and_grad must (a) leave the gradient value exact and
+    (b) make its derivative the Gauss-Newton matrix G = J_f^T H_l J_f, computed here independently
+    via jax.jacobian / jax.hessian (no custom_jvp). f is genuinely nonlinear so f'' != 0 and G != H."""
+    print("=" * 60)
+    print("TEST 1g0: gauss_newton_value_and_grad == J^T H_l J (independent reference)")
+    print("=" * 60)
+
+    key = jax.random.key(0)
+    kW, kb, kx, ky, kv = jax.random.split(key, 5)
+    p_dim, m_dim = 5, 4
+    W = jax.random.normal(kW, (m_dim, p_dim))
+    b = jax.random.normal(kb, (m_dim,))
+
+    def f(p, env, ds):  # nonlinear in p -> f'' != 0
+        u = W @ p + b
+        return jnp.tanh(u) + 0.5 * u**2
+
+    y = jax.random.normal(ky, (m_dim,))
+
+    def l(z, env, ds):  # convex in z -> H_l PSD
+        return 0.5 * jnp.sum((z - y) ** 2)
+
+    p0 = jax.random.normal(kx, (p_dim,))
+    f0 = lambda p: f(p, None, None)
+    l0 = lambda z: l(z, None, None)
+    L = lambda p: l0(f0(p))
+
+    g_gn = gauss_newton_value_and_grad(f, l, p0, None, None)
+    g_true = jax.grad(L)(p0)
+    assert jnp.allclose(g_gn, g_true, atol=1e-10), "GN primal gradient must equal the exact gradient"
+
+    G = jax.jacfwd(lambda p: gauss_newton_value_and_grad(f, l, p, None, None))(p0)
+    J = jax.jacobian(f0)(p0)
+    H_l = jax.hessian(l0)(f0(p0))
+    G_ref = J.T @ H_l @ J
+    H_true = jax.hessian(L)(p0)
+
+    v = jax.random.normal(kv, (p_dim,))
+    _, Gv = jax.jvp(lambda p: gauss_newton_value_and_grad(f, l, p, None, None), (p0,), (v,))
+
+    print(f"  ||G - J^T H_l J|| = {float(jnp.max(jnp.abs(G - G_ref))):.2e}")
+    print(f"  ||G - H_true||    = {float(jnp.max(jnp.abs(G - H_true))):.2e}")
+    print(f"  min eig(G)        = {float(jnp.min(jnp.linalg.eigvalsh(G))):.2e}")
+
+    assert jnp.allclose(G, G_ref, atol=1e-8), "GN curvature must equal J^T H_l J"
+    assert jnp.allclose(Gv, G_ref @ v, atol=1e-8), "GGN-vp must equal (J^T H_l J) v"
+    assert jnp.allclose(G, G.T, atol=1e-8), "GN matrix must be symmetric"
+    assert jnp.min(jnp.linalg.eigvalsh(G)) > -1e-8, "GN matrix must be PSD (H_l PSD)"
+    assert jnp.max(jnp.abs(G - H_true)) > 1e-3, "test vacuous: GN equals the true Hessian"
+
+
+# ============================================================================
+# TEST 1g0b: Gauss-Newton state coupling — d g/d(state) = J_p^T H_l J_state
+# ============================================================================
+
+
+def test_gauss_newton_state_coupling():
+    """Proves GN is NOT param-only / feedforward-only. When f depends on both the params p and an inner
+    state s (passed via the `env` slot, as a recurrent hidden state would be), the GN gradient's
+    derivative w.r.t. s must be the generalized Gauss-Newton coupling block J_p^T H_l J_s — computed
+    here against an independent jax.jacobian/jax.hessian reference, with f genuinely nonlinear so the
+    true mixed Hessian differs from this block."""
+    print("=" * 60)
+    print("TEST 1g0b: GN state coupling d g/d s == J_p^T H_l J_s")
+    print("=" * 60)
+
+    key = jax.random.key(1)
+    kWp, kWs, kb, kp, ks, ky = jax.random.split(key, 6)
+    p_dim, s_dim, m_dim = 4, 3, 5
+    Wp = jax.random.normal(kWp, (m_dim, p_dim))
+    Ws = jax.random.normal(kWs, (m_dim, s_dim))
+    b = jax.random.normal(kb, (m_dim,))
+    y = jax.random.normal(ky, (m_dim,))
+
+    def f(p, env, ds):  # env stands in for the inner (e.g. recurrent) state s; nonlinear in both
+        u = Wp @ p + Ws @ env + b
+        return jnp.tanh(u) + 0.5 * u**2
+
+    def l(z, env, ds):
+        return 0.5 * jnp.sum((z - y) ** 2)
+
+    p0 = jax.random.normal(kp, (p_dim,))
+    s0 = jax.random.normal(ks, (s_dim,))
+
+    g = lambda p, s: gauss_newton_value_and_grad(f, l, p, s, None)
+    dg_ds = jax.jacobian(g, argnums=1)(p0, s0)  # coupling block via the GN surrogate
+
+    f0 = lambda p, s: f(p, s, None)
+    Jp = jax.jacobian(f0, argnums=0)(p0, s0)
+    Js = jax.jacobian(f0, argnums=1)(p0, s0)
+    Hl = jax.hessian(lambda z: l(z, None, None))(f0(p0, s0))
+    coupling_ref = Jp.T @ Hl @ Js
+
+    L = lambda p, s: l(f0(p, s), None, None)
+    true_mixed = jax.jacobian(jax.grad(L, argnums=0), argnums=1)(p0, s0)  # exact d²L/dp ds
+
+    print(f"  ||d g/d s - J_p^T H_l J_s|| = {float(jnp.max(jnp.abs(dg_ds - coupling_ref))):.2e}")
+    print(f"  ||GN coupling - true mixed|| = {float(jnp.max(jnp.abs(coupling_ref - true_mixed))):.2e}")
+
+    assert jnp.allclose(dg_ds, coupling_ref, atol=1e-8), "GN coupling block must equal J_p^T H_l J_s"
+    assert jnp.max(jnp.abs(coupling_ref - true_mixed)) > 1e-3, "test vacuous: GN coupling equals the true mixed Hessian"
+    # value still the exact param gradient at fixed s
+    g_true = jax.grad(lambda p: L(p, s0))(p0)
+    assert jnp.allclose(g(p0, s0), g_true, atol=1e-10), "GN gradient value must be exact"
+
+
+# ============================================================================
+# TEST 1g0c: Natural-gradient / GN step in hyperparameter space (auto-brake)
+# ============================================================================
+
+
+def test_natural_gradient_hyperparam_autobrake():
+    """The outer GN step H_phi = gammaᵀ J_valᵀ A J_val gamma (pushforward of the validation curvature
+    through the RTRL influence tensor gamma = ∂theta/∂phi). Two checks: (1) the assembled H_phi equals
+    an independent gammaᵀ (Jᵀ A J) gamma; (2) as gamma blows up near an instability, the first-order
+    meta-gradient grows like ‖gamma‖ but the natural-gradient step shrinks like 1/‖gamma‖ — the
+    self-braking the controller needs."""
+    print("=" * 60)
+    print("TEST 1g0c: natural-gradient hyperparameter step + auto-brake")
+    print("=" * 60)
+
+    key = jax.random.key(3)
+    kW, kb, kt, ky, kG = jax.random.split(key, 5)
+    d, m, P = 6, 4, 2  # |theta|, |output|, |phi|
+    W = jax.random.normal(kW, (m, d))
+    b = jax.random.normal(kb, (m,))
+    y = jax.random.normal(ky, (m,))
+
+    def f(t, env, ds):
+        u = W @ t + b
+        return jnp.tanh(u) + 0.5 * u**2
+
+    def l(z, env, ds):
+        return 0.5 * jnp.sum((z - y) ** 2)
+
+    theta0 = jax.random.normal(kt, (d,))
+    gamma0 = jax.random.normal(kG, (d, P))
+
+    f0 = lambda t: f(t, None, None)
+    J = jax.jacobian(f0)(theta0)
+    A = jax.hessian(lambda z: l(z, None, None))(f0(theta0))
+    F = J.T @ A @ J  # param-space GN curvature (d x d)
+
+    # (1) H_phi from the helper matches the independent pushforward
+    fvp = lambda v: ggn_vector_product(f, l, theta0, v, None, None)
+    H_helper = gamma0.T @ eqx.filter_vmap(fvp, in_axes=1, out_axes=1)(gamma0)
+    H_ref = gamma0.T @ F @ gamma0
+    print(f"  ||H_phi(helper) - gammaᵀ Jᵀ A J gamma|| = {float(jnp.max(jnp.abs(H_helper - H_ref))):.2e}")
+    assert jnp.allclose(H_helper, H_ref, atol=1e-8), "assembled H_phi must equal the pushforward curvature"
+    assert jnp.allclose(H_helper, H_helper.T, atol=1e-8) and jnp.min(jnp.linalg.eigvalsh(H_helper)) > -1e-8
+
+    # (2) auto-brake: g_theta is fixed; only gamma (= ∂theta/∂phi) grows as the edge approaches
+    g_theta = jax.grad(lambda t: l(f0(t), None, None))(theta0)
+    damping = 1e-6
+    records = []
+    for c in [1.0, 10.0, 100.0]:
+        gc = c * gamma0
+        grad_phi = gc.T @ g_theta
+        step = natural_gradient_step(grad_phi, gc, f, l, theta0, None, None, damping)
+        records.append((c, float(jnp.linalg.norm(grad_phi)), float(jnp.linalg.norm(step))))
+        print(f"  c={c:6.0f}  ‖grad_phi‖={records[-1][1]:.3e}  ‖NG step‖={records[-1][2]:.3e}")
+
+    # first-order meta-gradient grows with c; the natural-gradient step shrinks ~ 1/c
+    assert records[2][1] > records[0][1], "first-order meta-gradient must grow as the influence tensor blows up"
+    assert records[2][2] < records[0][2], "natural-gradient step must shrink as the influence tensor blows up"
+    assert records[2][2] < 0.1 * records[0][2], "natural-gradient step must brake roughly like 1/c"
+
+
+# ============================================================================
+# TEST 1g1: Gauss-Newton wired into the model_learner — validation curvature
+# ============================================================================
+
+
+def test_gauss_newton_wired_validation_curvature():
+    """End-to-end through the real readout/objective: with model_learner.hessian_mode='gauss_newton'
+    the inner gradient g(theta) is unchanged but its Jacobian becomes a symmetric PSD Gauss-Newton
+    matrix that differs from the exact Hessian (which 'exact' mode reproduces, jacfwd==jacrev)."""
+    print("=" * 60)
+    print("TEST 1g1: GN wired into model_learner vs exact Hessian (validation gradient)")
+    print("=" * 60)
+
+    base = make_single_level_config(BPTTConfig(truncate_at=None))
+
+    def with_mode(mode: str) -> GodConfig:
+        lvl = base.levels[0]
+        ml = dataclasses.replace(lvl.learner.model_learner, hessian_mode=mode)
+        learner = dataclasses.replace(lvl.learner, model_learner=ml)
+        return dataclasses.replace(base, levels=[dataclasses.replace(lvl, learner=learner)])
+
+    def grad_and_jacobians(mode: str):
+        config = with_mode(mode)
+        stuff = setup_env_and_fns(config)
+        vl_learners, _, _ = create_validation_learners(
+            stuff.transition_fns, stuff.loss_fns, stuff.readout_output_fns, stuff.interfaces, config
+        )
+        vl = vl_learners[0]
+        iface = stuff.interfaces[(MODEL_LEARNER, 0)]
+        resetters = env_resetters(config, stuff.shapes, stuff.interfaces, [False] * len(config.levels))
+        inner_resetter, _ = resetters[0]
+        axes = diff_axes(stuff.env, inner_resetter(stuff.env, jax.random.key(0)))
+        _, vl_data = jax.tree.map(lambda x: x[0], stuff.data_sample)
+        theta0 = iface.param.get(stuff.env)
+
+        def g_fn(theta):
+            env_t = iface.param.put(stuff.env, theta)
+
+            def inner(env, data):
+                _, grad, _ = vl(env, data)
+                return grad
+
+            return eqx.filter_vmap(inner, in_axes=(axes, 0), out_axes=0)(env_t, vl_data).sum(axis=0)
+
+        return g_fn(theta0), jax.jacfwd(g_fn)(theta0), jax.jacrev(g_fn)(theta0)
+
+    g_exact, H_fwd, H_rev = grad_and_jacobians("exact")
+    g_gn, G_fwd, G_rev = grad_and_jacobians("gauss_newton")
+
+    sym = lambda M: 0.5 * (M + M.T)
+    rel = lambda A, B: float(jnp.max(jnp.abs(A - B)) / jnp.maximum(jnp.max(jnp.abs(B)), 1e-30))
+    gn_vs_hess = rel(G_fwd, H_fwd)
+
+    print(f"  primal grad diff (exact vs gn): {float(jnp.max(jnp.abs(g_exact - g_gn))):.2e}")
+    print(f"  exact jacfwd vs jacrev:         {rel(H_fwd, H_rev):.2e}")
+    print(f"  GN jacfwd vs jacrev:            {rel(G_fwd, G_rev):.2e}")
+    print(f"  GN symmetry:                    {rel(G_fwd, G_fwd.T):.2e}")
+    print(f"  min eig(sym GN):                {float(jnp.min(jnp.linalg.eigvalsh(sym(G_fwd)))):.2e}")
+    print(f"  GN vs exact-Hessian rel diff:   {gn_vs_hess:.2e}")
+
+    assert jnp.allclose(g_exact, g_gn, atol=1e-8), "GN must not change the inner gradient value"
+    assert rel(H_fwd, H_rev) < 1e-6, "exact mode must give a consistent (symmetric) true Hessian"
+    assert rel(G_fwd, G_fwd.T) < 1e-6, "GN curvature must be symmetric"
+    assert rel(G_fwd, G_rev) < 1e-6, "GN must transpose to the same matrix (forward == reverse)"
+    assert jnp.min(jnp.linalg.eigvalsh(sym(G_fwd))) > -1e-6, "GN curvature must be PSD (cross-entropy H_l PSD)"
+    assert gn_vs_hess > 1e-3, "test vacuous: GN equals the true Hessian"
 
 
 # ============================================================================
@@ -677,6 +943,7 @@ def test_meta_hypergradient_rtrl_vs_bptt():
         propagation_clip=None,
         lr_edge_margin=None,
         unit_circle_clip=None,
+        immediate_ema_decay=None,
     )
 
     norm_bptt, hp_init_bptt, hp_after_bptt = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
@@ -727,6 +994,7 @@ def test_meta_hypergradient_finite_difference_rtrl():
         propagation_clip=None,
         lr_edge_margin=None,
         unit_circle_clip=None,
+        immediate_ema_decay=None,
     )
 
     norm_truth, hp_init, hp_after_truth = run_two_level_meta(make_two_level_config(bptt, bptt, META_INNER_STEPS))
@@ -767,6 +1035,7 @@ def test_finite_difference_oho_divergence():
         propagation_clip=None,
         lr_edge_margin=None,
         unit_circle_clip=None,
+        immediate_ema_decay=None,
     )
     eps_values = [1e-2, 1e-4]
 
@@ -787,6 +1056,7 @@ def test_finite_difference_oho_divergence():
             propagation_clip=None,
             lr_edge_margin=None,
             unit_circle_clip=None,
+            immediate_ema_decay=None,
         )
         _, _, hp_after_fd = run_two_level_meta(make_two_level_config(bptt, fd_rtrl, META_INNER_STEPS))
         div = hypergradient_rel_divergence(hp_init, hp_after_fd, hp_after_truth)
@@ -823,6 +1093,7 @@ def test_meta_hypergradient_matrix():
         propagation_clip=None,
         lr_edge_margin=None,
         unit_circle_clip=None,
+        immediate_ema_decay=None,
     )
     combos = {
         ("inner=BPTT", "meta=BPTT"): (bptt, bptt),
@@ -866,6 +1137,7 @@ def test_rtrl_over_rtrl_divergence_vs_trajectory_length():
         propagation_clip=None,
         lr_edge_margin=None,
         unit_circle_clip=None,
+        immediate_ema_decay=None,
     )
 
     for T in [1, 2, 3, 4]:
@@ -903,6 +1175,7 @@ def test_inner_stateful_clip_tracked():
         propagation_clip=None,
         lr_edge_margin=None,
         unit_circle_clip=None,
+        immediate_ema_decay=None,
     )
 
     norm_bptt, hp_init, hp_after_bptt = run_two_level_meta(
@@ -951,6 +1224,7 @@ def test_outer_validation_clip_not_in_rtrl_state():
         propagation_clip=None,
         lr_edge_margin=None,
         unit_circle_clip=None,
+        immediate_ema_decay=None,
     )
 
     def state_dims(config):
@@ -1049,6 +1323,7 @@ def test_reset_zeros_influence_tensor():
             propagation_clip=None,
             lr_edge_margin=None,
             unit_circle_clip=None,
+            immediate_ema_decay=None,
         )
     )
     stuff = setup_env_and_fns(config)
@@ -1165,12 +1440,109 @@ def test_reset_checker_fires_correctly():
 
 
 # ============================================================================
+# TEST 8: Spectral clip — matches dense eigendecomposition ground truth
+# ============================================================================
+
+
+def test_spectral_clip_matches_dense_reference():
+    print("=" * 60)
+    print("TEST 8: Spectral clip vs dense eigendecompose-clamp-reform")
+    print("=" * 60)
+
+    k1, k2 = jax.random.split(jax.random.key(1), 2)
+    n = 200
+    b = jax.random.normal(k1, (n, n)) / jnp.sqrt(n)
+    evals, evecs = jnp.linalg.eigh((b + b.T) / 2)
+    evals = 0.9 * evals / jnp.max(jnp.abs(evals))
+    evals = evals.at[0].set(-2.5).at[-1].set(3.1).at[-2].set(1.8)
+    a = evecs @ jnp.diag(evals) @ evecs.T
+
+    clip = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3))
+    gamma = jax.random.normal(k2, (n, 3))
+    corrected, diag = spectral_clip_jmp(clip, lambda v: a @ v, gamma, a @ gamma)
+
+    exact = (evecs @ jnp.diag(jnp.clip(evals, -1.0, 1.0)) @ evecs.T) @ gamma
+    rel_err = jnp.linalg.norm(corrected - exact) / jnp.linalg.norm(exact)
+    healthy = jnp.linalg.norm((corrected - a @ gamma).T @ evecs[:, 1:-2]) / jnp.linalg.norm(a @ gamma)
+
+    print(f"  Rel err vs exact spectral clip: {rel_err:.2e}")
+    print(f"  Explosive modes found per column: {diag['spectral_k'].ravel()}")
+    print(f"  Top ritz value per column: {diag['spectral_top_ritz'].ravel()}")
+    print(f"  Healthy-mode disturbance: {healthy:.2e}")
+
+    assert rel_err < 1e-10, f"Spectral clip diverges from dense reference: {rel_err:.2e}"
+    assert jnp.all(diag["spectral_k"] == 3.0), f"Expected 3 explosive modes, got {diag['spectral_k'].ravel()}"
+    assert jnp.allclose(diag["spectral_top_ritz"], 3.1, atol=1e-8), "Top ritz value wrong"
+    assert healthy < 1e-8, f"Spectral clip disturbed healthy modes: {healthy:.2e}"
+
+
+# ============================================================================
+# TEST 9: Spectral clip in the full OHO pipeline — inactive == exact RTRL
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_spectral_clip_pipeline_inactive_is_identity():
+    print("=" * 60)
+    print("TEST 9: Spectral clip pipeline — huge margin == no clip; active margin runs finite")
+    print("=" * 60)
+
+    def rtrl_with(clip: UnitCircleClip | SpectralClip | None) -> RTRLConfig:
+        return RTRLConfig(
+            start_at_step=0,
+            damping=0.0,
+            beta=1.0,
+            use_finite_hvp=None,
+            influence_clip=None,
+            propagation_clip=None,
+            lr_edge_margin=None,
+            unit_circle_clip=clip,
+            immediate_ema_decay=None,
+        )
+
+    inactive = SpectralClip(margin=jnp.array(1e6), num_matvecs=30, residual_tol=jnp.array(1e-3))
+    active = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3))
+
+    norm_none, hp_init_none, hp_after_none = run_two_level_meta(
+        make_two_level_config(rtrl_with(None), rtrl_with(None), META_INNER_STEPS)
+    )
+    norm_off, hp_init_off, hp_after_off = run_two_level_meta(
+        make_two_level_config(rtrl_with(None), rtrl_with(inactive), META_INNER_STEPS)
+    )
+    norm_on, _, hp_after_on = run_two_level_meta(
+        make_two_level_config(rtrl_with(None), rtrl_with(active), META_INNER_STEPS)
+    )
+
+    init_diff = jnp.max(jnp.abs(hp_init_none - hp_init_off))
+    norm_rel_diff = jnp.abs(norm_none - norm_off) / jnp.maximum(jnp.abs(norm_none), 1e-30)
+    vec_rel_diff = hypergradient_rel_divergence(hp_init_none, hp_after_off, hp_after_none)
+
+    print(f"  Initial meta-param diff: {init_diff:.2e}")
+    print(f"  Hypergradient norm (no clip):        {norm_none:.12f}")
+    print(f"  Hypergradient norm (inactive clip):  {norm_off:.12f}")
+    print(f"  Hypergradient norm (active clip):    {norm_on:.12f}")
+    print(f"  Rel diff in norms (inactive vs none): {norm_rel_diff:.2e}")
+    print(f"  Rel diff in meta step (inactive vs none): {vec_rel_diff:.2e}")
+
+    assert init_diff < 1e-12, f"Starting meta-params differ: {init_diff:.2e}"
+    assert norm_none > 1e-8, "Hypergradient norm is zero — test is degenerate"
+    assert norm_rel_diff < 1e-9, f"Inactive spectral clip changed the hypergradient: {norm_rel_diff:.2e}"
+    assert vec_rel_diff < 1e-9, f"Inactive spectral clip changed the meta step: {vec_rel_diff:.2e}"
+    assert jnp.isfinite(norm_on), "Active spectral clip produced non-finite hypergradient"
+    assert jnp.all(jnp.isfinite(hp_after_on)), "Active spectral clip produced non-finite meta step"
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
 if __name__ == "__main__":
     test_rtrl_vs_bptt_level0()
     test_validation_gradient_rtrl_vs_bptt()
+    test_gauss_newton_value_and_grad_matches_reference()
+    test_gauss_newton_state_coupling()
+    test_natural_gradient_hyperparam_autobrake()
+    test_gauss_newton_wired_validation_curvature()
     test_meta_hypergradient_rtrl_vs_bptt()
     test_meta_hypergradient_finite_difference_rtrl()
     test_finite_difference_oho_divergence()
@@ -1184,5 +1556,7 @@ if __name__ == "__main__":
     test_tick_reset()
     test_identity_learner()
     test_reset_checker_fires_correctly()
+    test_spectral_clip_matches_dense_reference()
+    test_spectral_clip_pipeline_inactive_is_identity()
 
     print("\nAll tests passed.")

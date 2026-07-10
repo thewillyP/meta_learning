@@ -54,6 +54,7 @@ class GodInterface[ENV]:
     opt_state: Accessor[ENV, optax.OptState]
     forward_mode_jacobian: Accessor[ENV, JACOBIAN]
     unit_circle_ema: Accessor[ENV, jax.Array]
+    immediate_ema: Accessor[ENV, JACOBIAN]
     uoro_state: Accessor[ENV, UOROState]
     midpoint_buffer: Accessor[ENV, MidpointBuffer]
     learning_rate: Accessor[ENV, jax.Array]
@@ -108,6 +109,7 @@ def default_god_interface[ENV]() -> GodInterface[ENV]:
         opt_state=noop(),
         forward_mode_jacobian=noop(),
         unit_circle_ema=noop(),
+        immediate_ema=noop(),
         uoro_state=noop(),
         midpoint_buffer=noop(),
         learning_rate=noop(),

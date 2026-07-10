@@ -51,6 +51,7 @@ def create_dataloader_lazy(
                 config.unlabeled_mask_value,
                 config.label_mask_value,
                 tkey,
+                level.dataset.shuffle,
             )
             for idx, tkey in zip(task_indices.tolist(), task_keys)
         ]
@@ -94,6 +95,8 @@ def create_dataloader_lazy(
 
     levels_with_data = list(reversed(list(zip(config.levels, data_sources))))
     return make_level_loader(levels_with_data, global_perm, k1)
+
+
 # -------------------------------------------------------------------------------
 
 
@@ -116,9 +119,7 @@ def assert_tree_allclose(a, b, atol: float = 1e-6) -> None:
             continue
         assert la is not None and lb is not None, f"leaf {i}: one side None"
         assert la.shape == lb.shape, f"leaf {i}: shape {la.shape} vs {lb.shape}"
-        assert bool(jnp.allclose(la, lb, atol=atol)), (
-            f"leaf {i}: max abs diff {float(jnp.max(jnp.abs(la - lb)))}"
-        )
+        assert bool(jnp.allclose(la, lb, atol=atol)), f"leaf {i}: max abs diff {float(jnp.max(jnp.abs(la - lb)))}"
 
 
 def run_parity(cfg: GodConfig, data_sources: list[list[PrematerializedTask]]) -> None:
@@ -152,12 +153,16 @@ def _build_synthetic_config() -> tuple[GodConfig, list[list[PrematerializedTask]
     ]
 
     no_track = TrackLogs(
-        gradient=False, hessian_contains_nans=False, largest_eigenvalue=False,
-        influence_tensor_norm=False, immediate_influence_tensor=False,
-        largest_jac_eigenvalue=False, jacobian=False,
+        gradient=False,
+        hessian_contains_nans=False,
+        largest_eigenvalue=False,
+        influence_tensor_norm=False,
+        immediate_influence_tensor=False,
+        largest_jac_eigenvalue=False,
+        jacobian=False,
     )
     id_grad = GradientConfig(
-        method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)), add_clip=None, scale=1.0
+        method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)), add_clip=None, scale=1.0, hessian_mode="exact"
     )
 
     def make_level(n_total, minibatch, num_steps, batch, is_test):
@@ -165,17 +170,19 @@ def _build_synthetic_config() -> tuple[GodConfig, list[list[PrematerializedTask]
             objective_fn=NoopObjective(),
             dataset_source=GaussianNoiseTaskFamily(shape=(3,), n=n_total),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=minibatch, num_examples_total=n_total,
-                is_test=is_test, augment=False,
+                num_examples_in_minibatch=minibatch,
+                num_examples_total=n_total,
+                is_test=is_test,
+                augment=False,
+                shuffle=True,
             ),
             validation=StepConfig(num_steps=1, batch=1, reset_t=1, track_influence_in=frozenset()),
-            nested=StepConfig(
-                num_steps=num_steps, batch=batch, reset_t=None, track_influence_in=frozenset()
-            ),
+            nested=StepConfig(num_steps=num_steps, batch=batch, reset_t=None, track_influence_in=frozenset()),
             learner=LearnConfig(model_learner=id_grad, optimizer_learner=id_grad, optimizer={}),
             track_logs=no_track,
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         )
 
     cfg = GodConfig(
@@ -187,6 +194,7 @@ def _build_synthetic_config() -> tuple[GodConfig, list[list[PrematerializedTask]
         logger_config=LoggersConfig(
             clearml=ClearMLLoggerConfig(enabled=False),
             hdf5=HDF5LoggerConfig(enabled=False),
+            sqlite=SQLiteLoggerConfig(enabled=False),
             console=ConsoleLoggerConfig(enabled=False),
             matplotlib=MatplotlibLoggerConfig(save_dir="", enabled=False),
             scalar_queue_size=0,
@@ -225,6 +233,7 @@ def test_synthetic_batch_parity():
 def test_real_config_parity(config_name: str):
     """Bit-equality on real configs. Skipped if data_root_dir is missing."""
     import os
+
     cfg: GodConfig = getattr(configs_module, config_name)
     if not os.path.isdir(cfg.data_root_dir):
         pytest.skip(f"data_root_dir not found: {cfg.data_root_dir}")

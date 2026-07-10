@@ -213,6 +213,32 @@ def create_loss_fn[ENV](
     return loss_fn
 
 
+def create_objective_fns[ENV](
+    config: GodConfig,
+    interfaces: dict[S_ID, GodInterface[ENV]],
+) -> list[Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], LOSS]]:
+    """Per-level objective l: (env, Outputs, data) -> scalar loss, with the f/l boundary at Outputs.
+
+    This is the `l` of the Gauss-Newton split L(theta) = l(f(theta)), where f is the readout
+    (theta -> Outputs) and Outputs carries everything the loss reads (prediction, mu, log_var)."""
+    fns: list[Callable[[ENV, Outputs, tuple[jax.Array, jax.Array]], LOSS]] = []
+    for level, meta_config in enumerate(config.levels):
+        loss_with_stats = create_loss_fn(
+            meta_config.objective_fn,
+            config.label_mask_value,
+            config.unlabeled_mask_value,
+            interfaces[(TASK, level)],
+            config.hyperparameters,
+        )
+
+        def objective(env: ENV, outputs: Outputs, data: tuple[jax.Array, jax.Array], f=loss_with_stats) -> LOSS:
+            loss, _ = f(env, outputs, data)
+            return loss
+
+        fns.append(objective)
+    return fns
+
+
 def create_readout_loss_fns[ENV](
     config: GodConfig,
     interfaces: dict[S_ID, GodInterface[ENV]],

@@ -11,8 +11,9 @@ from matfree import decomp as matfree_decomp
 from meta_learn_lib.config import *
 from meta_learn_lib.create_axes import diff_axes
 from meta_learn_lib.create_env import env_resetters, env_validation_resetters, make_reset_checker, make_tick_advancer
-from meta_learn_lib.env import Logs
+from meta_learn_lib.env import Logs, Outputs
 from meta_learn_lib.interface import *
+from meta_learn_lib.loss_function import create_objective_fns
 from meta_learn_lib.lib_types import *
 from meta_learn_lib.constants import *
 from meta_learn_lib.optimizer import get_opt_step, make_grad_transform
@@ -47,6 +48,10 @@ def compute_dhdp[ENV](
 class LearningArg[ENV, TR_DATA, VL_DATA, READOUT]:
     transition: Callable[[ENV, TR_DATA], tuple[ENV, STAT]]
     readout: Callable[[ENV, VL_DATA], tuple[ENV, READOUT, STAT]]
+    # The f/l split for Gauss-Newton. readout_outputs is f (env -> Outputs), objective is l
+    # (Outputs -> scalar). None on learners where GN is unsupported (the optimizer_learner).
+    readout_outputs: Optional[Callable[[ENV, VL_DATA], tuple[ENV, Outputs]]]
+    objective: Optional[Callable[[ENV, Outputs, VL_DATA], LOSS]]
     learn_interface: GodInterface[ENV]
     grad_config: GradientConfig
     length: int
@@ -96,10 +101,80 @@ def influence_column_cosine_stats(
     return stat
 
 
+def influence_column_value_stats(
+    values: jax.Array,
+    layout: list[tuple[str, int]],
+    prefix: str,
+    name: str,
+) -> STAT:
+    """Split a per-column diagnostic (broadcastable to (1, param_dim)) into one named scalar per parameter leaf."""
+    stat: STAT = {}
+    total = sum(size for _, size in layout)
+    vals = jnp.broadcast_to(values, (1, total)).reshape(-1)
+    start = 0
+    for pname, size in layout:
+        block = vals[start : start + size]
+        stat[f"{prefix}/{name}/{pname}"] = scalar(jax.lax.stop_gradient(jnp.mean(block)))
+        start += size
+    return stat
+
+
 def lanczos_ritz(matvec: Callable[[jax.Array], jax.Array], init_vec: jax.Array, num_matvecs: int) -> jax.Array:
     lanczos = matfree_decomp.tridiag_sym(num_matvecs, reortho="full", custom_vjp=False)
     result = lanczos(matvec, init_vec)
     return jnp.linalg.eigvalsh(result.J_small)
+
+
+def lanczos_ritz_pairs(
+    matvec: Callable[[jax.Array], jax.Array], init_vec: jax.Array, num_matvecs: int
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    lanczos = matfree_decomp.tridiag_sym(num_matvecs, reortho="full", custom_vjp=False)
+    result = lanczos(matvec, init_vec)
+    theta, small_vecs = jnp.linalg.eigh(result.J_small)
+    ritz_vectors = result.Q_tall @ small_vecs
+    residuals = jnp.linalg.norm(result.residual) * jnp.abs(small_vecs[-1, :])
+    return theta, ritz_vectors, residuals
+
+
+def spectral_matvec(
+    state_fn: Callable[[jax.Array], tuple[jax.Array, None]], s: jax.Array, use_finite_hvp: jax.Array | None
+) -> Callable[[jax.Array], jax.Array]:
+    match use_finite_hvp:
+        case None:
+            return lambda v: jvp(state_fn, s, v)[1]
+        case eps:
+            return lambda v: finite_difference_jvp(lambda x: state_fn(x)[0], s, v, eps)
+
+
+def spectral_clip_jmp(
+    clip: SpectralClip,
+    matvec: Callable[[jax.Array], jax.Array],
+    working: jax.Array,
+    hmp_jvp: jax.Array,
+) -> tuple[jax.Array, dict[str, jax.Array]]:
+    num_matvecs = min(clip.num_matvecs, working.shape[0])
+
+    def clip_column(gamma_col: jax.Array, a_gamma_col: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+        rnd = jax.random.normal(jax.random.key(0), gamma_col.shape)
+        norm = jnp.linalg.norm(gamma_col)
+        seed = jnp.where(norm > 1e-12, gamma_col + 1e-3 * norm * rnd, rnd)
+        theta, ritz_vectors, residuals = lanczos_ritz_pairs(matvec, seed, num_matvecs)
+        converged = residuals < clip.residual_tol * jnp.maximum(jnp.abs(theta), 1e-30)
+        explosive = jnp.abs(theta) > clip.margin
+        mask = converged & explosive
+        excess = jnp.where(mask, theta - jnp.sign(theta) * clip.margin, 0.0)
+        proj = ritz_vectors.T @ gamma_col
+        corrected = a_gamma_col - ritz_vectors @ (excess * proj)
+        growth = jnp.linalg.norm(corrected) / jnp.maximum(norm, 1e-30)
+        return corrected, jnp.sum(mask).astype(corrected.dtype), jnp.max(jnp.abs(theta)), growth
+
+    corrected, k, top, growth = eqx.filter_vmap(clip_column, in_axes=(1, 1), out_axes=(1, 0, 0, 0))(working, hmp_jvp)
+    diag = {
+        "spectral_k": k[None, :],
+        "spectral_top_ritz": top[None, :],
+        "spectral_growth": growth[None, :],
+    }
+    return corrected, diag
 
 
 def unit_circle_scale(clip: UnitCircleClip, g: jax.Array, g_ema: jax.Array) -> tuple[jax.Array, jax.Array]:
@@ -211,11 +286,12 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             jax.Array,
             jax.Array,
         ],
-        tuple[JACOBIAN, jax.Array],
+        tuple[JACOBIAN, jax.Array, dict[str, jax.Array]],
     ],
     start_at_step: int,
     clip: UnitCircleClip | None,
     use_finite_hvp: jax.Array | None,
+    immediate_ema_decay: jax.Array | None,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
     def update_influence(
         state_fn: Callable[[jax.Array], tuple[jax.Array, None]],
@@ -234,7 +310,16 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
 
         dhdp, new_env, trans_stat = compute_dhdp(param_fn, s, p, static)
 
-        new_influence_tensor, g_ema_new = update_tensor(state_fn, s, dhdp, influence_tensor, env, danger, g_ema)
+        # Low-pass the driving term B_t = dhdp before it enters the recursion; the propagation
+        # (I-αG) is left untouched, so this de-noises the input without changing the dynamics.
+        if immediate_ema_decay is not None:
+            b_ema = args.learn_interface.immediate_ema.get(env)
+            dhdp = immediate_ema_decay * b_ema + (1.0 - immediate_ema_decay) * dhdp
+            new_env = args.learn_interface.immediate_ema.put(new_env, dhdp)
+
+        new_influence_tensor, g_ema_new, clip_diag = update_tensor(
+            state_fn, s, dhdp, influence_tensor, env, danger, g_ema
+        )
 
         new_influence_tensor = filter_cond(
             args.learn_interface.tick.get(env) >= start_at_step,
@@ -252,6 +337,8 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             trans_stat = trans_stat | influence_column_cosine_stats(
                 new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
+            for diag_name, diag_values in clip_diag.items():
+                trans_stat = trans_stat | influence_column_value_stats(diag_values, layout, args.log_prefix, diag_name)
         new_env = args.learn_interface.merge_logs(new_env, log_fragment)
         return new_env, trans_stat
 
@@ -276,7 +363,7 @@ def rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
-    ) -> tuple[jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = config.damping
         beta = config.beta
 
@@ -297,14 +384,20 @@ def rtrl[ENV, TR_DATA, VL_DATA](
 
         match config.unit_circle_clip:
             case None:
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case SpectralClip() as clip:
+                matvec = spectral_matvec(state_fn, s, config.use_finite_hvp)
+                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, working, hmp_jvp)
                 scale, g_ema_new = jnp.array(1.0), g_ema
             case UnitCircleClip(measure="growth") as clip:
                 growth = jnp.linalg.norm(hmp_jvp, axis=0, keepdims=True) / jnp.maximum(
                     jnp.linalg.norm(working, axis=0, keepdims=True), 1e-30
                 )
                 scale, g_ema_new = unit_circle_scale(clip, growth, g_ema)
+                clip_diag = {"unit_circle_scale": scale, "unit_circle_growth": growth}
             case UnitCircleClip(measure="eigenvalue") as clip:
                 scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
+                clip_diag = {"unit_circle_scale": scale}
         hmp = scale * hmp_jvp / down - mu * influence_tensor
 
         if config.propagation_clip is not None:
@@ -314,9 +407,16 @@ def rtrl[ENV, TR_DATA, VL_DATA](
             dhdp = alpha * dhdp
 
         updated = beta * (hmp + dhdp) + (1 - beta) * influence_tensor
-        return updated, g_ema_new
+        return updated, g_ema_new, clip_diag
 
-    return rtrl_like(args, update_tensor, config.start_at_step, config.unit_circle_clip, config.use_finite_hvp)
+    return rtrl_like(
+        args,
+        update_tensor,
+        config.start_at_step,
+        config.unit_circle_clip,
+        config.use_finite_hvp,
+        config.immediate_ema_decay,
+    )
 
 
 def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
@@ -331,15 +431,18 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
-    ) -> tuple[jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = config.rtrl_config.damping
         beta = config.rtrl_config.beta
 
         match config.rtrl_config.unit_circle_clip:
             case None:
-                scale, g_ema_new = jnp.array(1.0), g_ema
-            case clip:
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case SpectralClip():
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case UnitCircleClip() as clip:
                 scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
+                clip_diag = {"unit_circle_scale": scale}
 
         hmp_jvp: JACOBIAN
         match config.rtrl_config.use_finite_hvp:
@@ -348,15 +451,23 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
             case eps:
                 hmp_jvp = finite_difference_jmp(lambda x: state_fn(x)[0], s, influence_tensor * scale, eps)
 
+        match config.rtrl_config.unit_circle_clip:
+            case SpectralClip() as clip:
+                matvec = spectral_matvec(state_fn, s, config.rtrl_config.use_finite_hvp)
+                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, influence_tensor, hmp_jvp)
+
         d_tau = hmp_jvp + dhdp
         error = influence_tensor - d_tau
 
         _, vjp_fn = eqx.filter_vjp(lambda x: state_fn(x)[0], s)
         correction = eqx.filter_vmap(lambda col: vjp_fn(col)[0], in_axes=1, out_axes=1)(error)
+        match config.rtrl_config.unit_circle_clip:
+            case SpectralClip() as clip:
+                correction, _ = spectral_clip_jmp(clip, matvec, error, correction)
 
         target = d_tau + correction - mu * influence_tensor
         updated = beta * target + (1 - beta) * influence_tensor
-        return updated, g_ema_new
+        return updated, g_ema_new, clip_diag
 
     return rtrl_like(
         args,
@@ -364,6 +475,7 @@ def tikhonov_rtrl[ENV, TR_DATA, VL_DATA](
         config.rtrl_config.start_at_step,
         config.rtrl_config.unit_circle_clip,
         config.rtrl_config.use_finite_hvp,
+        config.rtrl_config.immediate_ema_decay,
     )
 
 
@@ -379,12 +491,15 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
-    ) -> tuple[jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         match config.rtrl_config.unit_circle_clip:
             case None:
-                scale, g_ema_new = jnp.array(1.0), g_ema
-            case clip:
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case SpectralClip():
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case UnitCircleClip() as clip:
                 scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
+                clip_diag = {"unit_circle_scale": scale}
 
         # JVP 1: dF/dz @ Gamma (for D_tau)
         # JVP 2: dF/dz @ dF/dphi (extra cost for Pade)
@@ -399,8 +514,14 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
                 dhdz_dhdp = finite_difference_jmp(lambda x: state_fn(x)[0], s, dhdp, eps)
 
         # Pade [1,1]: Gamma_{t+1} = 1/2 * D_tau + 1/2 * (I + dF/dz) * dF/dphi
+        match config.rtrl_config.unit_circle_clip:
+            case SpectralClip() as clip:
+                matvec = spectral_matvec(state_fn, s, config.rtrl_config.use_finite_hvp)
+                hmp_jvp, clip_diag = spectral_clip_jmp(clip, matvec, influence_tensor, hmp_jvp)
+                dhdz_dhdp, _ = spectral_clip_jmp(clip, matvec, dhdp, dhdz_dhdp)
+
         d_tau = hmp_jvp + dhdp
-        return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp), g_ema_new
+        return 0.5 * d_tau + 0.5 * (dhdp + dhdz_dhdp), g_ema_new, clip_diag
 
     return rtrl_like(
         args,
@@ -408,6 +529,7 @@ def pade_rtrl[ENV, TR_DATA, VL_DATA](
         config.rtrl_config.start_at_step,
         config.rtrl_config.unit_circle_clip,
         config.rtrl_config.use_finite_hvp,
+        config.rtrl_config.immediate_ema_decay,
     )
 
 
@@ -592,14 +714,17 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
         _env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
-    ) -> tuple[jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = rtrl_config.damping
 
         match rtrl_config.unit_circle_clip:
             case None:
-                scale, g_ema_new = jnp.array(1.0), g_ema
-            case clip:
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case SpectralClip():
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case UnitCircleClip() as clip:
                 scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
+                clip_diag = {"unit_circle_scale": scale}
 
         # JVP oracle: v -> J_t @ v (vector, not matrix)
         f_eval = lambda x: state_fn(x)[0]
@@ -648,10 +773,34 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
             y, _, _, _ = jnp.linalg.lstsq(H_bar, rhs_lstsq)
             return x0_col + Q @ y
 
-        return eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor), g_ema_new
+        solved = eqx.filter_vmap(solve_column, in_axes=(1, 1), out_axes=1)(rhs, influence_tensor)
+        match rtrl_config.unit_circle_clip:
+            case SpectralClip() as clip:
+
+                def phi_clip_column(rhs_col: jax.Array, p_col: jax.Array) -> jax.Array:
+                    rnd = jax.random.normal(jax.random.key(0), rhs_col.shape)
+                    norm = jnp.linalg.norm(rhs_col)
+                    seed = jnp.where(norm > 1e-12, rhs_col + 1e-3 * norm * rnd, rnd)
+                    theta, ritz_vectors, residuals = lanczos_ritz_pairs(
+                        jvp_Jt, seed, min(clip.num_matvecs, rhs_col.shape[0])
+                    )
+                    phi = 1.0 / (2.0 + mu - theta)
+                    converged = residuals < clip.residual_tol * jnp.maximum(jnp.abs(theta), 1e-30)
+                    explosive = jnp.abs(phi) > clip.margin
+                    mask = converged & explosive
+                    excess = jnp.where(mask, phi - jnp.sign(phi) * clip.margin, 0.0)
+                    return p_col - ritz_vectors @ (excess * (ritz_vectors.T @ rhs_col))
+
+                solved = eqx.filter_vmap(phi_clip_column, in_axes=(1, 1), out_axes=1)(rhs, solved)
+        return solved, g_ema_new, clip_diag
 
     return rtrl_like(
-        args, update_tensor, rtrl_config.start_at_step, rtrl_config.unit_circle_clip, rtrl_config.use_finite_hvp
+        args,
+        update_tensor,
+        rtrl_config.start_at_step,
+        rtrl_config.unit_circle_clip,
+        rtrl_config.use_finite_hvp,
+        rtrl_config.immediate_ema_decay,
     )
 
 
@@ -736,17 +885,20 @@ def rflo[ENV, TR_DATA, VL_DATA](
         env: ENV,
         danger: jax.Array,
         g_ema: jax.Array,
-    ) -> tuple[jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
         mu = config.damping
         beta = config.beta
         match config.rtrl_config.unit_circle_clip:
             case None:
-                scale, g_ema_new = jnp.array(1.0), g_ema
-            case clip:
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case SpectralClip():
+                scale, g_ema_new, clip_diag = jnp.array(1.0), g_ema, {}
+            case UnitCircleClip() as clip:
                 scale, g_ema_new = unit_circle_scale(clip, danger, g_ema)
+                clip_diag = {"unit_circle_scale": scale}
         alpha = tc_forward(args.learn_interface.time_constant.get(env))
         naive = (1 - alpha) * influence_tensor * scale + dhdp - mu * influence_tensor
-        return beta * naive + (1 - beta) * influence_tensor, g_ema_new
+        return beta * naive + (1 - beta) * influence_tensor, g_ema_new, clip_diag
 
     return rtrl_like(
         args,
@@ -754,6 +906,7 @@ def rflo[ENV, TR_DATA, VL_DATA](
         config.rtrl_config.start_at_step,
         config.rtrl_config.unit_circle_clip,
         config.rtrl_config.use_finite_hvp,
+        config.rtrl_config.immediate_ema_decay,
     )
 
 
@@ -848,14 +1001,173 @@ def get_backward_mode_with_grad[ENV, TR_DATA, VL_DATA](
     return gradient_fn
 
 
+def get_outputs_mode[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+    truncate_at: Optional[int],
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, Outputs, STAT]]:
+    """Like get_backward_mode, but scans args.readout_outputs (f: env -> Outputs) and stacks the
+    per-step Outputs along the scan axis instead of summing the loss. This is the `f` of the
+    Gauss-Newton split, run over the full trajectory."""
+
+    def outputs_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, Outputs, STAT]:
+        arr_init, static = eqx.partition(env_init, eqx.is_array)
+
+        def inference_fn(arr: ENV, data: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, Outputs, STAT]:
+            env = eqx.combine(arr, static)
+            tr_data, vl_data = data
+
+            if truncate_at is not None:
+                t = args.learn_interface.tick.get(env)
+                s = filter_cond(
+                    t % truncate_at == 0,
+                    lambda _: jax.lax.stop_gradient(args.learn_interface.state.get(env)),
+                    lambda _: args.learn_interface.state.get(env),
+                    None,
+                )
+                env = args.learn_interface.state.put(env, s)
+
+            env, trans_stat = args.transition(env, tr_data)
+            env, outputs = args.readout_outputs(env, vl_data)
+            arr, _ = eqx.partition(env, eqx.is_array)
+            return arr, outputs, trans_stat
+
+        arr, outputs, stats = tagged_scan(
+            as_scan_body(args.vmap_this(inference_fn)),
+            arr_init,
+            ds_init,
+            length=args.length,
+            tag=args.scan_tag,
+        )
+        env = eqx.combine(arr, static)
+        return env, outputs, stats
+
+    return outputs_fn
+
+
+def ggn_vector_product(f, l, theta, v, env, ds):
+    """Gauss-Newton vector product F_theta v = J_fᵀ H_l J_f v, where f(theta,env,ds) -> z and
+    l(z,env,ds) -> scalar. A plain matvec at the current theta (no stop_gradient — unlike
+    gauss_newton_value_and_grad, nothing differentiates this further; it's evaluated at the top
+    meta level). env, ds are held fixed (closed over) since the meta step is the outermost level."""
+    f_t = lambda t: f(t, env, ds)
+    z, Jv = eqx.filter_jvp(f_t, (theta,), (v,))
+    grad_l = lambda zz: eqx.filter_grad(lambda o: l(o, env, ds))(zz)
+    _, HlJv = eqx.filter_jvp(grad_l, (z,), (Jv,))
+    _, vjp_f = eqx.filter_vjp(f_t, theta)
+    return vjp_f(HlJv)[0]
+
+
+def natural_gradient_step(grad_phi, gamma, f, l, theta, env, ds, damping):
+    """Gauss-Newton / natural-gradient step in hyperparameter space, reusing the RTRL influence
+    tensor. grad_phi: (P,) meta-gradient (= gammaᵀ g_theta). gamma: (T, P) = ∂theta/∂phi (the
+    influence tensor columns for the P target hyperparameters). f/l: the validation readout
+    (theta -> z) and objective (z -> scalar). Returns (H_phi + damping·I)⁻¹ grad_phi with the
+    pushforward Gauss-Newton curvature H_phi = gammaᵀ J_valᵀ H_l J_val gamma = Kᵀ A K (K = J_val gamma),
+    which is PSD. Near an instability gamma blows up, so H_phi ~ ‖gamma‖² blows up faster than
+    grad_phi ~ ‖gamma‖, and the step ~ 1/‖gamma‖ self-brakes."""
+    fvp = lambda v: ggn_vector_product(f, l, theta, v, env, ds)
+    w = eqx.filter_vmap(fvp, in_axes=1, out_axes=1)(gamma)  # (T, P) = F_theta gamma
+    h_phi = gamma.T @ w  # (P, P), PSD
+    p_dim = grad_phi.shape[0]
+    return jnp.linalg.solve(h_phi + damping * jnp.eye(p_dim, dtype=h_phi.dtype), grad_phi)
+
+
+def gauss_newton_value_and_grad(f, l, p, env, ds):
+    """Gradient of L = l(f(p, env, ds), env, ds) w.r.t. p whose value is the exact gradient
+    J_f^T grad_l(z) but whose *derivative* is the generalized Gauss-Newton matrix G = J_f^T H_l J_f
+    (J_f = ∂f/∂p) — i.e. it drops the grad_l-weighted f'' term the true Hessian has. G is symmetric
+    PSD whenever H_l is PSD (l convex in z).
+
+    Built by the stop-gradient linearization identity: with the Jacobian/vjp points held at their
+    stop-gradient'd value, g = J_0^T grad_l( f_0 + J_0 (delta_p, delta_env) ), where delta_p = p - sg p
+    and delta_env = env - sg env carry whatever outer tangents reach p and the inner state in env. The
+    linearization point is frozen so no grad_l-weighted f'' term enters, but the deltas keep BOTH p's
+    and the inner state's first-order paths, so the derivative is the generalized Gauss-Newton of the
+    FULL differentiated state: d g/d p = J_p^T H_l J_p and d g/d(state) = J_p^T H_l J_state. This holds
+    for any architecture — a recurrent f's J_0 already includes the BPTT unroll, and the recurrent
+    hidden state in env contributes its coupling through delta_env (nothing is feedforward-specific).
+    Plain autodiff (no custom_jvp), so it composes with both a forward-mode outer (RTRL) and a
+    reverse-mode outer (BPTT-over-BPTT). env and ds are passed explicitly (never closed over) so the
+    internal jvp/vjp never capture outer tracers."""
+    sg_leaf = lambda x: jax.lax.stop_gradient(x) if eqx.is_inexact_array(x) else x
+    sg = lambda t: jax.tree.map(sg_leaf, t)
+    p_sg, env_sg, ds_sg = jax.lax.stop_gradient(p), sg(env), sg(ds)
+    # Deltas are numerically zero but carry the outer tangents on p and on the inner state in env.
+    delta_p = p - p_sg
+    delta_env = jax.tree.map(lambda x: (x - jax.lax.stop_gradient(x)) if eqx.is_inexact_array(x) else None, env)
+    none_env = jax.tree.map(lambda _: None, env_sg)
+    none_ds = jax.tree.map(lambda _: None, ds_sg)
+
+    z0, jvp_delta = eqx.filter_jvp(f, (p_sg, env_sg, ds_sg), (delta_p, delta_env, none_ds))
+    z_lin = jax.tree.map(lambda a, b: a + b, z0, jvp_delta)  # f_0 + J_0 (delta_p, delta_env)
+    grad_l = eqx.filter_grad(lambda o: l(o, env_sg, ds_sg))(z_lin)
+    _, vjp_f = eqx.filter_vjp(f, p_sg, env_sg, ds_sg)
+    return vjp_f(grad_l)[0]
+
+
+def gauss_newton_backward[ENV, TR_DATA, VL_DATA](
+    args: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
+    truncate_at: Optional[int],
+) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
+    """Inner gradient g(theta) = J_f^T grad_l(f(theta)) whose value is identical to exact mode but whose
+    *derivative* (as seen by an outer learner) is the generalized Gauss-Newton G = J_f^T H_l J_f instead
+    of the true Hessian. Delegated to gauss_newton_value_and_grad (stop-gradient linearization, no
+    custom_jvp), so it works under both a forward-mode outer (RTRL) and a reverse-mode outer (BPTT).
+    f scans transition + per-step readout (theta -> stacked Outputs, full BPTT unroll for recurrent
+    models); l sums the per-step objective over those Outputs.
+
+    GN only takes effect when the outer learner differentiates this with exact autodiff: a finite-diff
+    outer (use_finite_hvp) evaluates the inner step at perturbed primals and never goes through this
+    linearization, so it would recover the true Hessian instead."""
+    forward = get_backward_mode(args, truncate_at)
+    outputs_scan = get_outputs_mode(args, truncate_at)
+
+    def gradient_fn(env_init: ENV, ds_init: tuple[TR_DATA, VL_DATA]) -> tuple[ENV, GRADIENT, STAT]:
+        param = args.learn_interface.param.get(env_init)
+
+        def f(p: jax.Array, env: ENV, ds: tuple[TR_DATA, VL_DATA]) -> Outputs:
+            env_p = args.learn_interface.param.put(env, p)
+            _, outputs, _ = outputs_scan(env_p, ds)
+            return outputs
+
+        def l(outputs: Outputs, env: ENV, ds: tuple[TR_DATA, VL_DATA]) -> jax.Array:
+            _, vl = ds
+
+            def body(acc: jax.Array, out_t__d_t) -> tuple[jax.Array, None]:
+                out_t, d_t = out_t__d_t
+                return acc + args.objective(env, out_t, d_t), None
+
+            total, _ = jax.lax.scan(body, jnp.array(0.0), (outputs, vl))
+            return total
+
+        grad = gauss_newton_value_and_grad(f, l, param, env_init, ds_init)
+        env, _, stats = forward(env_init, ds_init)
+        env = args.learn_interface.param.put(env, param)
+        grad, env = process_gradient(GRADIENT(grad), args.grad_config, args.learn_interface, env)
+        return env, grad, stats
+
+    return gradient_fn
+
+
 def bptt[ENV, TR_DATA, VL_DATA](
     args: LearningArg[ENV, TR_DATA, VL_DATA, LOSS],
     config: BPTTConfig,
 ) -> Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]:
-    def loss_to_grad(loss_fn, param, ds):
-        return eqx.filter_grad(loss_fn, has_aux=True)(param, ds)
+    match args.grad_config.hessian_mode:
+        case "gauss_newton":
+            if args.readout_outputs is None or args.objective is None:
+                raise ValueError(
+                    "hessian_mode='gauss_newton' needs the f/l split (readout_outputs, objective) on "
+                    "the LearningArg. It is wired for the model_learner / readout gradient only; the "
+                    "optimizer_learner must use 'exact'."
+                )
+            return gauss_newton_backward(args, config.truncate_at)
+        case _:
 
-    return get_backward_mode_with_grad(args, config.truncate_at, loss_to_grad)
+            def loss_to_grad(loss_fn, param, ds):
+                return eqx.filter_grad(loss_fn, has_aux=True)(param, ds)
+
+            return get_backward_mode_with_grad(args, config.truncate_at, loss_to_grad)
 
 
 def identity[ENV, TR_DATA, VL_DATA](
@@ -903,11 +1215,13 @@ def dispatch_learner[ENV, TR_DATA, VL_DATA](
 def create_validation_learners[ENV, TR_DATA, VL_DATA](
     transition_fns: list[Callable[[ENV, TR_DATA], tuple[ENV, STAT]]],
     readout_fns: list[Callable[[ENV, VL_DATA], tuple[ENV, LOSS, STAT]]],
+    readout_output_fns: list[Callable[[ENV, VL_DATA], tuple[ENV, Outputs]]],
     interfaces: dict[S_ID, GodInterface[ENV]],
     config: GodConfig,
 ) -> tuple[
     list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]],
     list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]],
+    list[tuple[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, Outputs, STAT]], Callable]],
 ]:
 
     def identity_transition(env: ENV, data: TR_DATA) -> tuple[ENV, STAT]:
@@ -947,11 +1261,16 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
 
     gradient_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, GRADIENT, STAT]]] = []
     loss_fns: list[Callable[[ENV, tuple[TR_DATA, VL_DATA]], tuple[ENV, LOSS, STAT]]] = []
+    curvature_pieces: list[tuple[Callable, Callable]] = []
 
-    for level, (transition, readout_fn, meta_config) in enumerate(
+    objective_fns = create_objective_fns(config, interfaces)
+
+    for level, (transition, readout_fn, readout_output_fn, objective, meta_config) in enumerate(
         zip(
             transition_fns,
             readout_fns,
+            readout_output_fns,
+            objective_fns,
             config.levels,
         )
     ):
@@ -960,13 +1279,20 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         model_grad_config = meta_config.learner.model_learner
         length = meta_config.validation.num_steps
         track_logs = meta_config.track_logs
-        readout_grad_config = GradientConfig(method=BPTTConfig(truncate_at=None), add_clip=None, scale=1.0)
+        readout_grad_config = GradientConfig(
+            method=BPTTConfig(truncate_at=None),
+            add_clip=None,
+            scale=1.0,
+            hessian_mode=model_grad_config.hessian_mode,
+        )
         readout_interface = make_readout_interface(interface, readout_grad_config)
         readout_gr = shim_expand_time(
             bptt(
                 LearningArg(
                     transition=identity_transition,
                     readout=readout_fn,
+                    readout_outputs=readout_output_fn,
+                    objective=objective,
                     learn_interface=readout_interface,
                     grad_config=readout_grad_config,
                     length=1,
@@ -982,6 +1308,8 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
         args_loss = LearningArg(
             transition=transition,
             readout=readout_fn,
+            readout_outputs=readout_output_fn,
+            objective=objective,
             learn_interface=interface,
             grad_config=model_grad_config,
             length=length,
@@ -994,8 +1322,11 @@ def create_validation_learners[ENV, TR_DATA, VL_DATA](
 
         gradient_fns.append(dispatch_learner(method, args_gr, args_loss, config.hyperparameters))
         loss_fns.append(get_backward_mode(args_loss, truncate_at=None))
+        # Pieces for the outer Gauss-Newton curvature: the validation forward (theta -> stacked
+        # Outputs over the window) and the per-step objective. Reused to build F_theta-vps.
+        curvature_pieces.append((get_outputs_mode(args_loss, None), objective))
 
-    return gradient_fns, loss_fns
+    return gradient_fns, loss_fns, curvature_pieces
 
 
 def restore_broadcast[ENV, X](
@@ -1018,16 +1349,71 @@ def restore_broadcast[ENV, X](
     return wrapper
 
 
+def build_meta_curvature_fn[ENV](
+    nest_interface: GodInterface[ENV],
+    curvature_pieces: tuple[Callable, Callable],
+    axes: ENV,
+    lower_axes: list[ENV],
+    val_axes: ENV,
+) -> Callable[[ENV, tuple], jax.Array]:
+    """Assemble the outer Gauss-Newton curvature H = gammaᵀ J_valᵀ H_l J_val gamma for one level's
+    meta-step, where gamma = forward_mode_jacobian (the RTRL influence tensor = d(lower params)/d(this
+    level's params)) and (J_val, H_l) come from the validation forward. Per meta-batch element, gamma is
+    unbatched (state_dim, P); F_theta is applied to each of its P columns via ggn_vector_product, then
+    contracted to a (P, P) block. The per-element block is vmapped over the meta batch axes exactly like
+    the validation learner and summed (the meta-objective is a sum over those elements). Generic per
+    level — theta is set through nest_interface.state so F_theta lives in gamma's row space."""
+    out_scan, objective = curvature_pieces
+
+    def curv_base(env: ENV, data: tuple) -> tuple[ENV, jax.Array, STAT]:
+        _, vl_data = data
+        gamma = nest_interface.forward_mode_jacobian.get(env)  # (state_dim, P)
+        theta = nest_interface.state.get(env)
+
+        def f(t, e, d):
+            _, outs, _ = out_scan(nest_interface.state.put(e, t), d)
+            return outs
+
+        def l(z, e, d):
+            _, vl = d
+
+            def body(acc, ot_dt):
+                return acc + objective(e, ot_dt[0], ot_dt[1]), None
+
+            return jax.lax.scan(body, jnp.array(0.0), (z, vl))[0]
+
+        fvp = lambda v: ggn_vector_product(f, l, theta, v, env, vl_data)
+        w = eqx.filter_vmap(fvp, in_axes=1, out_axes=1)(gamma)  # (state_dim, P) = F_theta gamma
+        return env, gamma.T @ w, {}
+
+    curv_fn = curv_base
+    for ax in lower_axes:
+        combined = eqx.combine(ax, val_axes)
+        curv_fn = restore_broadcast(curv_fn, combined)
+        curv_fn = tagged_vmap(curv_fn, in_axes=(combined, 0), out_axes=(combined, 0, 0))
+    curv_fn = tagged_vmap(curv_fn, in_axes=(axes, 0), out_axes=(axes, 0, 0))
+
+    def meta_curvature_fn(env: ENV, data: tuple) -> jax.Array:
+        data_step = jax.tree.map(lambda x: x[-1], data)  # the meta scan step that produced the final gamma
+        _, h_batched, _ = curv_fn(env, data_step)
+        return jnp.sum(h_batched, axis=tuple(range(h_batched.ndim - 2)))  # sum the per-element (P,P) blocks
+
+    return meta_curvature_fn
+
+
 def create_meta_learner[ENV](
     config: GodConfig,
     shapes: list[tuple[tuple[int, ...], tuple[int, ...]]],
     transition_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, STAT]]],
     readout_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, LOSS, STAT]]],
+    readout_output_fns: list[Callable[[ENV, tuple[jax.Array, jax.Array]], tuple[ENV, Outputs]]],
     interfaces: dict[S_ID, GodInterface[ENV]],
     env: ENV,
 ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
-    validation_learners, validation_losses = create_validation_learners(transition_fns, readout_fns, interfaces, config)
+    validation_learners, validation_losses, validation_curvatures = create_validation_learners(
+        transition_fns, readout_fns, readout_output_fns, interfaces, config
+    )
     resetters = env_resetters(config, shapes, interfaces, [False] * len(config.levels))
 
     val_resetters = env_validation_resetters(config, shapes, interfaces)
@@ -1050,6 +1436,8 @@ def create_meta_learner[ENV](
             Callable[[ENV, tuple], tuple[ENV, tuple[X, STAT]]],
         ],
         track_logs: TrackLogs,
+        natural_gradient: Optional[NaturalGradientConfig],
+        meta_curvature_fn: Callable[[ENV, tuple], jax.Array],
     ) -> Callable[[ENV, tuple], tuple[ENV, STAT]]:
 
         check = make_reset_checker(nest_interface, resetter, reset_t)
@@ -1063,6 +1451,8 @@ def create_meta_learner[ENV](
         args_loss = LearningArg(
             transition=composed_inner,
             readout=readout,
+            readout_outputs=None,
+            objective=None,
             learn_interface=nest_interface,
             grad_config=grad_config,
             length=length,
@@ -1101,6 +1491,17 @@ def create_meta_learner[ENV](
 
         def optimized_transition(env: ENV, data: tuple) -> tuple[ENV, STAT]:
             env, gradient, stat = grad_fn(env, data)
+            stat[f"level{level}/meta_gradient_norm"] = scalar(jax.lax.stop_gradient(jnp.linalg.norm(gradient)))
+            if natural_gradient is not None:
+                h_phi = meta_curvature_fn(env, data)  # (P, P), pushforward GN curvature over this level's params
+                p_dim = gradient.shape[0]
+                inverse_hessian = jnp.linalg.inv(h_phi + natural_gradient.damping * jnp.eye(p_dim, dtype=h_phi.dtype))
+                gradient = GRADIENT(inverse_hessian @ gradient)
+                for i in range(p_dim):
+                    for j in range(p_dim):
+                        stat[f"level{level}/inverse_hessian/{i}/{j}"] = scalar(
+                            jax.lax.stop_gradient(inverse_hessian[i, j])
+                        )
             lr_pre = {hp: interfaces[(hp, level)].learning_rate.get(env) for hp in lr_targets}
             gr_env = nest_interface.param.put(env, gradient)
             env = get_opt_step(assignments, interfaces, level, env, gr_env, config.hyperparameters)
@@ -1116,7 +1517,6 @@ def create_meta_learner[ENV](
                 )
                 iface = interfaces[(hp, level)]
                 env = iface.learning_rate.put(env, invert(jnp.minimum(forward(iface.learning_rate.get(env)), edge)))
-            stat[f"level{level}/meta_gradient_norm"] = scalar(jax.lax.stop_gradient(jnp.linalg.norm(gradient)))
             return env, stat
 
         return optimized_transition
@@ -1132,8 +1532,9 @@ def create_meta_learner[ENV](
         vl_loss = validation_losses[level]
 
         axes = diff_axes(env, inner_resetter(env, jax.random.key(0)))
+        lower_axes = [diff_axes(env, resetters[l][0](env, jax.random.key(0))) for l in range(level)]
 
-        for ax in [diff_axes(env, resetters[l][0](env, jax.random.key(0))) for l in range(level)]:
+        for ax in lower_axes:
             combined = eqx.combine(ax, per_level_val_axes[level])
             vl_learner = restore_broadcast(vl_learner, combined)
             vl_loss = restore_broadcast(vl_loss, combined)
@@ -1141,6 +1542,14 @@ def create_meta_learner[ENV](
             vl_loss = tagged_vmap(vl_loss, in_axes=(combined, 0), out_axes=(combined, 0, 0))
 
         vmap_this = lambda f, a=axes: tagged_vmap(f, in_axes=(a, 0), out_axes=(a, 0, 0))
+
+        meta_curvature_fn = build_meta_curvature_fn(
+            nest_interface,
+            validation_curvatures[level],
+            axes,
+            lower_axes,
+            per_level_val_axes[level],
+        )
 
         current_transition = make_optimized_transition(
             current_transition,
@@ -1156,6 +1565,8 @@ def create_meta_learner[ENV](
             meta_config.nested.num_steps,
             vmap_this,
             meta_config.track_logs,
+            meta_config.natural_gradient,
+            meta_curvature_fn,
         )
 
         current_resetter = full_resetter

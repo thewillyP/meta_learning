@@ -87,9 +87,7 @@ def get_iterations(level_idx: int, config: GodConfig, epochs: int) -> tuple[int,
 
 def make_eval_config(config: GodConfig) -> GodConfig:
     identity_grad = GradientConfig(
-        method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
-        add_clip=None,
-        scale=1.0,
+        method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)), add_clip=None, scale=1.0, hessian_mode="exact"
     )
     new_levels: list[MetaConfig] = []
     for i, level in enumerate(config.levels):
@@ -133,7 +131,7 @@ def meta_step(
     )
     transition_fns = create_transition_fns(c, shapes, local_interfaces, list(transitions))
     loss_fns = create_readout_loss_fns(c, local_interfaces, list(readouts))
-    meta_learner = create_meta_learner(c, shapes, transition_fns, loss_fns, local_interfaces, env)
+    meta_learner = create_meta_learner(c, shapes, transition_fns, loss_fns, list(readouts), local_interfaces, env)
 
     new_env, stat = meta_learner(env, data)
     new_arr, _ = eqx.partition(new_env, eqx.is_array)

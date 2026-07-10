@@ -450,6 +450,20 @@ def unit_circle_ema(i: S_ID, level: int) -> Accessor[GodState, jax.Array]:
     return Accessor(get=get, put=put, put_tagged=put_tagged)
 
 
+def immediate_ema(i: S_ID, level: int) -> Accessor[GodState, JACOBIAN]:
+    def get(env: GodState) -> JACOBIAN:
+        t = env.learning_states[level].immediate_emas.get(i)
+        return None if t is None else t.value
+
+    def put(env: GodState, val: JACOBIAN) -> GodState:
+        return env.transform(["learning_states", level, "immediate_emas", i, "value"], lambda _: val)
+
+    def put_tagged(env: GodState, tagged: Tagged[JACOBIAN]) -> GodState:
+        return env.transform(["learning_states", level, "immediate_emas", i], lambda _: tagged)
+
+    return Accessor(get=get, put=put, put_tagged=put_tagged)
+
+
 def uoro_state(i: S_ID, level: int) -> Accessor[GodState, UOROState]:
     def get(env: GodState) -> UOROState:
         t = env.learning_states[level].uoros.get(i)
@@ -774,6 +788,7 @@ def build_interfaces(
                         base,
                         forward_mode_jacobian=forward_mode_jacobian(li, level),
                         unit_circle_ema=unit_circle_ema(li, level),
+                        immediate_ema=immediate_ema(li, level),
                     )
 
                 case MidpointRTRLConfig() | HeunRTRLConfig():
@@ -781,6 +796,7 @@ def build_interfaces(
                         base,
                         forward_mode_jacobian=forward_mode_jacobian(li, level),
                         unit_circle_ema=unit_circle_ema(li, level),
+                        immediate_ema=immediate_ema(li, level),
                         midpoint_buffer=midpoint_buffer(li, level),
                     )
 
@@ -791,6 +807,7 @@ def build_interfaces(
                         base,
                         forward_mode_jacobian=forward_mode_jacobian(li, level),
                         unit_circle_ema=unit_circle_ema(li, level),
+                        immediate_ema=immediate_ema(li, level),
                         time_constant=time_constant(hi, hp_cfg.level),
                     )
 

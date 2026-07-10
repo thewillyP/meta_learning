@@ -586,6 +586,13 @@ def create_learner_states[ENV](
                 env, Tagged(value=jnp.zeros((1, dhdp.shape[1])), meta=state_meta)
             )
             match gradient_method:
+                case RTRLConfig():
+                    rtrl_config = gradient_method
+                case _:
+                    rtrl_config = gradient_method.rtrl_config
+            if rtrl_config.immediate_ema_decay is not None:
+                env = interface.immediate_ema.put_tagged(env, Tagged(value=jnp.zeros_like(dhdp), meta=state_meta))
+            match gradient_method:
                 case MidpointRTRLConfig() | HeunRTRLConfig():
                     env = interface.midpoint_buffer.put_tagged(
                         env,
@@ -828,6 +835,7 @@ def create_empty_env(config: GodConfig, prng: PRNG) -> GodState:
                 LearningStates(
                     influence_tensors=pmap({}),
                     unit_circle_emas=pmap({}),
+                    immediate_emas=pmap({}),
                     uoros=pmap({}),
                     midpoint_buffers=pmap({}),
                     opt_states=pmap({}),

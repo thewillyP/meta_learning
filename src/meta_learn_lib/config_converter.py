@@ -142,6 +142,11 @@ def make_converter() -> Converter:
     norm_hook = converter._structure_func.dispatch(Union[LayerNorm, GroupNorm])
     converter.register_structure_hook(Union[LayerNorm, GroupNorm, None], norm_hook)
 
+    # -- Unit-circle / spectral influence clip --
+    setup_flattened_union(converter, Union[UnitCircleClip, SpectralClip])
+    ucc_hook = converter._structure_func.dispatch(Union[UnitCircleClip, SpectralClip])
+    converter.register_structure_hook(Union[UnitCircleClip, SpectralClip, None], ucc_hook)
+
     # -- Task / dataset source --
     setup_flattened_union(
         converter,

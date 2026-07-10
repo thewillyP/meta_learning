@@ -245,6 +245,12 @@ class UnitCircleClip(eqx.Module):
     ema_decay: jax.Array | None
 
 
+class SpectralClip(eqx.Module):
+    margin: jax.Array
+    num_matvecs: int
+    residual_tol: jax.Array
+
+
 class RTRLConfig(eqx.Module):
     start_at_step: int
     damping: jax.Array
@@ -253,7 +259,8 @@ class RTRLConfig(eqx.Module):
     influence_clip: InfluenceColumnClip | None
     propagation_clip: jax.Array | None
     lr_edge_margin: jax.Array | None
-    unit_circle_clip: UnitCircleClip | None
+    unit_circle_clip: UnitCircleClip | SpectralClip | None
+    immediate_ema_decay: jax.Array | None
 
 
 class TikhonovRTRLConfig(eqx.Module):
@@ -322,6 +329,11 @@ class GradientConfig(eqx.Module):
     method: GradientMethod
     add_clip: Optional[Clip]
     scale: jax.Array
+    hessian_mode: Literal["exact", "gauss_newton"]
+
+
+class NaturalGradientConfig(eqx.Module):
+    damping: jax.Array
 
 
 class LearnConfig(eqx.Module):
@@ -746,6 +758,7 @@ class MetaConfig(eqx.Module):
     track_logs: TrackLogs
     test_seed: int
     collect_predictions: bool
+    natural_gradient: Optional[NaturalGradientConfig]
 
 
 class GodConfig(eqx.Module):

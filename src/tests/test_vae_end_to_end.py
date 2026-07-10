@@ -54,6 +54,7 @@ def _make_single_level_vae_config():
         logger_config=LoggersConfig(
             clearml=ClearMLLoggerConfig(enabled=False),
             hdf5=HDF5LoggerConfig(enabled=False),
+            sqlite=SQLiteLoggerConfig(enabled=False),
             console=ConsoleLoggerConfig(enabled=False),
             matplotlib=MatplotlibLoggerConfig(save_dir="/tmp", enabled=False),
             scalar_queue_size=0,
@@ -95,12 +96,17 @@ def _make_single_level_vae_config():
                 validation=StepConfig(num_steps=1, batch=1, reset_t=None, track_influence_in=frozenset({0})),
                 nested=StepConfig(num_steps=1, batch=1, reset_t=None, track_influence_in=frozenset({0})),
                 learner=LearnConfig(
-                    model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0),
-                    optimizer_learner=GradientConfig(method=ImmediateLearnerConfig(), add_clip=None, scale=1.0),
+                    model_learner=GradientConfig(
+                        method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"
+                    ),
+                    optimizer_learner=GradientConfig(
+                        method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
+                    ),
                     optimizer={
                         "meta1_sgd1": OptimizerAssignment(
                             target=base.levels[0].learner.optimizer["meta1_sgd1"].target,
                             optimizer=base.levels[0].learner.optimizer["meta1_sgd1"].optimizer,
+                            add_clip=None,
                         ),
                     },
                 ),
@@ -115,6 +121,7 @@ def _make_single_level_vae_config():
                 ),
                 test_seed=0,
                 collect_predictions=True,
+                natural_gradient=None,
             ),
         ],
         sample_generators=[],
@@ -155,7 +162,7 @@ def _setup(config):
     )
     transition_fns = create_transition_fns(config, shapes, interfaces, list(transitions))
     loss_fns = create_readout_loss_fns(config, interfaces, list(readouts))
-    meta_learner = create_meta_learner(config, shapes, transition_fns, loss_fns, interfaces, env)
+    meta_learner = create_meta_learner(config, shapes, transition_fns, loss_fns, list(readouts), interfaces, env)
     data_sample, _ = toolz.peek(dataloader)
     return env, interfaces, meta_learner, data_sample
 

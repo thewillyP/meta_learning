@@ -174,7 +174,8 @@ def jvp(f, primal, tangent):
 
 
 def finite_difference_jvp(f, primal, tangent, eps):
-    return (f(primal + eps * tangent) - f(primal - eps * tangent)) / (2 * eps)
+    step = eps * (1.0 + jnp.linalg.norm(primal)) / jnp.maximum(jnp.linalg.norm(tangent), 1e-30)
+    return (f(primal + step * tangent) - f(primal - step * tangent)) / (2 * step)
 
 
 def jacobian_matrix_product(f, primal, matrix):

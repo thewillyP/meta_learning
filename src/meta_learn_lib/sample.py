@@ -50,9 +50,7 @@ def validate_sample_generators(config: GodConfig) -> list[str]:
 
 def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfig:
     identity_grad = GradientConfig(
-        method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
-        add_clip=None,
-        scale=1.0,
+        method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)), add_clip=None, scale=1.0, hessian_mode="exact"
     )
     no_track = TrackLogs(
         gradient=False,

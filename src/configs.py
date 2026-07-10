@@ -413,14 +413,10 @@ NTM_COPY_MEMSCAN = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_adam1": OptimizerAssignment(
@@ -448,6 +444,7 @@ NTM_COPY_MEMSCAN = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=BernoulliObjective(reduction="sum"),
@@ -482,11 +479,13 @@ NTM_COPY_MEMSCAN = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -501,6 +500,7 @@ NTM_COPY_MEMSCAN = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=BernoulliObjective(reduction="sum"),
@@ -535,11 +535,13 @@ NTM_COPY_MEMSCAN = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -554,6 +556,7 @@ NTM_COPY_MEMSCAN = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -690,14 +693,10 @@ MEMSCAN_TINY = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_adam1": OptimizerAssignment(
@@ -725,6 +724,7 @@ MEMSCAN_TINY = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -759,11 +759,13 @@ MEMSCAN_TINY = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -778,6 +780,7 @@ MEMSCAN_TINY = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -812,11 +815,13 @@ MEMSCAN_TINY = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -831,6 +836,7 @@ MEMSCAN_TINY = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -967,14 +973,10 @@ MEMSCAN_FF = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_adam1": OptimizerAssignment(
@@ -1002,6 +1004,7 @@ MEMSCAN_FF = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1036,11 +1039,13 @@ MEMSCAN_FF = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -1055,6 +1060,7 @@ MEMSCAN_FF = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1089,11 +1095,13 @@ MEMSCAN_FF = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -1108,6 +1116,7 @@ MEMSCAN_FF = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -1245,14 +1254,10 @@ MEMSCAN = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_adam1": OptimizerAssignment(
@@ -1280,6 +1285,7 @@ MEMSCAN = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1314,11 +1320,13 @@ MEMSCAN = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -1333,6 +1341,7 @@ MEMSCAN = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1367,11 +1376,13 @@ MEMSCAN = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -1386,6 +1397,7 @@ MEMSCAN = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -1548,14 +1560,10 @@ OHO_RNN32 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -1580,6 +1588,7 @@ OHO_RNN32 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1611,9 +1620,7 @@ OHO_RNN32 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -1625,9 +1632,11 @@ OHO_RNN32 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_adam1": OptimizerAssignment(
@@ -1655,6 +1664,7 @@ OHO_RNN32 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1689,11 +1699,13 @@ OHO_RNN32 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -1708,6 +1720,7 @@ OHO_RNN32 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -1734,9 +1747,9 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
         scalar_queue_size=0,
         sample_queue_size=0,
     ),
-    epochs=100,
+    epochs=5000,
     checkpoint_every_n_minibatches=1,
-    checkpoint_every_n_epochs=25,
+    checkpoint_every_n_epochs=1250,
     transition_graph={
         "x": {},
         "concat": {"x"},
@@ -1809,7 +1822,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             parametrizes_transition=True,
         ),
         "meta2_sgd1_lr": HyperparameterConfig(
-            value=1e-4,
+            value=1e-5,
             kind="learning_rate",
             count=1,
             hyperparameter_parametrization=HyperparameterConfig.identity(),
@@ -1850,7 +1863,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=5000,
                 num_examples_total=50_000,
                 is_test=False,
                 augment=True,
@@ -1871,13 +1884,12 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             learner=LearnConfig(
                 model_learner=GradientConfig(
                     method=BPTTConfig(None),
-                    add_clip=None,
+                    add_clip=HardClip(1.0),
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -1902,6 +1914,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1913,7 +1926,334 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=5000,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=HardClip(1.0),
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=0.0,
+                        beta=1.0,
+                        use_finite_hvp=1e-3,
+                        influence_clip=None,
+                        propagation_clip=None,
+                        lr_edge_margin=None,
+                        unit_circle_clip=SpectralClip(
+                            margin=0.999,
+                            num_matvecs=30,
+                            residual_tol=1e-3,
+                        ),
+                        # unit_circle_clip=None,
+                        immediate_ema_decay=None,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_sgd1_lr"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                        add_clip=None,
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=True,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+            # natural_gradient=NaturalGradientConfig(damping=1e-5),
+            natural_gradient=None,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5000,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+            natural_gradient=None,
+        ),
+    ],
+    sample_generators=[],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
+)
+
+
+OHO_LSTM32_EDGE_BOUND = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho_lstm32_edge_bound",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+        scalar_queue_size=0,
+        sample_queue_size=0,
+    ),
+    epochs=5000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=1250,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "lstm1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"lstm1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "lstm1": LSTMLayer(
+            n=32,
+            use_bias=True,
+            use_random_init=False,
+            time_constant="meta1_lstm1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            init="lecun_normal",
+        ),
+    },
+    aliases={},
+    hyperparameters={
+        "meta1_lstm1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_lr": HyperparameterConfig(
+            value=0.001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=1e-5,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5000,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=True,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
+                ),
+                optimizer={
+                    "meta1_sgd1": OptimizerAssignment(
+                        target=frozenset({"lstm1", "readout"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta1_sgd1_lr",
+                            weight_decay="meta1_sgd1_wd",
+                            momentum="meta1_sgd1_momentum",
+                        ),
+                        add_clip=None,
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+            natural_gradient=None,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5000,
                 num_examples_total=10_000,
                 is_test=False,
                 augment=False,
@@ -1936,24 +2276,32 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                     method=BPTTConfig(None),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
                         damping=0.0,
-                        beta=0.01,
-                        use_finite_hvp=1e-4,
-                        influence_clip=InfluenceColumnClip(threshold=0.01, eps_root=1e-8, stop_gradient=False),
+                        beta=1.0,
+                        use_finite_hvp=1e-3,
+                        influence_clip=None,
                         propagation_clip=None,
                         lr_edge_margin=None,
-                        unit_circle_clip=None,
+                        unit_circle_clip=SpectralClip(
+                            margin=0.999,
+                            num_matvecs=30,
+                            residual_tol=1e-3,
+                        ),
+                        # unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
-                        target=frozenset({"meta1_sgd1_lr", "meta1_sgd1_wd"}),
+                        target=frozenset({"meta1_sgd1_lr"}),
                         optimizer=SGDConfig(
                             learning_rate="meta2_sgd1_lr",
                             weight_decay="meta2_sgd1_wd",
@@ -1966,7 +2314,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             track_logs=TrackLogs(
                 gradient=False,
                 hessian_contains_nans=False,
-                largest_eigenvalue=False,
+                largest_eigenvalue=True,
                 influence_tensor_norm=True,
                 immediate_influence_tensor=False,
                 largest_jac_eigenvalue=False,
@@ -1974,6 +2322,8 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            # natural_gradient=NaturalGradientConfig(damping=1e-5),
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -1985,7 +2335,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                 pixel_transform="normalize",
             ),
             dataset=DatasetConfig(
-                num_examples_in_minibatch=100,
+                num_examples_in_minibatch=5000,
                 num_examples_total=10_000,
                 is_test=True,
                 augment=False,
@@ -1998,7 +2348,7 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                 track_influence_in=frozenset({2}),
             ),
             nested=StepConfig(
-                num_steps=500,
+                num_steps=10,
                 batch=1,
                 reset_t=None,
                 track_influence_in=frozenset({2}),
@@ -2008,11 +2358,13 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -2027,6 +2379,342 @@ OHO_RNN32_EDGE_BOUND = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
+        ),
+    ],
+    sample_generators=[],
+    label_mask_value=-1.0,
+    unlabeled_mask_value=-100.0,
+    num_tasks=1,
+    prefetch_buffer_size=2,
+    dataloader_chunk_size=None,
+)
+
+
+OHO_RNN32_EDGE_BOUND_ADAM = GodConfig(
+    seed=SeedConfig(global_seed=14, data_seed=1, parameter_seed=1, task_seed=1, sample_seed=1),
+    clearml_run=True,
+    data_root_dir="/scratch/wlp9800/datasets",
+    log_dir="/scratch/wlp9800/offline_logs",
+    log_title="oho_rnn32_edge_bound_adam",
+    logger_config=LoggersConfig(
+        clearml=ClearMLLoggerConfig(enabled=True),
+        hdf5=HDF5LoggerConfig(enabled=False),
+        sqlite=SQLiteLoggerConfig(enabled=False),
+        console=ConsoleLoggerConfig(enabled=False),
+        matplotlib=MatplotlibLoggerConfig(save_dir="/scratch/wlp9800/offline_logs", enabled=False),
+        scalar_queue_size=0,
+        sample_queue_size=0,
+    ),
+    epochs=5000,
+    checkpoint_every_n_minibatches=1,
+    checkpoint_every_n_epochs=1250,
+    transition_graph={
+        "x": {},
+        "concat": {"x"},
+        "rnn1": {"concat"},
+    },
+    readout_graph={
+        "readout": {"rnn1"},
+    },
+    nodes={
+        "x": UnlabeledSource(),
+        "concat": Concat(),
+        "rnn1": VanillaRNNLayer(
+            nn_layer=NNLayer(
+                n=32,
+                activation_fn="tanh",
+                use_bias=True,
+                init="lecun_normal",
+            ),
+            layer_norm=LayerNorm(epsilon=1e-3, use_weight=True, use_bias=True),
+            use_random_init=False,
+            time_constant="meta1_rnn1_time_constant",
+        ),
+        "readout": NNLayer(
+            n=10,
+            activation_fn="identity",
+            use_bias=True,
+            init="lecun_normal",
+        ),
+    },
+    aliases={},
+    hyperparameters={
+        "meta1_rnn1_time_constant": HyperparameterConfig(
+            value=1.0,
+            kind="time_constant",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_lr": HyperparameterConfig(
+            value=0.0001,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_wd": HyperparameterConfig(
+            value=0.00001,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta1_adam1_momentum": HyperparameterConfig(
+            value=0.9,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=1,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_lr": HyperparameterConfig(
+            value=1e-5,
+            kind="learning_rate",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_wd": HyperparameterConfig(
+            value=0.0,
+            kind="weight_decay",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=jnp.inf,
+            level=2,
+            parametrizes_transition=True,
+        ),
+        "meta2_sgd1_momentum": HyperparameterConfig(
+            value=0.0,
+            kind="momentum",
+            count=1,
+            hyperparameter_parametrization=HyperparameterConfig.identity(),
+            min_value=0.0,
+            max_value=1.0,
+            level=2,
+            parametrizes_transition=True,
+        ),
+    },
+    levels=[
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5000,
+                num_examples_total=50_000,
+                is_test=False,
+                augment=True,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({0}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({0, 1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer_learner=GradientConfig(
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
+                ),
+                optimizer={
+                    "meta1_adam1": OptimizerAssignment(
+                        target=frozenset({"rnn1", "readout"}),
+                        optimizer=AdamConfig(
+                            learning_rate="meta1_adam1_lr",
+                            weight_decay="meta1_adam1_wd",
+                            momentum="meta1_adam1_momentum",
+                            second_momentum=0.999,
+                            eps=1e-8,
+                            eps_root=1e-4,
+                        ),
+                        add_clip=None,
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+            natural_gradient=None,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5000,
+                num_examples_total=10_000,
+                is_test=False,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({1}),
+            ),
+            nested=StepConfig(
+                num_steps=1,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({1}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=BPTTConfig(None),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer_learner=GradientConfig(
+                    method=RTRLConfig(
+                        start_at_step=0,
+                        damping=0.0,
+                        beta=1.0,
+                        use_finite_hvp=1e-3,
+                        influence_clip=None,
+                        propagation_clip=None,
+                        lr_edge_margin=None,
+                        unit_circle_clip=UnitCircleClip(
+                            margin=1.01,
+                            measure="growth",
+                            ema_decay=None,
+                        ),
+                        # unit_circle_clip=None,
+                        immediate_ema_decay=None,
+                    ),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer={
+                    "meta2_sgd1": OptimizerAssignment(
+                        target=frozenset({"meta1_adam1_lr"}),
+                        optimizer=SGDConfig(
+                            learning_rate="meta2_sgd1_lr",
+                            weight_decay="meta2_sgd1_wd",
+                            momentum="meta2_sgd1_momentum",
+                        ),
+                        add_clip=None,
+                    ),
+                },
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=True,
+                influence_tensor_norm=True,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+            # natural_gradient=NaturalGradientConfig(damping=1e-5),
+            natural_gradient=None,
+        ),
+        MetaConfig(
+            objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
+            dataset_source=MNISTTaskFamily(
+                patch_h=1,
+                patch_w=28,
+                label_last_only=True,
+                add_spurious_pixel_to_train=False,
+                pixel_transform="normalize",
+            ),
+            dataset=DatasetConfig(
+                num_examples_in_minibatch=5000,
+                num_examples_total=10_000,
+                is_test=True,
+                augment=False,
+                shuffle=True,
+            ),
+            validation=StepConfig(
+                num_steps=28,
+                batch=1,
+                reset_t=28,
+                track_influence_in=frozenset({2}),
+            ),
+            nested=StepConfig(
+                num_steps=10,
+                batch=1,
+                reset_t=None,
+                track_influence_in=frozenset({2}),
+            ),
+            learner=LearnConfig(
+                model_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer_learner=GradientConfig(
+                    method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
+                    add_clip=None,
+                    scale=1.0,
+                    hessian_mode="exact",
+                ),
+                optimizer={},
+            ),
+            track_logs=TrackLogs(
+                gradient=False,
+                hessian_contains_nans=False,
+                largest_eigenvalue=False,
+                influence_tensor_norm=False,
+                immediate_influence_tensor=False,
+                largest_jac_eigenvalue=False,
+                jacobian=False,
+            ),
+            test_seed=0,
+            collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -2189,14 +2877,10 @@ OHO_RNN32_ADAM = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_adam1": OptimizerAssignment(
@@ -2224,6 +2908,7 @@ OHO_RNN32_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2255,9 +2940,7 @@ OHO_RNN32_ADAM = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -2269,9 +2952,11 @@ OHO_RNN32_ADAM = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -2299,6 +2984,7 @@ OHO_RNN32_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2333,11 +3019,13 @@ OHO_RNN32_ADAM = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -2352,6 +3040,7 @@ OHO_RNN32_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -2536,14 +3225,10 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -2568,6 +3253,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2599,9 +3285,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -2613,9 +3297,11 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_adam1": OptimizerAssignment(
@@ -2643,6 +3329,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2677,11 +3364,13 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -2696,6 +3385,7 @@ OHO_RNN1_32_RNN2_32 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -2858,14 +3548,10 @@ OHO_RNN256_V2 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -2890,6 +3576,7 @@ OHO_RNN256_V2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2921,9 +3608,7 @@ OHO_RNN256_V2 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -2935,9 +3620,11 @@ OHO_RNN256_V2 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_adam1": OptimizerAssignment(
@@ -2965,6 +3652,7 @@ OHO_RNN256_V2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -2999,11 +3687,13 @@ OHO_RNN256_V2 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -3018,6 +3708,7 @@ OHO_RNN256_V2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -3180,14 +3871,10 @@ OHO_RNN256_V3 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -3212,6 +3899,7 @@ OHO_RNN256_V3 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -3243,9 +3931,7 @@ OHO_RNN256_V3 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -3257,9 +3943,11 @@ OHO_RNN256_V3 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -3287,6 +3975,7 @@ OHO_RNN256_V3 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -3321,11 +4010,13 @@ OHO_RNN256_V3 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -3340,6 +4031,7 @@ OHO_RNN256_V3 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -3500,14 +4192,10 @@ OHO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -3532,6 +4220,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -3561,9 +4250,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -3575,9 +4262,11 @@ OHO_RNN256_CIFAR10 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -3605,6 +4294,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -3637,11 +4327,13 @@ OHO_RNN256_CIFAR10 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -3656,6 +4348,7 @@ OHO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -3826,14 +4519,10 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -3858,6 +4547,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -3887,9 +4577,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RFLOConfig(
@@ -3903,10 +4591,12 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                             propagation_clip=None,
                             lr_edge_margin=None,
                             unit_circle_clip=None,
+                            immediate_ema_decay=None,
                         ),
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -3934,6 +4624,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -3966,11 +4657,13 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -3985,6 +4678,7 @@ OHO_RFLO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -4115,14 +4809,10 @@ RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -4147,6 +4837,7 @@ RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4179,11 +4870,13 @@ RNN256_CIFAR10 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -4198,6 +4891,7 @@ RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4230,11 +4924,13 @@ RNN256_CIFAR10 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -4249,6 +4945,7 @@ RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -4404,14 +5101,10 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -4436,6 +5129,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4465,9 +5159,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -4479,9 +5171,11 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -4509,6 +5203,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4541,11 +5236,13 @@ OHO_LSTM128_CIFAR10 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -4560,6 +5257,7 @@ OHO_LSTM128_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -4715,14 +5413,10 @@ OHO_GRU128_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -4747,6 +5441,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4776,9 +5471,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -4790,9 +5483,11 @@ OHO_GRU128_CIFAR10 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -4820,6 +5515,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -4852,11 +5548,13 @@ OHO_GRU128_CIFAR10 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -4871,6 +5569,7 @@ OHO_GRU128_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -5021,15 +5720,9 @@ VAE_BETA_OHO = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -5054,6 +5747,7 @@ VAE_BETA_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -5089,11 +5783,7 @@ VAE_BETA_OHO = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
@@ -5104,9 +5794,11 @@ VAE_BETA_OHO = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -5137,6 +5829,7 @@ VAE_BETA_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -5176,11 +5869,13 @@ VAE_BETA_OHO = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -5195,6 +5890,7 @@ VAE_BETA_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -5442,15 +6138,9 @@ SOS_BETA_OHO = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -5475,6 +6165,7 @@ SOS_BETA_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -5514,11 +6205,7 @@ SOS_BETA_OHO = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
@@ -5529,9 +6216,11 @@ SOS_BETA_OHO = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -5559,6 +6248,7 @@ SOS_BETA_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -5602,11 +6292,13 @@ SOS_BETA_OHO = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -5621,6 +6313,7 @@ SOS_BETA_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -5923,11 +6616,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
             ),
             learner=dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[0].learner,
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer={
                     "meta1_sgd1_enc": OptimizerAssignment(
                         target=frozenset(VAE_3CONV_WIDE["encoder"]["learnable"]),
@@ -5968,6 +6657,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
                     method=BPTTConfig(None),
                     add_clip=HardClipElementwise(threshold=1.0),
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -5979,9 +6669,11 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -6027,6 +6719,7 @@ SOS_BETA_OHO_WIDE_SPLIT = dataclasses.replace(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=HardClipElementwise(threshold=1.0),
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
             ),
         ),
@@ -6112,11 +6805,7 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
             ),
             learner=dataclasses.replace(
                 SOS_BETA_OHO_WIDE.levels[0].learner,
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer={
                     "meta1_sgd1": dataclasses.replace(
                         SOS_BETA_OHO_WIDE.levels[0].learner.optimizer["meta1_sgd1"],
@@ -6156,6 +6845,7 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                         eps_root=1e-8,
                     ),
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -6167,9 +6857,11 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -6211,6 +6903,7 @@ SOS_BETA_OHO_LOWCAP_DEC = dataclasses.replace(
                         eps_root=1e-8,
                     ),
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
             ),
         ),
@@ -6231,6 +6924,7 @@ SOS_BETA_OHO_LOWCAP_DEC_NOOHO = dataclasses.replace(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -6383,15 +7077,9 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -6416,6 +7104,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -6455,11 +7144,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
@@ -6470,9 +7155,11 @@ SOS_BETA_OHO_2CONV = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -6500,6 +7187,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -6543,11 +7231,13 @@ SOS_BETA_OHO_2CONV = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -6562,6 +7252,7 @@ SOS_BETA_OHO_2CONV = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -6870,15 +7561,9 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 track_influence_in=frozenset({0, 1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -6915,6 +7600,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -6950,11 +7636,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
@@ -6965,6 +7647,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     # method=RTRLConfig(
                     #     start_at_step=0,
@@ -6974,6 +7657,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
                     # ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -7001,6 +7685,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -7040,11 +7725,13 @@ VAE_BETA_OHO_ADAM = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -7059,6 +7746,7 @@ VAE_BETA_OHO_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -7285,15 +7973,9 @@ VAE_LR_OHO = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_enc": OptimizerAssignment(
@@ -7339,6 +8021,7 @@ VAE_LR_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -7374,11 +8057,7 @@ VAE_LR_OHO = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
@@ -7389,9 +8068,11 @@ VAE_LR_OHO = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -7419,6 +8100,7 @@ VAE_LR_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -7458,11 +8140,13 @@ VAE_LR_OHO = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -7477,6 +8161,7 @@ VAE_LR_OHO = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -7657,14 +8342,10 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -7689,6 +8370,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -7718,9 +8400,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -7732,9 +8412,11 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_adam1": OptimizerAssignment(
@@ -7762,6 +8444,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -7794,11 +8477,13 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -7813,6 +8498,7 @@ OHO_RNN256_CIFAR10_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -7963,15 +8649,9 @@ VAE_BASELINE = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -7996,6 +8676,7 @@ VAE_BASELINE = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -8031,15 +8712,12 @@ VAE_BASELINE = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -8054,6 +8732,7 @@ VAE_BASELINE = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -8093,11 +8772,13 @@ VAE_BASELINE = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -8112,6 +8793,7 @@ VAE_BASELINE = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -8355,15 +9037,9 @@ VAE_BASELINE_ADAM = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -8391,6 +9067,7 @@ VAE_BASELINE_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -8426,15 +9103,12 @@ VAE_BASELINE_ADAM = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -8449,6 +9123,7 @@ VAE_BASELINE_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -8488,11 +9163,13 @@ VAE_BASELINE_ADAM = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -8507,6 +9184,7 @@ VAE_BASELINE_ADAM = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -8750,15 +9428,9 @@ VAE_BETA_OHO_V2 = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -8783,6 +9455,7 @@ VAE_BETA_OHO_V2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -8818,11 +9491,7 @@ VAE_BETA_OHO_V2 = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
                         start_at_step=0,
@@ -8833,9 +9502,11 @@ VAE_BETA_OHO_V2 = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=None,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -8863,6 +9534,7 @@ VAE_BETA_OHO_V2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -8902,11 +9574,13 @@ VAE_BETA_OHO_V2 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -8921,6 +9595,7 @@ VAE_BETA_OHO_V2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -9164,15 +9839,9 @@ VAE_BASELINE_MLP = GodConfig(
                 track_influence_in=frozenset({0}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -9200,6 +9869,7 @@ VAE_BASELINE_MLP = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -9235,15 +9905,12 @@ VAE_BASELINE_MLP = GodConfig(
                 track_influence_in=frozenset({1}),
             ),
             learner=LearnConfig(
-                model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=None,
-                    scale=1.0,
-                ),
+                model_learner=GradientConfig(method=BPTTConfig(None), add_clip=None, scale=1.0, hessian_mode="exact"),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -9258,6 +9925,7 @@ VAE_BASELINE_MLP = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=ELBOObjective(
@@ -9297,11 +9965,13 @@ VAE_BASELINE_MLP = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -9316,6 +9986,7 @@ VAE_BASELINE_MLP = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -9566,14 +10237,10 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -9598,6 +10265,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -9627,9 +10295,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=UOROConfig(
@@ -9644,10 +10310,12 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                             propagation_clip=None,
                             lr_edge_margin=None,
                             unit_circle_clip=None,
+                            immediate_ema_decay=None,
                         ),
                     ),
                     add_clip=None,
                     scale=1 / 10.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -9675,6 +10343,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -9707,11 +10376,13 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -9726,6 +10397,7 @@ OHO_UORO_RNN256_CIFAR10 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -9888,14 +10560,10 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -9920,6 +10588,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -9951,9 +10620,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=UOROConfig(
@@ -9968,10 +10635,12 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                             propagation_clip=None,
                             lr_edge_margin=None,
                             unit_circle_clip=None,
+                            immediate_ema_decay=None,
                         ),
                     ),
                     add_clip=None,
                     scale=1 / 50.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_adam1": OptimizerAssignment(
@@ -9999,6 +10668,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -10033,11 +10703,13 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -10052,6 +10724,7 @@ OHO_UORO_FD_RNN32_SMNIST = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -10212,14 +10885,10 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -10244,6 +10913,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -10273,9 +10943,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=UOROConfig(
@@ -10290,10 +10958,12 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                             propagation_clip=None,
                             lr_edge_margin=None,
                             unit_circle_clip=None,
+                            immediate_ema_decay=None,
                         ),
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -10321,6 +10991,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -10353,11 +11024,13 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -10372,6 +11045,7 @@ OHO_UORO_RNN256_CIFAR10_BATCH2 = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[],
@@ -10535,14 +11209,10 @@ OHO_RNN32_TEST = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
-                    method=ImmediateLearnerConfig(),
-                    add_clip=None,
-                    scale=1.0,
+                    method=ImmediateLearnerConfig(), add_clip=None, scale=1.0, hessian_mode="exact"
                 ),
                 optimizer={
                     "meta1_sgd1": OptimizerAssignment(
@@ -10567,6 +11237,7 @@ OHO_RNN32_TEST = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -10598,9 +11269,7 @@ OHO_RNN32_TEST = GodConfig(
             ),
             learner=LearnConfig(
                 model_learner=GradientConfig(
-                    method=BPTTConfig(None),
-                    add_clip=HardClip(1.0),
-                    scale=1.0,
+                    method=BPTTConfig(None), add_clip=HardClip(1.0), scale=1.0, hessian_mode="exact"
                 ),
                 optimizer_learner=GradientConfig(
                     method=RTRLConfig(
@@ -10612,9 +11281,11 @@ OHO_RNN32_TEST = GodConfig(
                         propagation_clip=None,
                         lr_edge_margin=None,
                         unit_circle_clip=None,
+                        immediate_ema_decay=0.9,
                     ),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={
                     "meta2_sgd1": OptimizerAssignment(
@@ -10642,6 +11313,7 @@ OHO_RNN32_TEST = GodConfig(
             ),
             test_seed=0,
             collect_predictions=False,
+            natural_gradient=None,
         ),
         MetaConfig(
             objective_fn=CrossEntropyObjective(mode="cross_entropy_with_integer_labels"),
@@ -10676,11 +11348,13 @@ OHO_RNN32_TEST = GodConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer_learner=GradientConfig(
                     method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)),
                     add_clip=None,
                     scale=1.0,
+                    hessian_mode="exact",
                 ),
                 optimizer={},
             ),
@@ -10695,6 +11369,7 @@ OHO_RNN32_TEST = GodConfig(
             ),
             test_seed=0,
             collect_predictions=True,
+            natural_gradient=None,
         ),
     ],
     sample_generators=[
@@ -10730,6 +11405,8 @@ OHO_RNN32_TEST = GodConfig(
 if __name__ == "__main__":
     for name, config in [
         ("OHO_RNN32_EDGE_BOUND", OHO_RNN32_EDGE_BOUND),
+        ("OHO_LSTM32_EDGE_BOUND", OHO_LSTM32_EDGE_BOUND),
+        ("OHO_RNN32_EDGE_BOUND_ADAM", OHO_RNN32_EDGE_BOUND_ADAM),
     ]:
         upload_config(name, config)
 

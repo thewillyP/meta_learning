@@ -249,6 +249,7 @@ class SpectralClip(eqx.Module):
     margin: jax.Array
     num_matvecs: int
     residual_tol: jax.Array
+    ends: Literal["both", "negative"]
 
 
 class RTRLConfig(eqx.Module):
@@ -729,6 +730,8 @@ class TrackLogs:
     immediate_influence_tensor: bool
     largest_jac_eigenvalue: bool
     jacobian: bool
+    parameter_norm: bool
+    spectral_clip: bool
 
 
 @dataclass(frozen=True)

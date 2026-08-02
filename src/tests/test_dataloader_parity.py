@@ -159,8 +159,7 @@ def _build_synthetic_config() -> tuple[GodConfig, list[list[PrematerializedTask]
         influence_tensor_norm=False,
         immediate_influence_tensor=False,
         largest_jac_eigenvalue=False,
-        jacobian=False,
-    )
+        jacobian=False, parameter_norm=False, spectral_clip=False)
     id_grad = GradientConfig(
         method=IdentityLearnerConfig(bptt_config=BPTTConfig(None)), add_clip=None, scale=1.0, hessian_mode="exact"
     )

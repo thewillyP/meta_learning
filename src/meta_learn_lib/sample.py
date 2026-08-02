@@ -59,8 +59,7 @@ def make_sample_config(config: GodConfig, sg: SampleGeneratorConfig) -> GodConfi
         influence_tensor_norm=False,
         immediate_influence_tensor=False,
         largest_jac_eigenvalue=False,
-        jacobian=False,
-    )
+        jacobian=False, parameter_norm=False, spectral_clip=False)
 
     new_levels = []
     for level_idx, level in enumerate(config.levels):

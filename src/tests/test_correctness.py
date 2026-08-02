@@ -219,8 +219,7 @@ def make_single_level_config(method: GradientMethod, model_clip: Optional[Clip] 
                     influence_tensor_norm=False,
                     immediate_influence_tensor=False,
                     largest_jac_eigenvalue=False,
-                    jacobian=False,
-                ),
+                    jacobian=False, parameter_norm=False, spectral_clip=False),
                 test_seed=0,
                 collect_predictions=False,
                 natural_gradient=None,
@@ -295,8 +294,7 @@ def make_two_level_config(
                 influence_tensor_norm=False,
                 immediate_influence_tensor=False,
                 largest_jac_eigenvalue=False,
-                jacobian=False,
-            ),
+                jacobian=False, parameter_norm=False, spectral_clip=False),
             test_seed=0,
             collect_predictions=False,
             natural_gradient=None,
@@ -1457,7 +1455,7 @@ def test_spectral_clip_matches_dense_reference():
     evals = evals.at[0].set(-2.5).at[-1].set(3.1).at[-2].set(1.8)
     a = evecs @ jnp.diag(evals) @ evecs.T
 
-    clip = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3))
+    clip = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3), ends="both")
     gamma = jax.random.normal(k2, (n, 3))
     corrected, diag = spectral_clip_jmp(clip, lambda v: a @ v, gamma, a @ gamma, jax.random.key(3))
 
@@ -1474,6 +1472,15 @@ def test_spectral_clip_matches_dense_reference():
     assert jnp.all(diag["spectral_k"] == 3.0), f"Expected 3 explosive modes, got {diag['spectral_k'].ravel()}"
     assert jnp.allclose(diag["spectral_top_ritz"], 3.1, atol=1e-8), "Top ritz value wrong"
     assert healthy < 1e-8, f"Spectral clip disturbed healthy modes: {healthy:.2e}"
+
+    clip_neg = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3), ends="negative")
+    corrected_neg, diag_neg = spectral_clip_jmp(clip_neg, lambda v: a @ v, gamma, a @ gamma, jax.random.key(3))
+    exact_neg = (evecs @ jnp.diag(jnp.where(evals < -1.0, -1.0, evals)) @ evecs.T) @ gamma
+    rel_err_neg = jnp.linalg.norm(corrected_neg - exact_neg) / jnp.linalg.norm(exact_neg)
+    print(f"  One-ended (negative) rel err vs dense: {rel_err_neg:.2e}")
+    print(f"  One-ended modes clipped: {diag_neg['spectral_k'].ravel()}")
+    assert rel_err_neg < 1e-10, f"One-ended clip diverges from dense reference: {rel_err_neg:.2e}"
+    assert jnp.all(diag_neg["spectral_k"] == 1.0), f"Expected 1 negative explosive mode, got {diag_neg['spectral_k'].ravel()}"
 
 
 # ============================================================================
@@ -1500,8 +1507,8 @@ def test_spectral_clip_pipeline_inactive_is_identity():
             immediate_ema_decay=None,
         )
 
-    inactive = SpectralClip(margin=jnp.array(1e6), num_matvecs=30, residual_tol=jnp.array(1e-3))
-    active = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3))
+    inactive = SpectralClip(margin=jnp.array(1e6), num_matvecs=30, residual_tol=jnp.array(1e-3), ends="both")
+    active = SpectralClip(margin=jnp.array(1.0), num_matvecs=30, residual_tol=jnp.array(1e-3), ends="both")
 
     norm_none, hp_init_none, hp_after_none = run_two_level_meta(
         make_two_level_config(rtrl_with(None), rtrl_with(None), META_INNER_STEPS)

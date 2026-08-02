@@ -96,7 +96,7 @@ def make_eval_config(config: GodConfig) -> GodConfig:
             model_learner=identity_grad,
             optimizer_learner=identity_grad,
         )
-        new_level = dataclasses.replace(level, learner=new_learner)
+        new_level = dataclasses.replace(level, learner=new_learner, natural_gradient=None)
         if i == len(config.levels) - 1:
             new_level = dataclasses.replace(
                 new_level,

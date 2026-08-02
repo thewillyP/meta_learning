@@ -101,6 +101,16 @@ def influence_column_cosine_stats(
     return stat
 
 
+def parameter_norm_stats(param: jax.Array, layout: list[tuple[str, int]], prefix: str) -> STAT:
+    stat: STAT = {}
+    start = 0
+    for name, size in layout:
+        block = param[start : start + size]
+        stat[f"{prefix}/parameter_norm/{name}"] = scalar(jax.lax.stop_gradient(jnp.linalg.norm(block)))
+        start += size
+    return stat
+
+
 def influence_column_value_stats(
     values: jax.Array,
     layout: list[tuple[str, int]],
@@ -161,7 +171,11 @@ def spectral_clip_jmp(
     seed = jnp.where(jnp.linalg.norm(seed) > 1e-30, seed, fallback)
     theta, ritz_vectors, residuals = lanczos_ritz_pairs(matvec, seed, num_matvecs)
     converged = residuals < clip.residual_tol * jnp.maximum(jnp.abs(theta), 1e-30)
-    explosive = jnp.abs(theta) > clip.margin
+    match clip.ends:
+        case "both":
+            explosive = jnp.abs(theta) > clip.margin
+        case "negative":
+            explosive = theta < -clip.margin
     mask = converged & explosive
     excess = jnp.where(mask, theta - jnp.sign(theta) * clip.margin, 0.0)
     proj = ritz_vectors.T @ working
@@ -344,6 +358,8 @@ def rtrl_like[ENV, TR_DATA, VL_DATA](
             trans_stat = trans_stat | influence_column_cosine_stats(
                 new_influence_tensor, influence_tensor, layout, args.log_prefix
             )
+        if args.track_logs.spectral_clip:
+            layout = args.learn_interface.param_layout(new_env)
             for diag_name, diag_values in clip_diag.items():
                 trans_stat = trans_stat | influence_column_value_stats(diag_values, layout, args.log_prefix, diag_name)
         new_env = args.learn_interface.merge_logs(new_env, log_fragment)
@@ -799,7 +815,11 @@ def implicit_euler_rtrl[ENV, TR_DATA, VL_DATA](
                     )
                     phi = 1.0 / (2.0 + mu - theta)
                     converged = residuals < clip.residual_tol * jnp.maximum(jnp.abs(theta), 1e-30)
-                    explosive = jnp.abs(phi) > clip.margin
+                    match clip.ends:
+                        case "both":
+                            explosive = jnp.abs(phi) > clip.margin
+                        case "negative":
+                            explosive = phi < -clip.margin
                     mask = converged & explosive
                     excess = jnp.where(mask, phi - jnp.sign(phi) * clip.margin, 0.0)
                     return p_col - ritz_vectors @ (excess * (ritz_vectors.T @ rhs_col))
@@ -1067,6 +1087,7 @@ def ggn_vector_product(f, l, theta, v, env, ds):
     z, Jv = eqx.filter_jvp(f_t, (theta,), (v,))
     grad_l = lambda zz: eqx.filter_grad(lambda o: l(o, env, ds))(zz)
     _, HlJv = eqx.filter_jvp(grad_l, (z,), (Jv,))
+    HlJv = eqx.combine(HlJv, jax.tree.map(lambda x: jnp.zeros_like(x) if eqx.is_inexact_array(x) else None, z))
     _, vjp_f = eqx.filter_vjp(f_t, theta)
     return vjp_f(HlJv)[0]
 
@@ -1519,6 +1540,10 @@ def create_meta_learner[ENV](
             lr_pre = {hp: interfaces[(hp, level)].learning_rate.get(env) for hp in lr_targets}
             gr_env = nest_interface.param.put(env, gradient)
             env = get_opt_step(assignments, interfaces, level, env, gr_env, config.hyperparameters)
+            if track_logs.parameter_norm:
+                stat = stat | parameter_norm_stats(
+                    nest_interface.param.get(env), nest_interface.param_layout(env), f"level{level}"
+                )
             for hp in lr_targets:
                 forward, invert = hyperparameter_reparametrization(
                     config.hyperparameters[hp].hyperparameter_parametrization

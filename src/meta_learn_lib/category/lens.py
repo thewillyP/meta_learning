@@ -3,13 +3,28 @@ from typing import Callable
 import jax
 from jaxtyping import PyTree
 
+from meta_learn_lib.category.lib_types import Proxy, Unit
+
 
 @dataclass(frozen=True)
 class Lens[X1, X2, Y1, Y2]:
-    # get: Callable[[X1], Y1]
-    # set: Callable[[X1, Y2], X2]
-    # run is the closure equivalent of get + set. Similar to jax.vjp concept
     run: Callable[[X1], tuple[Y1, Callable[[Y2], X2]]]
+
+    @property
+    def get(self) -> Callable[[X1], Y1]:
+        def _get(x: X1) -> Y1:
+            y, _ = self.run(x)
+            return y
+
+        return _get
+
+    @property
+    def set(self) -> Callable[[X1, Y2], X2]:
+        def _set(x: X1, y2: Y2) -> X2:
+            _, rev = self.run(x)
+            return rev(y2)
+
+        return _set
 
     def __rshift__[A1, A2, B1, B2, C1, C2](
         f: "Lens[A1, A2, B1, B2]",
@@ -38,14 +53,6 @@ class Lens[X1, X2, Y1, Y2]:
             return (b, d), rev
 
         return Lens(run)
-
-
-@dataclass(frozen=True)
-class Proxy[A]: ...
-
-
-@dataclass(frozen=True)
-class Unit: ...
 
 
 def identity[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, A1, A2]:

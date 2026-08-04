@@ -28,7 +28,7 @@ class ParaLens[X1, X2, Y1, Y2, Z1, Z2]:
 
 
 def to_paralens[A1, A2, B1, B2](f: Lens[A1, A2, B1, B2]) -> ParaLens[A1, A2, B1, B2, Unit, Unit]:
-    return ParaLens(snd_unit(Proxy[tuple[A1, A2]]()) >> f)
+    return ParaLens(snd(Proxy[tuple[Unit, Unit, A1, A2]]()) >> f)
 
 
 def batch_with_axes[P1, P2, A1, A2, B1, B2, Q1, Q2](

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from typing import Callable
 import jax
+import jax.numpy as jnp
 from jaxtyping import PyTree
+from functools import reduce
 
 from meta_learn_lib.category.lib_types import Proxy, Unit
 
@@ -130,9 +132,37 @@ def autodiff[A: PyTree, B: PyTree](f: Callable[[A], B]) -> Lens[A, A, B, B]:
     return Lens(run)
 
 
-def snd_unit[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[tuple[Unit, A1], tuple[Unit, A2], A1, A2]:
-    def run(za: tuple[Unit, A1]) -> tuple[A1, Callable[[A2], tuple[Unit, A2]]]:
-        _, a = za
-        return a, lambda a2: (Unit(), a2)
+def snd[Z1, Z2, A1, A2](
+    _: Proxy[tuple[Z1, Z2, A1, A2]],
+) -> Lens[tuple[Z1, A1], tuple[Z2, A2], A1, A2]:
+
+    def zero_tangent_like(value: jax.Array) -> jax.Array:
+        return (
+            jnp.zeros_like(value)
+            if jnp.issubdtype(value.dtype, jnp.inexact)
+            else jnp.zeros_like(value, dtype=jax.dtypes.float0)
+        )
+
+    def run(za: tuple[Z1, A1]) -> tuple[A1, Callable[[A2], tuple[Z2, A2]]]:
+        z, a = za
+        return a, lambda a2: (jax.tree.map(zero_tangent_like, z), a2)
+
+    return Lens(run)
+
+
+def copy[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, tuple[A1, A1], tuple[A2, A2]]:
+    def run(a: A1) -> tuple[tuple[A1, A1], Callable[[tuple[A2, A2]], A2]]:
+        def rev(d: tuple[A2, A2]) -> A2:
+            d1, d2 = d
+            return jax.tree.map(jnp.add, d1, d2)
+
+        return (a, a), rev
+
+    return Lens(run)
+
+
+def diagonal[A1, A2](_: Proxy[tuple[A1, A2]], n: int) -> Lens[A1, A2, list[A1], list[A2]]:
+    def run(a: A1) -> tuple[list[A1], Callable[[list[A2]], A2]]:
+        return [a] * n, lambda ds: reduce(lambda u, v: jax.tree.map(jnp.add, u, v), ds)
 
     return Lens(run)

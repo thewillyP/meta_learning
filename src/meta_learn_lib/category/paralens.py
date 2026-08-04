@@ -59,9 +59,8 @@ def batch_with_axes[P1, P2, A1, A2, B1, B2](
                     match dys:
                         case Batched(value=d):
                             d_ax = 0
-                        case _:
+                        case _ as d:
                             # one cotangent for the whole batch: in_axes=None broadcasts it
-                            d = dys
                             d_ax = None
                     dp, dx = jax.vmap(f.arrow.set, in_axes=((axes, 0), d_ax))((p, inner), d)
                     return from_p(Batched(dp)), Batched(dx)

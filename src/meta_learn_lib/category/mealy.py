@@ -46,9 +46,60 @@ class Mealy[A1, A2, B1, B2, C1, C2, D1, D2]:
         return Mealy(widenL >> widenR)
 
 
-def mealy[A, B, C, D](f: Callable[[D, A, B], tuple[A, C]]) -> Mealy[A, A, B, B, C, C, D, D]:
-    """Lift a plain Mealy step (parameter, state, input) -> (state, output)."""
-    arrow: Lens[tuple[D, tuple[A, B]], tuple[D, tuple[A, B]], tuple[A, C], tuple[A, C]] = autodiff(
-        lambda p_ab: f(p_ab[0], p_ab[1][0], p_ab[1][1])
-    )
-    return Mealy(ParaLens(arrow))
+def scan_bptt[S: PyTree, X: PyTree, Y: PyTree, Z: PyTree](
+    cell: Mealy[S, S, Axes[X], Axes[X], Axes[Y], Axes[Y], Z, Z],
+) -> Mealy[S, S, Axes[X], Axes[X], Axes[Y], Axes[Y], Z, Z]:
+
+    def _lift[A](x: A) -> A:
+        return jax.tree.map(lambda t: t[None], x)
+
+    def _drop[A](x: A) -> A:
+        return jax.tree.map(lambda t: t[0], x)
+
+    def wrapper[A, B](a: Axes[A], _: Proxy[B]) -> tuple[Axes[A], Callable[[Axes[B]], Axes[B]]]:
+        match a:
+            case Seq(value=inner):
+                return inner, Seq
+            case _ as bare:
+                return _lift(bare), _drop
+
+    get = cell.arrow.arrow.get
+    put = cell.arrow.arrow.set
+
+    def f_fwd(z: Z, s_xs: tuple[S, Axes[X]]) -> tuple[tuple[S, Axes[Y]], tuple[Z, Seq[S], Seq[Axes[X]]]]:
+        """Forward pass AND tape.  A bare input is scanned as a length-1 sequence."""
+        s, xs = s_xs
+        inner, rewrap = wrapper(xs, Proxy[Y]())
+
+        def step(st: S, x: Axes[X]) -> tuple[S, tuple[S, Axes[Y]]]:
+            st_next, y = get((z, (st, x)))
+            return st_next, (st, y)  # emit each step's INPUT state
+
+        s_final, (states, ys) = jax.lax.scan(step, s, inner)
+        return (s_final, rewrap(ys)), (z, Seq(states), Seq(inner))
+
+    @jax.custom_vjp
+    def f(z: Z, s_xs: tuple[S, Axes[X]]) -> tuple[S, Axes[Y]]:
+        return f_fwd(z, s_xs)[0]
+
+    def f_bwd(res: tuple[Z, Seq[S], Seq[Axes[X]]], ct: tuple[S, Axes[Y]]) -> tuple[Z, tuple[S, Axes[X]]]:
+        z, tape, taped_xs = res
+        d_s_final, d_ys = ct
+        d_inner, rewrap = wrapper(d_ys, Proxy[X]())
+
+        def step(carry: tuple[S, Z], inp: tuple[S, Axes[X], Axes[Y]]) -> tuple[tuple[S, Z], Axes[X]]:
+            d_s, d_z_acc = carry
+            st, x, d_y = inp
+            d_z, (d_st, d_x) = put((z, (st, x)), (d_s, d_y))
+            return (d_st, jax.tree.map(jnp.add, d_z_acc, d_z)), d_x
+
+        (d_s0, d_z), d_xs = jax.lax.scan(
+            step,
+            (d_s_final, jax.tree.map(jnp.zeros_like, z)),
+            (tape.value, taped_xs.value, d_inner),
+            reverse=True,
+        )
+        return d_z, (d_s0, rewrap(d_xs))
+
+    f.defvjp(f_fwd, f_bwd)
+    return Mealy(para_autodiff(f))

@@ -31,6 +31,14 @@ def to_paralens[A1, A2, B1, B2](f: Lens[A1, A2, B1, B2]) -> ParaLens[A1, A2, B1,
     return ParaLens(snd(Proxy[tuple[Unit, Unit, A1, A2]]()) >> f)
 
 
+def para_autodiff[P, X, Y](f: Callable[[P, X], Y]) -> ParaLens[X, X, Y, Y, P, P]:
+    def uncurried(zx: tuple[P, X]) -> Y:
+        z, x = zx
+        return f(z, x)
+
+    return ParaLens(autodiff(uncurried))
+
+
 def batch_with_axes[P1, P2, A1, A2, B1, B2, Q1, Q2](
     f: ParaLens[A1, A2, B1, B2, P1, P2],
     to_p: Callable[[Q1], P1],

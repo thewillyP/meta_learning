@@ -1,6 +1,11 @@
-from dataclasses import dataclass
 from meta_learn_lib.category.lens import *
 from meta_learn_lib.category.paralens import *
+from meta_learn_lib.lib_types import JACOBIAN
+
+from dataclasses import dataclass
+from typing import Literal
+import jax.flatten_util
+import jax.numpy as jnp
 
 
 @dataclass(frozen=True)
@@ -46,9 +51,9 @@ class Mealy[A1, A2, B1, B2, C1, C2, D1, D2]:
         return Mealy(widenL >> widenR)
 
 
-def scan_bptt[S: PyTree, X: PyTree, Y: PyTree, Z: PyTree](
-    cell: Mealy[S, S, Axes[X], Axes[X], Axes[Y], Axes[Y], Z, Z],
-) -> Mealy[S, S, Axes[X], Axes[X], Axes[Y], Axes[Y], Z, Z]:
+def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
+    cell: Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z1, Z2],
+) -> Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z1, Z2]:
 
     def _lift[A](x: A) -> A:
         return jax.tree.map(lambda t: t[None], x)
@@ -63,34 +68,31 @@ def scan_bptt[S: PyTree, X: PyTree, Y: PyTree, Z: PyTree](
             case _ as bare:
                 return _lift(bare), _drop
 
-    get = cell.arrow.arrow.get
-    put = cell.arrow.arrow.set
-
-    def f_fwd(z: Z, s_xs: tuple[S, Axes[X]]) -> tuple[tuple[S, Axes[Y]], tuple[Z, Seq[S], Seq[Axes[X]]]]:
+    def f_fwd(z: Z1, s_xs: tuple[S1, Axes[X1]]) -> tuple[tuple[S1, Axes[Y1]], tuple[Z1, Seq[S1], Seq[Axes[X1]]]]:
         """Forward pass AND tape.  A bare input is scanned as a length-1 sequence."""
         s, xs = s_xs
-        inner, rewrap = wrapper(xs, Proxy[Y]())
+        inner, rewrap = wrapper(xs, Proxy[Y1]())
 
-        def step(st: S, x: Axes[X]) -> tuple[S, tuple[S, Axes[Y]]]:
-            st_next, y = get((z, (st, x)))
+        def step(st: S1, x: Axes[X1]) -> tuple[S1, tuple[S1, Axes[Y1]]]:
+            st_next, y = cell.arrow.arrow.get((z, (st, x)))
             return st_next, (st, y)  # emit each step's INPUT state
 
         s_final, (states, ys) = jax.lax.scan(step, s, inner)
         return (s_final, rewrap(ys)), (z, Seq(states), Seq(inner))
 
     @jax.custom_vjp
-    def f(z: Z, s_xs: tuple[S, Axes[X]]) -> tuple[S, Axes[Y]]:
+    def f(z: Z1, s_xs: tuple[S1, Axes[X1]]) -> tuple[S1, Axes[Y1]]:
         return f_fwd(z, s_xs)[0]
 
-    def f_bwd(res: tuple[Z, Seq[S], Seq[Axes[X]]], ct: tuple[S, Axes[Y]]) -> tuple[Z, tuple[S, Axes[X]]]:
+    def f_bwd(res: tuple[Z1, Seq[S1], Seq[Axes[X1]]], ct: tuple[S2, Axes[Y2]]) -> tuple[Z2, tuple[S2, Axes[X2]]]:
         z, tape, taped_xs = res
         d_s_final, d_ys = ct
-        d_inner, rewrap = wrapper(d_ys, Proxy[X]())
+        d_inner, rewrap = wrapper(d_ys, Proxy[X2]())
 
-        def step(carry: tuple[S, Z], inp: tuple[S, Axes[X], Axes[Y]]) -> tuple[tuple[S, Z], Axes[X]]:
+        def step(carry: tuple[S2, Z2], inp: tuple[S1, Axes[X1], Axes[Y2]]) -> tuple[tuple[S2, Z2], Axes[X2]]:
             d_s, d_z_acc = carry
             st, x, d_y = inp
-            d_z, (d_st, d_x) = put((z, (st, x)), (d_s, d_y))
+            d_z, (d_st, d_x) = cell.arrow.arrow.set((z, (st, x)), (d_s, d_y))
             return (d_st, jax.tree.map(jnp.add, d_z_acc, d_z)), d_x
 
         (d_s0, d_z), d_xs = jax.lax.scan(
@@ -103,6 +105,58 @@ def scan_bptt[S: PyTree, X: PyTree, Y: PyTree, Z: PyTree](
 
     f.defvjp(f_fwd, f_bwd)
     return Mealy(para_autodiff(f))
+
+
+def rtrl[H1, H2, X1, X2, Y1, Y2, Z1, Z2](
+    machine: Mealy[H1, H2, X1, X2, Y1, Y2, Z1, Z2],
+) -> Mealy[tuple[H1, JACOBIAN], tuple[H2, JACOBIAN], X1, X2, Y1, Y2, Z1, Z2]:
+
+    def run(
+        p_sx: tuple[Z1, tuple[tuple[H1, JACOBIAN], X1]],
+    ) -> tuple[
+        tuple[tuple[H1, JACOBIAN], Y1],
+        Callable[[tuple[tuple[H2, JACOBIAN], Y2]], tuple[Z2, tuple[tuple[H2, JACOBIAN], X2]]],
+    ]:
+        z, ((h0, M0), x) = p_sx
+        flat_h, unflat_h = jax.flatten_util.ravel_pytree(h0)
+        flat_z, unflat_z = jax.flatten_util.ravel_pytree(z)
+        (h1, y), put = machine.arrow.arrow.run((z, (h0, x)))
+        ignore_y = jax.tree.map(jnp.zeros_like, y)
+        ignore_x = jax.tree.map(jnp.zeros_like, x)
+        ignore_z = jax.tree.map(jnp.zeros_like, z)
+        jvp = jax.linear_transpose(put, (h0, y))  # v -> A v, still through `put`
+
+        def push(d_z: Z1, d_h: jax.Array) -> jax.Array:
+            ((d_h_next, _),) = jvp((d_z, (unflat_h(d_h), ignore_x)))
+            d_h_next_flat, _ = jax.flatten_util.ravel_pytree(d_h_next)
+            return d_h_next_flat
+
+        def row(e: jax.Array) -> jax.Array:
+            dz, _ = put((unflat_h(e), ignore_y))  # dy'=0 -> dz is a row of J_z
+            dz_flat, _ = jax.flatten_util.ravel_pytree(dz)
+            return dz_flat
+
+        if flat_h.size > flat_z.size:
+            M1 = jax.vmap(lambda e, col: push(unflat_z(e), col), in_axes=(0, 1), out_axes=1)(jnp.eye(flat_z.size), M0)
+        else:
+            J_z = jax.vmap(row)(jnp.eye(flat_h.size))
+            jmp_M0 = jax.vmap(lambda col: push(ignore_z, col), in_axes=1, out_axes=1)(M0)
+            M1 = jmp_M0 + J_z
+
+        def rev(
+            ct: tuple[tuple[H2, JACOBIAN], Y2],
+        ) -> tuple[Z2, tuple[tuple[H2, JACOBIAN], X2]]:
+            (d_h_final, _), d_y = ct
+            d_z_inner, (d_h0, d_x) = put((d_h_final, d_y))
+            d_h0_flat, _ = jax.flatten_util.ravel_pytree(d_h0)
+            boundary = unflat_z(d_h0_flat @ M0)
+            d_z = jax.tree.map(jnp.add, d_z_inner, boundary)
+            zero_state = jax.tree.map(jnp.zeros_like, (d_h0, M0))
+            return d_z, (zero_state, d_x)
+
+        return ((h1, JACOBIAN(M1)), y), rev
+
+    return Mealy(ParaLens(Lens(run)))
 
 
 def unbatch[Z](x: Axes[Z]) -> tuple[Axes[Z], Literal[0] | None]:

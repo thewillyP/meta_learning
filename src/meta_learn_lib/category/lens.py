@@ -6,6 +6,7 @@ from jaxtyping import PyTree
 from functools import reduce
 
 from meta_learn_lib.category.lib_types import Proxy, Unit
+from meta_learn_lib.utility.util import zero_tangent_like
 
 
 @dataclass(frozen=True)
@@ -135,13 +136,6 @@ def autodiff[A: PyTree, B: PyTree](f: Callable[[A], B]) -> Lens[A, A, B, B]:
 def snd[Z1, Z2, A1, A2](
     _: Proxy[tuple[Z1, Z2, A1, A2]],
 ) -> Lens[tuple[Z1, A1], tuple[Z2, A2], A1, A2]:
-
-    def zero_tangent_like(value: jax.Array) -> jax.Array:
-        return (
-            jnp.zeros_like(value)
-            if jnp.issubdtype(value.dtype, jnp.inexact)
-            else jnp.zeros_like(value, dtype=jax.dtypes.float0)
-        )
 
     def run(za: tuple[Z1, A1]) -> tuple[A1, Callable[[A2], tuple[Z2, A2]]]:
         z, a = za

@@ -125,7 +125,7 @@ def uoro[H1, H2, X1, X2, Y1, Y2, Z1, Z2](
 
 def rflo[H1, H2, X1, X2, Y1, Y2, Z1, Z2](
     machine: Mealy[H1, H2, X1, X2, Y1, Y2, Z1, Z2],
-    alpha: float | jax.Array,
+    alpha: jax.Array,
 ) -> Mealy[tuple[H1, JACOBIAN], tuple[H2, JACOBIAN], X1, X2, Y1, Y2, Z1, Z2]:
 
     def update_influence(

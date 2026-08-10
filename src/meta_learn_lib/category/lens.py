@@ -150,6 +150,14 @@ def snd[Z1, Z2, A1, A2](
     return Lens(run)
 
 
+def unit_intro[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, tuple[Unit, A1], tuple[Unit, A2]]:
+    def rev(ua: tuple[Unit, A2]) -> A2:
+        _, a2 = ua
+        return a2
+
+    return Lens(lambda a: ((Unit(), a), rev))
+
+
 def copy[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, tuple[A1, A1], tuple[A2, A2]]:
     def run(a: A1) -> tuple[tuple[A1, A1], Callable[[tuple[A2, A2]], A2]]:
         def rev(d: tuple[A2, A2]) -> A2:

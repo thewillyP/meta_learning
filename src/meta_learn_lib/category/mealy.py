@@ -45,3 +45,10 @@ class Mealy[A1, A2, B1, B2, C1, C2, D1, D2]:
         widenR = ParaLens(preR >> (identity(Proxy[tuple[S1, S2]]()) @ g.arrow.arrow) >> postR)
 
         return Mealy(widenL >> widenR)
+
+
+def to_mealy[X1, X2, Y1, Y2, P1, P2](
+    arrow: ParaLens[X1, X2, Y1, Y2, P1, P2],
+) -> Mealy[Unit, Unit, X1, X2, Y1, Y2, P1, P2]:
+    pre = identity(Proxy[tuple[P1, P2]]()) @ snd(Proxy[tuple[Unit, Unit, X1, X2]]())
+    return Mealy(ParaLens(pre >> arrow.arrow >> unit_intro(Proxy[tuple[Y1, Y2]]())))

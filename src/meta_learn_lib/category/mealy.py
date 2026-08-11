@@ -46,6 +46,18 @@ class Mealy[A1, A2, B1, B2, C1, C2, D1, D2]:
 
         return Mealy(widenL >> widenR)
 
+    def __matmul__[S1, S2, T1, T2, X1, X2, Y1, Y2, U1, U2, V1, V2, P1, P2, Q1, Q2](
+        f: "Mealy[S1, S2, X1, X2, Y1, Y2, P1, P2]",
+        g: "Mealy[T1, T2, U1, U2, V1, V2, Q1, Q2]",
+    ) -> "Mealy[tuple[S1, T1], tuple[S2, T2], tuple[X1, U1], tuple[X2, U2], tuple[Y1, V1], tuple[Y2, V2], tuple[P1, Q1], tuple[P2, Q2]]":
+        # ((S,T),(X,U)) -> ((S,X),(T,U))
+        pre = identity(Proxy[tuple[tuple[P1, Q1], tuple[P2, Q2]]]()) @ exchange(
+            Proxy[tuple[S1, S2, T1, T2, X1, X2, U1, U2]]()
+        )
+        # ((S,Y),(T,V)) -> ((S,T),(Y,V))
+        post = exchange(Proxy[tuple[S1, S2, Y1, Y2, T1, T2, V1, V2]]())
+        return Mealy(ParaLens(pre >> (f.arrow @ g.arrow).arrow >> post))
+
 
 def to_mealy[X1, X2, Y1, Y2, P1, P2](
     arrow: ParaLens[X1, X2, Y1, Y2, P1, P2],

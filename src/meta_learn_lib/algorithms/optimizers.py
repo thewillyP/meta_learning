@@ -1,6 +1,7 @@
 from meta_learn_lib.category.lens import *
 from meta_learn_lib.category.paralens import ParaLens
 from meta_learn_lib.category.mealy import Mealy
+from meta_learn_lib.utility.util import zero_cotangent_like
 
 import jax
 import jax.numpy as jnp
@@ -58,7 +59,7 @@ def optimizer[T, H](
             _, d_theta = ct
             updates, opt_st1 = make(hp).update(d_theta, opt_st, theta)
             theta1 = apply(theta, updates)
-            return jax.tree.map(jnp.zeros_like, hp), (opt_st1, theta1)
+            return zero_cotangent_like(hp), (opt_st1, theta1)
 
         return (opt_st, theta), rev
 

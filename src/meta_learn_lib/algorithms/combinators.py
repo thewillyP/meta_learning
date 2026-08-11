@@ -5,6 +5,7 @@ from meta_learn_lib.utility.util import zero_cotangent_like
 
 import equinox as eqx
 import jax.numpy as jnp
+import optax
 
 
 def scan[S, X, Y, Z](
@@ -157,3 +158,31 @@ def batch_pop[S1, S2, X1, X2, Y1, Y2, P1, P2](
     m: Mealy[Axes[S1], Axes[S2], Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Axes[P1], Axes[P2]],
 ) -> Mealy[Axes[S1], Axes[S2], Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Axes[P1], Axes[P2]]:
     return batch_with_axes(m, lambda p: unbatch(p)[0], lambda dps: dps, eqx.if_array(0))
+
+
+def learner[R, S, X, Y, Z: optax.Params, H](
+    machine: Mealy[S, S, X, X, Y, Y, tuple[R, Z], tuple[R, Z]],
+    opt: Mealy[optax.OptState, optax.OptState, Z, Z, Z, Z, H, H],
+    d_out: Callable[[Y], Y],
+) -> Mealy[
+    tuple[S, tuple[optax.OptState, Z]],
+    tuple[S, tuple[optax.OptState, Z]],
+    X,
+    X,
+    Y,
+    Y,
+    tuple[R, H],
+    tuple[R, H],
+]:
+    def step(
+        rh: tuple[R, H], sv: tuple[tuple[S, tuple[optax.OptState, Z]], X]
+    ) -> tuple[tuple[S, tuple[optax.OptState, Z]], Y]:
+        r, lam = rh
+        (s_m, (opt_st, theta)), x = sv
+        (s_m1, y), put = machine.arrow.arrow.run(((r, theta), (s_m, x)))
+        (_, d_theta), _ = put((zero_cotangent_like(s_m1), d_out(y)))
+        _, rev_o = opt.arrow.arrow.run((lam, (opt_st, theta)))
+        _, (opt_st1, theta1) = rev_o((opt_st, d_theta))
+        return ((s_m1, (opt_st1, theta1)), y)
+
+    return Mealy(para_autodiff(step))

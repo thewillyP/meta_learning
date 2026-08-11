@@ -19,6 +19,10 @@ def zero_tangent_like(value: jax.Array) -> jax.Array:
     )
 
 
+def zero_cotangent_like[T](tree: T) -> T:
+    return jax.tree.map(jnp.zeros_like, eqx.filter(tree, eqx.is_inexact_array))
+
+
 def add_cotangents[T](a: T, b: T) -> T:
     return eqx.combine(
         jax.tree.map(

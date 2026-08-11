@@ -3,7 +3,10 @@ from meta_learn_lib.category.paralens import *
 from meta_learn_lib.category.mealy import Mealy
 
 from typing import Literal
+import equinox as eqx
 import jax.numpy as jnp
+
+from meta_learn_lib.utility.util import zero_cotangent_like
 
 
 def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
@@ -23,9 +26,9 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
             case _ as bare:
                 return _lift(bare), _drop
 
-    def f_fwd(z: Z1, s_xs: tuple[S1, Axes[X1]]) -> tuple[tuple[S1, Axes[Y1]], tuple[Z1, Seq[S1], Seq[Axes[X1]]]]:
+    def forward(z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]]) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
         """Forward pass AND tape.  A bare input is scanned as a length-1 sequence."""
-        s, xs = s_xs
+        z, (s, xs) = z_s_xs
         inner, rewrap = wrapper(xs, Proxy[Y1]())
 
         def step(st: S1, x: Axes[X1]) -> tuple[S1, tuple[S1, Axes[Y1]]]:
@@ -33,16 +36,31 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
             return st_next, (st, y)  # emit each step's INPUT state
 
         s_final, (states, ys) = jax.lax.scan(step, s, inner)
-        return (s_final, rewrap(ys)), (z, Seq(states), Seq(inner))
+        return (s_final, rewrap(ys)), Seq(states)
 
-    @jax.custom_vjp
-    def f(z: Z1, s_xs: tuple[S1, Axes[X1]]) -> tuple[S1, Axes[Y1]]:
-        return f_fwd(z, s_xs)[0]
+    @eqx.filter_custom_vjp
+    def f(z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]]) -> tuple[S1, Axes[Y1]]:
+        out, _ = forward(z_s_xs)
+        return out
 
-    def f_bwd(res: tuple[Z1, Seq[S1], Seq[Axes[X1]]], ct: tuple[S2, Axes[Y2]]) -> tuple[Z2, tuple[S2, Axes[X2]]]:
-        z, tape, taped_xs = res
+    @f.def_fwd
+    def f_fwd(
+        perturbed: tuple[Z1, tuple[S1, Axes[X1]]],
+        z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]],
+    ) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
+        return forward(z_s_xs)
+
+    @f.def_bwd
+    def f_bwd(
+        tape: Seq[S1],
+        ct: tuple[S2, Axes[Y2]],
+        perturbed: tuple[Z1, tuple[S1, Axes[X1]]],
+        z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]],
+    ) -> tuple[Z2, tuple[S2, Axes[X2]]]:
+        z, (_, xs) = z_s_xs
         d_s_final, d_ys = ct
-        d_inner, rewrap = wrapper(d_ys, Proxy[X2]())
+        xs_value, _ = wrapper(xs, Proxy[Y2]())
+        d_ys_value, rewrap = wrapper(d_ys, Proxy[X2]())
 
         def step(carry: tuple[S2, Z2], inp: tuple[S1, Axes[X1], Axes[Y2]]) -> tuple[tuple[S2, Z2], Axes[X2]]:
             d_s, d_z_acc = carry
@@ -52,14 +70,13 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
 
         (d_s0, d_z), d_xs = jax.lax.scan(
             step,
-            (d_s_final, jax.tree.map(jnp.zeros_like, z)),
-            (tape.value, taped_xs.value, d_inner),
+            (d_s_final, zero_cotangent_like(z)),
+            (tape.value, xs_value, d_ys_value),
             reverse=True,
         )
-        return d_z, (d_s0, rewrap(d_xs))
+        return (d_z, (d_s0, rewrap(d_xs)))
 
-    f.defvjp(f_fwd, f_bwd)
-    return Mealy(para_autodiff(f))
+    return Mealy(para_autodiff(lambda z, s_xs: f((z, s_xs))))
 
 
 def unbatch[Z](x: Axes[Z]) -> tuple[Axes[Z], Literal[0] | None]:

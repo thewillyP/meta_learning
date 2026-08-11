@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree
 from functools import reduce
+import equinox as eqx
 
 from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.utility.util import zero_tangent_like
@@ -127,7 +128,7 @@ def exchange[A1, A2, B1, B2, C1, C2, D1, D2](
 
 def autodiff[A: PyTree, B: PyTree](f: Callable[[A], B]) -> Lens[A, A, B, B]:
     def run(a: A) -> tuple[B, Callable[[B], A]]:
-        b, vjp = jax.vjp(f, a)
+        b, vjp = eqx.filter_vjp(f, a)
         return b, lambda b2: vjp(b2)[0]  # vjp returns a 1-tuple per argument
 
     return Lens(run)

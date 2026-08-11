@@ -25,7 +25,7 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z](
             case _ as bare:
                 return _lift(bare), _drop
 
-    def forward(z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]]) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
+    def forward(z_s_xs: tuple[Z, tuple[S1, Axes[X1]]]) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
         z, (s, xs) = z_s_xs
         inner, rewrap = wrapper(xs, Proxy[Y1]())
         arr_s, static_s = eqx.partition(s, eqx.is_array)
@@ -56,14 +56,14 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z](
         )
 
     @eqx.filter_custom_vjp
-    def f(z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]]) -> tuple[S1, Axes[Y1]]:
+    def f(z_s_xs: tuple[Z, tuple[S1, Axes[X1]]]) -> tuple[S1, Axes[Y1]]:
         out, _ = forward(z_s_xs)
         return out
 
     @f.def_fwd
     def f_fwd(
-        perturbed: tuple[Z1, tuple[S1, Axes[X1]]],
-        z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]],
+        perturbed: tuple[Z, tuple[S1, Axes[X1]]],
+        z_s_xs: tuple[Z, tuple[S1, Axes[X1]]],
     ) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
         return forward(z_s_xs)
 
@@ -71,9 +71,9 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z](
     def f_bwd(
         tape: Seq[S1],
         ct: tuple[S2, Axes[Y2]],
-        perturbed: tuple[Z1, tuple[S1, Axes[X1]]],
-        z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]],
-    ) -> tuple[Z2, tuple[S2, Axes[X2]]]:
+        perturbed: tuple[Z, tuple[S1, Axes[X1]]],
+        z_s_xs: tuple[Z, tuple[S1, Axes[X1]]],
+    ) -> tuple[Z, tuple[S2, Axes[X2]]]:
         z, (_, xs) = z_s_xs
         d_s_final, d_ys = ct
         xs_value, _ = wrapper(xs, Proxy[Y2]())
@@ -81,7 +81,7 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z](
         arr_tape, static_s = eqx.partition(tape.value, eqx.is_array)
         arr_x, static_x = eqx.partition(xs_value, eqx.is_array)
 
-        def step(carry: tuple[S2, Z2], inp: tuple[S1, Axes[X1], Axes[Y2]]) -> tuple[tuple[S2, Z2], Axes[X2]]:
+        def step(carry: tuple[S2, Z], inp: tuple[S1, Axes[X1], Axes[Y2]]) -> tuple[tuple[S2, Z], Axes[X2]]:
             d_s, d_z_acc = carry
             arr_st, ax, d_y = inp
             st = eqx.combine(arr_st, static_s)

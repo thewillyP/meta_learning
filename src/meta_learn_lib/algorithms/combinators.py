@@ -1,12 +1,11 @@
 from meta_learn_lib.category.lens import *
 from meta_learn_lib.category.paralens import *
 from meta_learn_lib.category.mealy import Mealy
+from meta_learn_lib.utility.util import zero_cotangent_like
 
 from typing import Literal
 import equinox as eqx
 import jax.numpy as jnp
-
-from meta_learn_lib.utility.util import zero_cotangent_like
 
 
 def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
@@ -14,10 +13,10 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
 ) -> Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z1, Z2]:
 
     def _lift[A](x: A) -> A:
-        return jax.tree.map(lambda t: t[None], x)
+        return jax.tree.map(lambda t: t[None] if eqx.is_array(t) else t, x)
 
     def _drop[A](x: A) -> A:
-        return jax.tree.map(lambda t: t[0], x)
+        return jax.tree.map(lambda t: t[0] if eqx.is_array(t) else t, x)
 
     def wrapper[A, B](a: Axes[A], _: Proxy[B]) -> tuple[Axes[A], Callable[[Axes[B]], Axes[B]]]:
         match a:
@@ -27,16 +26,34 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
                 return _lift(bare), _drop
 
     def forward(z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]]) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
-        """Forward pass AND tape.  A bare input is scanned as a length-1 sequence."""
         z, (s, xs) = z_s_xs
         inner, rewrap = wrapper(xs, Proxy[Y1]())
+        arr_s, static_s = eqx.partition(s, eqx.is_array)
+        arr_x, static_x = eqx.partition(inner, eqx.is_array)
 
-        def step(st: S1, x: Axes[X1]) -> tuple[S1, tuple[S1, Axes[Y1]]]:
+        def y_static(ax: X1) -> Y1:
+            _, y = cell.arrow.arrow.get((z, (s, eqx.combine(ax, static_x))))
+            _, arr_y = eqx.partition(y, eqx.is_array)
+            return arr_y
+
+        static_y = eqx.filter_eval_shape(y_static, _drop(arr_x))
+
+        def step(arr_st: S1, ax: Axes[X1]) -> tuple[S1, tuple[S1, Axes[Y1]]]:
+            st = eqx.combine(arr_st, static_s)
+            x = eqx.combine(ax, static_x)
             st_next, y = cell.arrow.arrow.get((z, (st, x)))
-            return st_next, (st, y)  # emit each step's INPUT state
+            arr_next, _ = eqx.partition(st_next, eqx.is_array)
+            arr_y, _ = eqx.partition(y, eqx.is_array)
+            return arr_next, (arr_st, arr_y)
 
-        s_final, (states, ys) = jax.lax.scan(step, s, inner)
-        return (s_final, rewrap(ys)), Seq(states)
+        arr_final, (arr_tape, arr_ys) = jax.lax.scan(step, arr_s, arr_x)
+        return (
+            (
+                eqx.combine(arr_final, static_s),
+                rewrap(eqx.combine(arr_ys, static_y)),
+            ),
+            Seq(eqx.combine(arr_tape, static_s)),
+        )
 
     @eqx.filter_custom_vjp
     def f(z_s_xs: tuple[Z1, tuple[S1, Axes[X1]]]) -> tuple[S1, Axes[Y1]]:
@@ -61,17 +78,21 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
         d_s_final, d_ys = ct
         xs_value, _ = wrapper(xs, Proxy[Y2]())
         d_ys_value, rewrap = wrapper(d_ys, Proxy[X2]())
+        arr_tape, static_s = eqx.partition(tape.value, eqx.is_array)
+        arr_x, static_x = eqx.partition(xs_value, eqx.is_array)
 
         def step(carry: tuple[S2, Z2], inp: tuple[S1, Axes[X1], Axes[Y2]]) -> tuple[tuple[S2, Z2], Axes[X2]]:
             d_s, d_z_acc = carry
-            st, x, d_y = inp
+            arr_st, ax, d_y = inp
+            st = eqx.combine(arr_st, static_s)
+            x = eqx.combine(ax, static_x)
             d_z, (d_st, d_x) = cell.arrow.arrow.set((z, (st, x)), (d_s, d_y))
             return (d_st, jax.tree.map(jnp.add, d_z_acc, d_z)), d_x
 
         (d_s0, d_z), d_xs = jax.lax.scan(
             step,
             (d_s_final, zero_cotangent_like(z)),
-            (tape.value, xs_value, d_ys_value),
+            (arr_tape, arr_x, d_ys_value),
             reverse=True,
         )
         return (d_z, (d_s0, rewrap(d_xs)))

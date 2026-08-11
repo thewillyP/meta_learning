@@ -9,28 +9,22 @@ import optax
 from typing import Callable
 
 
-def exponentiated[T](theta: T, updates: T) -> T:
+def exponentiated[T: optax.Params](theta: T, updates: optax.Updates) -> T:
     return jax.tree.map(lambda t, u: t * jnp.exp(u), theta, updates)
 
 
-def scale_by_sign_of_param() -> optax.GradientTransformationExtraArgs:
-    def init_fn(params):
-        return None
+def scale_by_sign_of_param() -> optax.GradientTransformation:
+    def f(updates: optax.Updates, params: optax.Params | None) -> optax.Updates:
+        return jax.tree.map(lambda u, p: u * jnp.sign(p), updates, params)
 
-    def update_fn(grad, state, params):
-        return grad * jnp.sign(params), state
-
-    return optax.GradientTransformationExtraArgs(init_fn, update_fn)
+    return optax.stateless(f)
 
 
-def add_scalar_wd(wd_value: jax.Array) -> optax.GradientTransformationExtraArgs:
-    def init_fn(params):
-        return None
+def add_scalar_wd(wd_value: jax.Array) -> optax.GradientTransformation:
+    def f(updates: optax.Updates, params: optax.Params | None) -> optax.Updates:
+        return jax.tree.map(lambda u: u + wd_value, updates)
 
-    def update_fn(grad, state, params):
-        return grad + wd_value, state
-
-    return optax.GradientTransformationExtraArgs(init_fn, update_fn)
+    return optax.stateless(f)
 
 
 def exponentiated_gradient[H](
@@ -43,9 +37,9 @@ def exponentiated_gradient[H](
     return make
 
 
-def optimizer[T, H](
+def optimizer[T: optax.Params, H](
     make: Callable[[H], optax.GradientTransformation],
-    apply: Callable[[T, T], T],
+    apply: Callable[[T, optax.Updates], T],
 ) -> Mealy[optax.OptState, optax.OptState, T, T, T, T, H, H]:
     def run(
         p_sx: tuple[H, tuple[optax.OptState, T]],
@@ -66,5 +60,14 @@ def optimizer[T, H](
     return Mealy(ParaLens(Lens(run)))
 
 
-def sgd[T]() -> Mealy[optax.OptState, optax.OptState, T, T, T, T, jax.Array, jax.Array]:
+def sgd() -> Mealy[
+    optax.OptState,
+    optax.OptState,
+    optax.Params,
+    optax.Params,
+    optax.Params,
+    optax.Params,
+    jax.Array,
+    jax.Array,
+]:
     return optimizer(optax.sgd, optax.apply_updates)

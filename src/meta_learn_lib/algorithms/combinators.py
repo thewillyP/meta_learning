@@ -8,9 +8,9 @@ import equinox as eqx
 import jax.numpy as jnp
 
 
-def scan[S1, S2, X1, X2, Y1, Y2, Z1, Z2](
-    cell: Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z1, Z2],
-) -> Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z1, Z2]:
+def scan[S1, S2, X1, X2, Y1, Y2, Z](
+    cell: Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z, Z],
+) -> Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z, Z]:
 
     def _lift[A](x: A) -> A:
         return jax.tree.map(lambda t: t[None] if eqx.is_array(t) else t, x)

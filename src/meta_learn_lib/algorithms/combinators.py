@@ -3,14 +3,13 @@ from meta_learn_lib.category.paralens import *
 from meta_learn_lib.category.mealy import Mealy
 from meta_learn_lib.utility.util import zero_cotangent_like
 
-from typing import Literal
 import equinox as eqx
 import jax.numpy as jnp
 
 
-def scan[S1, S2, X1, X2, Y1, Y2, Z](
-    cell: Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z, Z],
-) -> Mealy[S1, S2, Axes[X1], Axes[X2], Axes[Y1], Axes[Y2], Z, Z]:
+def scan[S, X, Y, Z](
+    cell: Mealy[S, S, Axes[X], Axes[X], Axes[Y], Axes[Y], Z, Z],
+) -> Mealy[S, S, Axes[X], Axes[X], Axes[Y], Axes[Y], Z, Z]:
 
     def _lift[A](x: A) -> A:
         return jax.tree.map(lambda t: t[None] if eqx.is_array(t) else t, x)
@@ -25,20 +24,20 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z](
             case _ as bare:
                 return _lift(bare), _drop
 
-    def forward(z_s_xs: tuple[Z, tuple[S1, Axes[X1]]]) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
+    def forward(z_s_xs: tuple[Z, tuple[S, Axes[X]]]) -> tuple[tuple[S, Axes[Y]], Seq[S]]:
         z, (s, xs) = z_s_xs
-        inner, rewrap = wrapper(xs, Proxy[Y1]())
+        inner, rewrap = wrapper(xs, Proxy[Y]())
         arr_s, static_s = eqx.partition(s, eqx.is_array)
         arr_x, static_x = eqx.partition(inner, eqx.is_array)
 
-        def y_static(ax: X1) -> Y1:
+        def y_static(ax: X) -> Y:
             _, y = cell.arrow.arrow.get((z, (s, eqx.combine(ax, static_x))))
             _, static = eqx.partition(y, eqx.is_array)
             return static
 
         static_y = eqx.filter_eval_shape(y_static, _drop(arr_x))
 
-        def step(arr_st: S1, ax: Axes[X1]) -> tuple[S1, tuple[S1, Axes[Y1]]]:
+        def step(arr_st: S, ax: Axes[X]) -> tuple[S, tuple[S, Axes[Y]]]:
             st = eqx.combine(arr_st, static_s)
             x = eqx.combine(ax, static_x)
             st_next, y = cell.arrow.arrow.get((z, (st, x)))
@@ -56,32 +55,32 @@ def scan[S1, S2, X1, X2, Y1, Y2, Z](
         )
 
     @eqx.filter_custom_vjp
-    def f(z_s_xs: tuple[Z, tuple[S1, Axes[X1]]]) -> tuple[S1, Axes[Y1]]:
+    def f(z_s_xs: tuple[Z, tuple[S, Axes[X]]]) -> tuple[S, Axes[Y]]:
         out, _ = forward(z_s_xs)
         return out
 
     @f.def_fwd
     def f_fwd(
-        perturbed: tuple[Z, tuple[S1, Axes[X1]]],
-        z_s_xs: tuple[Z, tuple[S1, Axes[X1]]],
-    ) -> tuple[tuple[S1, Axes[Y1]], Seq[S1]]:
+        perturbed: tuple[Z, tuple[S, Axes[X]]],
+        z_s_xs: tuple[Z, tuple[S, Axes[X]]],
+    ) -> tuple[tuple[S, Axes[Y]], Seq[S]]:
         return forward(z_s_xs)
 
     @f.def_bwd
     def f_bwd(
-        tape: Seq[S1],
-        ct: tuple[S2, Axes[Y2]],
-        perturbed: tuple[Z, tuple[S1, Axes[X1]]],
-        z_s_xs: tuple[Z, tuple[S1, Axes[X1]]],
-    ) -> tuple[Z, tuple[S2, Axes[X2]]]:
+        tape: Seq[S],
+        ct: tuple[S, Axes[Y]],
+        perturbed: tuple[Z, tuple[S, Axes[X]]],
+        z_s_xs: tuple[Z, tuple[S, Axes[X]]],
+    ) -> tuple[Z, tuple[S, Axes[X]]]:
         z, (_, xs) = z_s_xs
         d_s_final, d_ys = ct
-        xs_value, _ = wrapper(xs, Proxy[Y2]())
-        d_ys_value, rewrap = wrapper(d_ys, Proxy[X2]())
+        xs_value, _ = wrapper(xs, Proxy[Y]())
+        d_ys_value, rewrap = wrapper(d_ys, Proxy[X]())
         arr_tape, static_s = eqx.partition(tape.value, eqx.is_array)
         arr_x, static_x = eqx.partition(xs_value, eqx.is_array)
 
-        def step(carry: tuple[S2, Z], inp: tuple[S1, Axes[X1], Axes[Y2]]) -> tuple[tuple[S2, Z], Axes[X2]]:
+        def step(carry: tuple[S, Z], inp: tuple[S, Axes[X], Axes[Y]]) -> tuple[tuple[S, Z], Axes[X]]:
             d_s, d_z_acc = carry
             arr_st, ax, d_y = inp
             st = eqx.combine(arr_st, static_s)

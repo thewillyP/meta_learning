@@ -1,11 +1,16 @@
 from meta_learn_lib.category.lib_types import *
 from meta_learn_lib.category.paralens import *
+from meta_learn_lib.category.mealy import Mealy, to_mealy
 
 type Params = tuple[Params, Params] | jax.Array | Unit
-type Layer = ParaLens[jax.Array, jax.Array, jax.Array, jax.Array, Params, Params]
+type Layer = Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, Params, Params]
 
 
 def leaf(f: Callable[[jax.Array, jax.Array], jax.Array]) -> Layer:
+    def h(rp: tuple[Unit, Params], x: jax.Array) -> jax.Array:
+        _, p = rp
+        return g(p, x)
+
     def g(p: Params, x: jax.Array) -> jax.Array:
         match p:
             case jax.Array():
@@ -15,4 +20,4 @@ def leaf(f: Callable[[jax.Array, jax.Array], jax.Array]) -> Layer:
             case (l, r):
                 return g(r, g(l, x))
 
-    return para_autodiff(g)
+    return to_mealy(para_autodiff(h))

@@ -102,6 +102,50 @@ def scan[S, X, Y, HP, P](
     return Mealy(para_autodiff(lambda z, s_xs: f((z, s_xs))))
 
 
+def as_axes[S, X, Y, HP, P](
+    m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P],
+) -> Mealy[Axes[S], Axes[S], Axes[X], Axes[X], Axes[Y], Axes[Y], Axes[HP], Axes[HP], Axes[P], Axes[P]]:
+
+    def unwrap[A](x: Axes[A]) -> A:
+        match x:
+            case Seq(value=v) | Batched(value=v):
+                return unwrap(v)
+            case _ as b:
+                return b
+
+    def collapse[A](x: Axes[A]) -> A:
+        # adjoint of broadcasting a value across an axis, cf. unbatch's in_axes=None case
+        match x:
+            case Seq(value=v) | Batched(value=v):
+                return collapse(jax.tree.map(lambda t: t.sum(0) if eqx.is_array(t) else t, v))
+            case _ as b:
+                return b
+
+    def run(
+        p_sx: tuple[tuple[Axes[HP], Axes[P]], tuple[Axes[S], Axes[X]]],
+    ) -> tuple[
+        tuple[Axes[S], Axes[Y]],
+        Callable[[tuple[Axes[S], Axes[Y]]], tuple[tuple[Axes[HP], Axes[P]], tuple[Axes[S], Axes[X]]]],
+    ]:
+        z, (s, x) = p_sx
+        match x:
+            case Seq():
+                return scan(as_axes(m)).arrow.arrow.run((z, (s, x)))
+            case Batched():
+                return batch_data(as_axes(m)).arrow.arrow.run((z, (s, x)))
+            case _:
+                hp, p = z
+                (s1, y), put = m.arrow.arrow.run(((unwrap(hp), unwrap(p)), (unwrap(s), x)))
+
+                def rev(ct: tuple[Axes[S], Axes[Y]]) -> tuple[tuple[Axes[HP], Axes[P]], tuple[Axes[S], Axes[X]]]:
+                    d_s, d_y = ct
+                    return put((collapse(d_s), collapse(d_y)))
+
+                return (s1, y), rev
+
+    return Mealy(ParaLens(Lens(run)))
+
+
 def unbatch[A](x: Axes[A]) -> tuple[Axes[A], Callable[[object], int | None] | None]:
     match x:
         case Batched(value=v):
@@ -181,8 +225,8 @@ def learner[HP, S, X, Y, P: optax.Params, H](
     tuple[S, tuple[optax.OptState, P]],
     X,
     X,
-    Y,
-    Y,
+    tuple[Y, P],
+    tuple[Y, P],
     HP,
     HP,
     H,
@@ -190,13 +234,13 @@ def learner[HP, S, X, Y, P: optax.Params, H](
 ]:
     def step(
         hp_h: tuple[HP, H], sv: tuple[tuple[S, tuple[optax.OptState, P]], X]
-    ) -> tuple[tuple[S, tuple[optax.OptState, P]], Y]:
+    ) -> tuple[tuple[S, tuple[optax.OptState, P]], tuple[Y, P]]:
         hp, lam = hp_h
         (s_m, (opt_st, theta)), x = sv
         (s_m1, y), put = machine.arrow.arrow.run(((hp, theta), (s_m, x)))
         (_, d_theta), _ = put((zero_cotangent_like(s_m1), d_out(y)))
         _, rev_o = opt.arrow.arrow.run(((Unit(), lam), (opt_st, theta)))
         _, (opt_st1, theta1) = rev_o((opt_st, d_theta))
-        return ((s_m1, (opt_st1, theta1)), y)
+        return ((s_m1, (opt_st1, theta1)), (y, theta1))
 
     return Mealy(para_autodiff(step))

@@ -216,7 +216,7 @@ def batch_pop[S1, S2, X1, X2, Y1, Y2, HP1, HP2, P1, P2](
     return batch_with_axes(m, to_p, from_p, eqx.if_array(0))
 
 
-def learner[HP, S, X, Y, P: optax.Params, H](
+def learner[HP, S, X, Y, P, H](
     machine: Mealy[S, S, X, X, Y, Y, HP, HP, P, P],
     opt: Mealy[optax.OptState, optax.OptState, P, P, P, P, Unit, Unit, H, H],
     d_out: Callable[[Y], Y],

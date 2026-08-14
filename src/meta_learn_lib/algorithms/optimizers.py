@@ -7,11 +7,15 @@ from meta_learn_lib.utility.util import zero_cotangent_like
 import jax
 import jax.numpy as jnp
 import optax
-from typing import Callable
+from typing import Callable, cast
 
 
-def exponentiated[T: optax.Params](theta: T, updates: optax.Updates) -> T:
+def exponentiated[T](theta: T, updates: optax.Updates) -> T:
     return jax.tree.map(lambda t, u: t * jnp.exp(u), theta, updates)
+
+
+def additive[T](theta: T, updates: optax.Updates) -> T:
+    return jax.tree.map(lambda t, u: t + u, theta, updates)
 
 
 def scale_by_sign_of_param() -> optax.GradientTransformation:
@@ -38,7 +42,7 @@ def exponentiated_gradient[H](
     return make
 
 
-def optimizer[T: optax.Params, H](
+def optimizer[T, H](
     make: Callable[[H], optax.GradientTransformation],
     apply: Callable[[T, optax.Updates], T],
 ) -> Mealy[optax.OptState, optax.OptState, T, T, T, T, Unit, Unit, H, H]:
@@ -52,7 +56,7 @@ def optimizer[T: optax.Params, H](
 
         def rev(ct: tuple[optax.OptState, T]) -> tuple[tuple[Unit, H], tuple[optax.OptState, T]]:
             _, d_theta = ct
-            updates, opt_st1 = make(hp).update(d_theta, opt_st, theta)
+            updates, opt_st1 = make(hp).update(cast(optax.Params, d_theta), opt_st, cast(optax.Params, theta))
             theta1 = apply(theta, updates)
             return (Unit(), zero_cotangent_like(hp)), (opt_st1, theta1)
 
@@ -61,16 +65,16 @@ def optimizer[T: optax.Params, H](
     return Mealy(ParaLens(Lens(run)))
 
 
-def sgd() -> Mealy[
+def sgd[T]() -> Mealy[
     optax.OptState,
     optax.OptState,
-    optax.Params,
-    optax.Params,
-    optax.Params,
-    optax.Params,
+    T,
+    T,
+    T,
+    T,
     Unit,
     Unit,
     jax.Array,
     jax.Array,
 ]:
-    return optimizer(optax.sgd, optax.apply_updates)
+    return optimizer(optax.sgd, additive)

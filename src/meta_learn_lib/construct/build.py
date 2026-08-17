@@ -36,21 +36,21 @@ from plum import dispatch
 @overload
 def validator[S, X, Y, HP, P](
     v: SameModel[S, X, Y, HP, P], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
-) -> Mealy[S, S, tuple[tuple[Y, P], X], tuple[tuple[Y, P], X], Y, Y, HP, HP, Unit, Unit]:
+) -> Mealy[S, S, tuple[tuple[Y, tuple[HP, P]], X], tuple[tuple[Y, tuple[HP, P]], X], Y, Y, Unit, Unit, Unit, Unit]:
     return validation(m)
 
 
 @overload
-def validator[S, X, Y, HP, P, SV, XV, PV](
-    v: Validator[S, X, Y, HP, P, SV, XV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
-) -> Mealy[SV, SV, tuple[tuple[Y, P], XV], tuple[tuple[Y, P], XV], Y, Y, HP, HP, PV, PV]:
+def validator[S, X, Y, HP, P, SV, XV, HPV, PV](
+    v: Validator[S, X, Y, HP, P, SV, XV, HPV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
+) -> Mealy[SV, SV, tuple[tuple[Y, tuple[HP, P]], XV], tuple[tuple[Y, tuple[HP, P]], XV], Y, Y, HPV, HPV, PV, PV]:
     raise NotImplementedError
 
 
 @dispatch
-def validator[S, X, Y, HP, P, SV, XV, PV](
-    v: Validator[S, X, Y, HP, P, SV, XV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
-) -> Mealy[SV, SV, tuple[tuple[Y, P], XV], tuple[tuple[Y, P], XV], Y, Y, HP, HP, PV, PV]:
+def validator[S, X, Y, HP, P, SV, XV, HPV, PV](
+    v: Validator[S, X, Y, HP, P, SV, XV, HPV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
+) -> Mealy[SV, SV, tuple[tuple[Y, tuple[HP, P]], XV], tuple[tuple[Y, tuple[HP, P]], XV], Y, Y, HPV, HPV, PV, PV]:
     raise NotImplementedError
 
 
@@ -162,8 +162,8 @@ def build[S, X, HP, P](
 
 
 @overload
-def build[S, X, HP, P, SV, XV, PV](
-    t: Meta[S, X, HP, P, SV, XV, PV],
+def build[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
+    t: Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV],
 ) -> Mealy[
     tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
     tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
@@ -171,10 +171,10 @@ def build[S, X, HP, P, SV, XV, PV](
     tuple[X, XV],
     jax.Array,
     jax.Array,
-    tuple[tuple[HP, Unit], HP],
-    tuple[tuple[HP, Unit], HP],
-    tuple[tuple[jax.Array, Unit], PV],
-    tuple[tuple[jax.Array, Unit], PV],
+    tuple[tuple[HPO, Unit], HPV],
+    tuple[tuple[HPO, Unit], HPV],
+    tuple[tuple[tuple[HP, H], Unit], PV],
+    tuple[tuple[tuple[HP, H], Unit], PV],
 ]:
     below = build(t.below)
     return level(learner(below, build(t.opt), jnp.ones_like), validator(t.val, below))

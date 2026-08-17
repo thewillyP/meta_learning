@@ -126,11 +126,11 @@ class Sup[S, X, HP, P](
 
 
 @dataclass(frozen=True)
-class Opt[P](Term[ArrayTree, P, P, Unit, jax.Array]): ...
+class Opt[HPO, H, P](Term[ArrayTree, P, P, HPO, H]): ...
 
 
 @dataclass(frozen=True)
-class Sgd[P](Opt[P]):
+class Sgd[P](Opt[Unit, jax.Array, P]):
     lr: float
 
 
@@ -152,23 +152,23 @@ class BatchPop[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
 
 
 @dataclass(frozen=True)
-class Validator[S, X, Y, HP, P, SV, XV, PV]: ...
+class Validator[S, X, Y, HP, P, SV, XV, HPV, PV]: ...
 
 
 @dataclass(frozen=True)
-class SameModel[S, X, Y, HP, P](Validator[S, X, Y, HP, P, S, X, Unit]): ...
+class SameModel[S, X, Y, HP, P](Validator[S, X, Y, HP, P, S, X, Unit, Unit]): ...
 
 
 @dataclass(frozen=True)
-class Meta[S, X, HP, P, SV, XV, PV](
+class Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
     Term[
         tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
         tuple[X, XV],
         jax.Array,
-        tuple[tuple[HP, Unit], HP],
-        tuple[tuple[jax.Array, Unit], PV],
+        tuple[tuple[HPO, Unit], HPV],
+        tuple[tuple[tuple[HP, H], Unit], PV],
     ]
 ):
     below: Term[S, X, jax.Array, HP, P]
-    opt: Opt[P]
-    val: Validator[S, X, jax.Array, HP, P, SV, XV, PV]
+    opt: Opt[HPO, H, P]
+    val: Validator[S, X, jax.Array, HP, P, SV, XV, HPV, PV]

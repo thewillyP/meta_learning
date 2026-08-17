@@ -4,19 +4,22 @@ from meta_learn_lib.category.mealy import Mealy, to_mealy
 from meta_learn_lib.utility.util import zero_cotangent_like
 
 
-def validation[S, XV, Y, HP, P](
+def validation[S, XV, Y, HP, P, HPV](
     machine: Mealy[S, S, XV, XV, Y, Y, HP, HP, P, P],
-) -> Mealy[S, S, tuple[tuple[Y, P], XV], tuple[tuple[Y, P], XV], Y, Y, HP, HP, Unit, Unit]:
+) -> Mealy[S, S, tuple[tuple[Y, tuple[HP, P]], XV], tuple[tuple[Y, tuple[HP, P]], XV], Y, Y, HPV, HPV, Unit, Unit]:
     def run(
-        p_sx: tuple[tuple[HP, Unit], tuple[S, tuple[tuple[Y, P], XV]]],
-    ) -> tuple[tuple[S, Y], Callable[[tuple[S, Y]], tuple[tuple[HP, Unit], tuple[S, tuple[tuple[Y, P], XV]]]]]:
-        (hp, u), (s, ((y_tr, theta), x)) = p_sx
+        p_sx: tuple[tuple[HPV, Unit], tuple[S, tuple[tuple[Y, tuple[HP, P]], XV]]],
+    ) -> tuple[
+        tuple[S, Y],
+        Callable[[tuple[S, Y]], tuple[tuple[HPV, Unit], tuple[S, tuple[tuple[Y, tuple[HP, P]], XV]]]],
+    ]:
+        (hpv, u), (s, ((y_tr, (hp, theta)), x)) = p_sx
         (s1, y), put = machine.arrow.arrow.run(((hp, theta), (s, x)))
 
-        def rev(ct: tuple[S, Y]) -> tuple[tuple[HP, Unit], tuple[S, tuple[tuple[Y, P], XV]]]:
+        def rev(ct: tuple[S, Y]) -> tuple[tuple[HPV, Unit], tuple[S, tuple[tuple[Y, tuple[HP, P]], XV]]]:
             d_s1, d_y = ct
             (d_hp, d_theta), (d_s, d_x) = put((d_s1, d_y))
-            return (d_hp, u), (d_s, ((zero_cotangent_like(y_tr), d_theta), d_x))
+            return (zero_cotangent_like(hpv), u), (d_s, ((zero_cotangent_like(y_tr), (d_hp, d_theta)), d_x))
 
         return (s1, y), rev
 

@@ -30,21 +30,21 @@ from plum import dispatch
 
 
 @overload
-def val_init[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], s: S, ctx: int, key: PRNG) -> tuple[Unit, S]:
-    return (Unit(), s)
+def val_init[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], s: S, ctx: int, key: PRNG) -> tuple[tuple[Unit, Unit], S]:
+    return ((Unit(), Unit()), s)
 
 
 @overload
-def val_init[S, X, Y, HP, P, SV, XV, PV](
-    v: Validator[S, X, Y, HP, P, SV, XV, PV], s: S, ctx: int, key: PRNG
-) -> tuple[PV, SV]:
+def val_init[S, X, Y, HP, P, SV, XV, HPV, PV](
+    v: Validator[S, X, Y, HP, P, SV, XV, HPV, PV], s: S, ctx: int, key: PRNG
+) -> tuple[tuple[HPV, PV], SV]:
     raise NotImplementedError
 
 
 @dispatch
-def val_init[S, X, Y, HP, P, SV, XV, PV](
-    v: Validator[S, X, Y, HP, P, SV, XV, PV], s: S, ctx: int, key: PRNG
-) -> tuple[PV, SV]:
+def val_init[S, X, Y, HP, P, SV, XV, HPV, PV](
+    v: Validator[S, X, Y, HP, P, SV, XV, HPV, PV], s: S, ctx: int, key: PRNG
+) -> tuple[tuple[HPV, PV], SV]:
     raise NotImplementedError
 
 
@@ -111,17 +111,17 @@ def init[S, X, HP, P](
 
 
 @overload
-def init[S, X, HP, P, SV, XV, PV](
-    t: Meta[S, X, HP, P, SV, XV, PV], ctx: int, key: PRNG
+def init[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
+    t: Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV], ctx: int, key: PRNG
 ) -> tuple[
-    tuple[tuple[tuple[HP, Unit], HP], tuple[tuple[jax.Array, Unit], PV]],
+    tuple[tuple[tuple[HPO, Unit], HPV], tuple[tuple[tuple[HP, H], Unit], PV]],
     tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
 ]:
     k1, k2, k3 = jax.random.split(key, 3)
     (hp, p), s = init(t.below, ctx, PRNG(k1))
-    (_, lr), opt_st = init(t.opt, p, PRNG(k2))
-    p_v, s_v = val_init(t.val, s, ctx, PRNG(k3))
-    return ((((hp, Unit()), hp), ((lr, Unit()), p_v)), (((s, (opt_st, p)), Unit()), s_v))
+    (hp_o, h), opt_st = init(t.opt, p, PRNG(k2))
+    (hpv, pv), s_v = val_init(t.val, s, ctx, PRNG(k3))
+    return ((((hp_o, Unit()), hpv), (((hp, h), Unit()), pv)), (((s, (opt_st, p)), Unit()), s_v))
 
 
 @overload

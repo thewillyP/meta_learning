@@ -10,9 +10,6 @@ import jax
 from plum import dispatch
 
 
-type Pointwise = Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, Unit, Unit]
-
-
 @overload
 def build(
     t: Linear,
@@ -36,7 +33,7 @@ def build(
 
 
 @overload
-def build(t: Activation) -> Pointwise:
+def build(t: Activation) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, Unit, Unit]:
     f = activation(t)
 
     def h(hp_p: tuple[Unit, Unit], x: jax.Array) -> jax.Array:

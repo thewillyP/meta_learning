@@ -58,12 +58,12 @@ def initializer(t: Zeros) -> jax.nn.initializers.Initializer:
 
 @overload
 def initializer(t: LecunNormal) -> jax.nn.initializers.Initializer:
-    return jax.nn.initializers.variance_scaling(1.0, "fan_in", "normal")
+    return jax.nn.initializers.variance_scaling(1.0, "fan_in", "normal", in_axis=-1, out_axis=-2)
 
 
 @overload
 def initializer(t: PytorchUniform) -> jax.nn.initializers.Initializer:
-    return jax.nn.initializers.variance_scaling(1 / 3, "fan_in", "uniform")
+    return jax.nn.initializers.variance_scaling(1 / 3, "fan_in", "uniform", in_axis=-1, out_axis=-2)
 
 
 @overload

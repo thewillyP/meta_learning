@@ -19,6 +19,7 @@ from meta_learn_lib.construct.term import (
     Term,
     Validator,
 )
+import meta_learn_lib.lib_types
 from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
 
 from typing import Callable, cast, overload

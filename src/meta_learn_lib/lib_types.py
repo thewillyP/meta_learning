@@ -1,7 +1,21 @@
-from typing import Literal, NewType
+from typing import Any, Iterable, Literal, Mapping, NewType, Union
 import equinox as eqx
 import jax
-import optax
+import meta_learn_lib.lib_types
+import numpy as np
+
+ArrayTree = Union[
+    jax.Array,
+    np.ndarray,
+    np.bool_,
+    np.number,
+    bool,
+    int,
+    float,
+    complex,
+    Iterable["meta_learn_lib.lib_types.ArrayTree"],
+    Mapping[Any, "meta_learn_lib.lib_types.ArrayTree"],
+]
 
 PRNG = NewType("PRNG", jax.Array)
 
@@ -39,6 +53,3 @@ type Uncanon = str
 type CarryTransform = Literal["identity", "take_last", "take_first"]
 
 type S_ID = tuple[Canon, int | None]
-
-
-ArrayTree = optax.OptState

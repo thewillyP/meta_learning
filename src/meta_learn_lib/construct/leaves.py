@@ -1,5 +1,8 @@
 from meta_learn_lib.construct.term import (
     Activation,
+    CrossEntropy,
+    L2,
+    Loss,
     Identity,
     Init,
     LecunNormal,
@@ -13,6 +16,8 @@ from meta_learn_lib.construct.term import (
 
 from typing import Callable, overload
 import jax
+import jax.numpy as jnp
+import optax
 from plum import dispatch
 
 
@@ -73,4 +78,24 @@ def initializer(t: Init) -> jax.nn.initializers.Initializer:
 
 @dispatch
 def initializer(t: Init) -> jax.nn.initializers.Initializer:
+    raise NotImplementedError
+
+
+@overload
+def objective(t: L2) -> Callable[[jax.Array, jax.Array], jax.Array]:
+    return lambda y, target: jnp.sum(optax.losses.l2_loss(y, target))
+
+
+@overload
+def objective(t: CrossEntropy) -> Callable[[jax.Array, jax.Array], jax.Array]:
+    return lambda y, target: jnp.sum(optax.losses.softmax_cross_entropy(y, target))
+
+
+@overload
+def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
+    raise NotImplementedError
+
+
+@dispatch
+def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
     raise NotImplementedError

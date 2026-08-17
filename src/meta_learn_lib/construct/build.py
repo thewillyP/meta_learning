@@ -1,8 +1,9 @@
-from meta_learn_lib.category.lib_types import Unit
+from meta_learn_lib.category.lens import identity
+from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
-from meta_learn_lib.category.paralens import para_autodiff
-from meta_learn_lib.construct.leaves import activation
-from meta_learn_lib.construct.term import Activation, Arch, Bias, Linear, Seq
+from meta_learn_lib.category.paralens import para_autodiff, to_paralens
+from meta_learn_lib.construct.leaves import activation, objective
+from meta_learn_lib.construct.term import Activation, Arch, Bias, Linear, Loss, Seq, Sup
 
 from typing import overload
 import equinox as eqx
@@ -43,15 +44,39 @@ def build(t: Activation) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, j
 
 
 @overload
-def build[S1, S2, HP1, HP2, P1, P2](
-    t: Seq[S1, S2, HP1, HP2, P1, P2],
+def build(
+    t: Loss,
+) -> Mealy[
+    Unit,
+    Unit,
+    tuple[jax.Array, jax.Array],
+    tuple[jax.Array, jax.Array],
+    jax.Array,
+    jax.Array,
+    Unit,
+    Unit,
+    Unit,
+    Unit,
+]:
+    f = objective(t)
+
+    def h(hp_p: tuple[Unit, Unit], yt: tuple[jax.Array, jax.Array]) -> jax.Array:
+        y, target = yt
+        return f(y, target)
+
+    return to_mealy(para_autodiff(h))
+
+
+@overload
+def build[S1, S2, X, Y, Z, HP1, HP2, P1, P2](
+    t: Seq[S1, S2, X, Y, Z, HP1, HP2, P1, P2],
 ) -> Mealy[
     tuple[S1, S2],
     tuple[S1, S2],
-    jax.Array,
-    jax.Array,
-    jax.Array,
-    jax.Array,
+    X,
+    X,
+    Z,
+    Z,
     tuple[HP1, HP2],
     tuple[HP1, HP2],
     tuple[P1, P2],
@@ -61,10 +86,29 @@ def build[S1, S2, HP1, HP2, P1, P2](
 
 
 @overload
-def build[S, HP, P](t: Arch[S, HP, P]) -> Mealy[S, S, jax.Array, jax.Array, jax.Array, jax.Array, HP, HP, P, P]:
+def build[S, X, HP, P](
+    t: Sup[S, X, HP, P],
+) -> Mealy[
+    tuple[tuple[S, Unit], Unit],
+    tuple[tuple[S, Unit], Unit],
+    tuple[X, jax.Array],
+    tuple[X, jax.Array],
+    jax.Array,
+    jax.Array,
+    tuple[tuple[HP, Unit], Unit],
+    tuple[tuple[HP, Unit], Unit],
+    tuple[tuple[P, Unit], Unit],
+    tuple[tuple[P, Unit], Unit],
+]:
+    id_t = to_mealy(to_paralens(identity(Proxy[tuple[jax.Array, jax.Array]]())))
+    return (build(t.arch) @ id_t) >> build(t.loss)
+
+
+@overload
+def build[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     raise NotImplementedError
 
 
 @dispatch
-def build[S, HP, P](t: Arch[S, HP, P]) -> Mealy[S, S, jax.Array, jax.Array, jax.Array, jax.Array, HP, HP, P, P]:
+def build[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     raise NotImplementedError

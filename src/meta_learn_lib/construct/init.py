@@ -1,7 +1,7 @@
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.leaves import initializer
 from meta_learn_lib.construct.shape import out
-from meta_learn_lib.construct.term import Activation, Arch, Bias, Linear, Seq
+from meta_learn_lib.construct.term import Activation, Arch, Bias, Linear, Loss, Seq, Sup
 from meta_learn_lib.lib_types import PRNG
 
 from typing import overload
@@ -24,13 +24,13 @@ def init(t: Bias, n_in: int, key: PRNG) -> tuple[tuple[Unit, jax.Array], Unit]:
 
 
 @overload
-def init(t: Activation, n_in: int, key: PRNG) -> tuple[tuple[Unit, Unit], Unit]:
+def init(t: Activation | Loss, n_in: int, key: PRNG) -> tuple[tuple[Unit, Unit], Unit]:
     return ((Unit(), Unit()), Unit())
 
 
 @overload
-def init[S1, S2, HP1, HP2, P1, P2](
-    t: Seq[S1, S2, HP1, HP2, P1, P2], n_in: int, key: PRNG
+def init[S1, S2, X, Y, Z, HP1, HP2, P1, P2](
+    t: Seq[S1, S2, X, Y, Z, HP1, HP2, P1, P2], n_in: int, key: PRNG
 ) -> tuple[tuple[tuple[HP1, HP2], tuple[P1, P2]], tuple[S1, S2]]:
     k1, k2 = jax.random.split(key)
     (hp1, p1), s1 = init(t.first, n_in, PRNG(k1))
@@ -39,10 +39,23 @@ def init[S1, S2, HP1, HP2, P1, P2](
 
 
 @overload
-def init[S, HP, P](t: Arch[S, HP, P], n_in: int, key: PRNG) -> tuple[tuple[HP, P], S]:
+def init[S, X, HP, P](
+    t: Sup[S, X, HP, P], n_in: int, key: PRNG
+) -> tuple[
+    tuple[tuple[tuple[HP, Unit], Unit], tuple[tuple[P, Unit], Unit]],
+    tuple[tuple[S, Unit], Unit],
+]:
+    k1, k2 = jax.random.split(key)
+    (hp_a, p_a), s_a = init(t.arch, n_in, PRNG(k1))
+    (hp_l, p_l), s_l = init(t.loss, out(t.arch, n_in), PRNG(k2))
+    return ((((hp_a, Unit()), hp_l), ((p_a, Unit()), p_l)), ((s_a, Unit()), s_l))
+
+
+@overload
+def init[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P], n_in: int, key: PRNG) -> tuple[tuple[HP, P], S]:
     raise NotImplementedError
 
 
 @dispatch
-def init[S, HP, P](t: Arch[S, HP, P], n_in: int, key: PRNG) -> tuple[tuple[HP, P], S]:
+def init[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P], n_in: int, key: PRNG) -> tuple[tuple[HP, P], S]:
     raise NotImplementedError

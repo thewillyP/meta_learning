@@ -103,6 +103,23 @@ class Sgd[P](Opt[P]):
 
 
 @dataclass(frozen=True)
+class Scan[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
+    below: Term[S, X, Y, HP, P]
+
+
+@dataclass(frozen=True)
+class BatchData[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
+    below: Term[S, X, Y, HP, P]
+    n: int
+
+
+@dataclass(frozen=True)
+class BatchPop[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
+    below: Term[S, X, Y, HP, P]
+    n: int
+
+
+@dataclass(frozen=True)
 class Validator[S, X, Y, HP, P, SV, XV, PV]: ...
 
 

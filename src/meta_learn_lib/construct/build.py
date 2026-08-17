@@ -1,19 +1,23 @@
-from meta_learn_lib.algorithms.combinators import learner
+from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner, scan
 from meta_learn_lib.algorithms.level import level, validation
+from meta_learn_lib.algorithms.model import leaf
 from meta_learn_lib.algorithms.optimizers import sgd
 from meta_learn_lib.category.lens import identity
 from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
-from meta_learn_lib.category.paralens import para_autodiff, to_paralens
+from meta_learn_lib.category.paralens import to_paralens
 from meta_learn_lib.lib_types import ArrayTree
 from meta_learn_lib.construct.leaves import activation, objective
 from meta_learn_lib.construct.term import (
     Activation,
+    BatchData,
+    BatchPop,
     Bias,
     Linear,
     Loss,
     Meta,
     SameModel,
+    Scan,
     Seq,
     Sgd,
     Sup,
@@ -53,32 +57,18 @@ def validator[S, X, Y, HP, P, SV, XV, PV](
 def build(
     t: Linear,
 ) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, eqx.nn.Linear, eqx.nn.Linear]:
-    def h(hp_p: tuple[Unit, eqx.nn.Linear], x: jax.Array) -> jax.Array:
-        _, layer = hp_p
-        return layer(x)
-
-    return to_mealy(para_autodiff(h))
+    return leaf(lambda p, s, x: (s, p(x)))
 
 
 @overload
-def build(
-    t: Bias,
-) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, jax.Array, jax.Array]:
-    def h(hp_p: tuple[Unit, jax.Array], x: jax.Array) -> jax.Array:
-        _, b = hp_p
-        return x + b
-
-    return to_mealy(para_autodiff(h))
+def build(t: Bias) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, jax.Array, jax.Array]:
+    return leaf(lambda p, s, x: (s, x + p))
 
 
 @overload
 def build(t: Activation) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, Unit, Unit]:
     f = activation(t)
-
-    def h(hp_p: tuple[Unit, Unit], x: jax.Array) -> jax.Array:
-        return f(x)
-
-    return to_mealy(para_autodiff(h))
+    return leaf(lambda p, s, x: (s, f(x)))
 
 
 @overload
@@ -97,12 +87,7 @@ def build(
     Unit,
 ]:
     f = objective(t)
-
-    def h(hp_p: tuple[Unit, Unit], yt: tuple[jax.Array, jax.Array]) -> jax.Array:
-        y, target = yt
-        return f(y, target)
-
-    return to_mealy(para_autodiff(h))
+    return leaf(lambda p, s, y__t: (s, f(y__t[0], y__t[1])))
 
 
 @overload
@@ -164,6 +149,21 @@ def build[S, X, HP, P, SV, XV, PV](
 ]:
     below = build(t.below)
     return level(learner(below, build(t.opt), jnp.ones_like), validator(t.val, below))
+
+
+@overload
+def build[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+    return scan(build(t.below))
+
+
+@overload
+def build[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+    return batch_data(build(t.below))
+
+
+@overload
+def build[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+    return batch_pop(build(t.below))
 
 
 @overload

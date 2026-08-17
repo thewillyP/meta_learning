@@ -3,11 +3,14 @@ from meta_learn_lib.construct.leaves import initializer
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
     Activation,
+    BatchData,
+    BatchPop,
     Bias,
     Linear,
     Loss,
     Meta,
     SameModel,
+    Scan,
     Seq,
     Sgd,
     Sup,
@@ -106,6 +109,24 @@ def init[S, X, HP, P, SV, XV, PV](
     (_, lr), opt_st = init(t.opt, p, PRNG(k2))
     p_v, s_v = val_init(t.val, s, ctx, PRNG(k3))
     return ((((hp, Unit()), hp), ((lr, Unit()), p_v)), (((s, (opt_st, p)), Unit()), s_v))
+
+
+@overload
+def init[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, P], S]:
+    return init(t.below, ctx, key)
+
+
+@overload
+def init[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, P], S]:
+    k0, kb = jax.random.split(key)
+    (hp, p), _ = init(t.below, ctx, PRNG(k0))
+    _, s = eqx.filter_vmap(lambda k: init(t.below, ctx, PRNG(k)))(jax.random.split(kb, t.n))
+    return ((hp, p), s)
+
+
+@overload
+def init[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, P], S]:
+    return eqx.filter_vmap(lambda k: init(t.below, ctx, PRNG(k)))(jax.random.split(key, t.n))
 
 
 @overload

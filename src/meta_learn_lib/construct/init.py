@@ -1,5 +1,5 @@
 from meta_learn_lib.category.lib_types import Unit
-from meta_learn_lib.construct.leaves import initializer
+from meta_learn_lib.construct.leaves import initializer, knob
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
     Activation,
@@ -9,6 +9,8 @@ from meta_learn_lib.construct.term import (
     Linear,
     Loss,
     Meta,
+    Orthogonal,
+    Rnn,
     SameModel,
     Scan,
     Seq,
@@ -57,6 +59,17 @@ def init(t: Linear, ctx: int, key: PRNG) -> tuple[tuple[Unit, eqx.nn.Linear], Un
 @overload
 def init(t: Bias, ctx: int, key: PRNG) -> tuple[tuple[Unit, jax.Array], Unit]:
     return ((Unit(), initializer(t.init)(key, (ctx,))), Unit())
+
+
+@overload
+def init[HPA, PA](t: Rnn[HPA, PA], ctx: int, key: PRNG) -> tuple[tuple[HPA, tuple[PA, eqx.nn.Linear]], jax.Array]:
+    k_layer, k_rec, k_in, k_h = jax.random.split(key, 4)
+    layer = eqx.nn.Linear(t.n + ctx, t.n, use_bias=False, key=k_layer)
+    w_rec = initializer(Orthogonal())(k_rec, (t.n, t.n))
+    w_in = initializer(t.init)(k_in, (t.n, ctx))
+    w = jnp.hstack([w_rec, w_in])
+    hp, p = knob(t.alpha)
+    return ((hp, (p, eqx.tree_at(lambda l: l.weight, layer, w))), initializer(t.h0)(k_h, (t.n,)))
 
 
 @overload

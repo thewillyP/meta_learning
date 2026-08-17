@@ -1,16 +1,22 @@
+from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
     Activation,
     CrossEntropy,
-    L2,
-    Loss,
+    Hyper,
     Identity,
     Init,
+    Knob,
+    L2,
     LecunNormal,
+    Loss,
+    Normal,
+    Orthogonal,
     PytorchUniform,
     Relu,
     Sigmoid,
     Softmax,
     Tanh,
+    Trained,
     Zeros,
 )
 
@@ -72,6 +78,16 @@ def initializer(t: PytorchUniform) -> jax.nn.initializers.Initializer:
 
 
 @overload
+def initializer(t: Normal) -> jax.nn.initializers.Initializer:
+    return jax.nn.initializers.normal(t.std)
+
+
+@overload
+def initializer(t: Orthogonal) -> jax.nn.initializers.Initializer:
+    return jax.nn.initializers.orthogonal()
+
+
+@overload
 def initializer(t: Init) -> jax.nn.initializers.Initializer:
     raise NotImplementedError
 
@@ -98,4 +114,44 @@ def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
 
 @dispatch
 def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
+    raise NotImplementedError
+
+
+@overload
+def knob(k: Hyper) -> tuple[jax.Array, Unit]:
+    return (jnp.asarray(k.value), Unit())
+
+
+@overload
+def knob(k: Trained) -> tuple[Unit, jax.Array]:
+    return (Unit(), jnp.asarray(k.value))
+
+
+@overload
+def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
+    raise NotImplementedError
+
+
+@dispatch
+def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
+    raise NotImplementedError
+
+
+@overload
+def alpha_of(k: Hyper) -> Callable[[jax.Array, Unit], jax.Array]:
+    return lambda hp, p: hp
+
+
+@overload
+def alpha_of(k: Trained) -> Callable[[Unit, jax.Array], jax.Array]:
+    return lambda hp, p: p
+
+
+@overload
+def alpha_of[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
+    raise NotImplementedError
+
+
+@dispatch
+def alpha_of[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
     raise NotImplementedError

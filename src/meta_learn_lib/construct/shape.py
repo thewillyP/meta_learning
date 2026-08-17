@@ -6,6 +6,7 @@ from meta_learn_lib.construct.term import (
     Linear,
     Loss,
     Meta,
+    Rnn,
     Scan,
     Seq,
     Sup,
@@ -24,6 +25,11 @@ def out(t: Linear, n_in: int) -> int:
 @overload
 def out(t: Bias, n_in: int) -> int:
     return n_in
+
+
+@overload
+def out[HPA, PA](t: Rnn[HPA, PA], n_in: int) -> int:
+    return t.n
 
 
 @overload

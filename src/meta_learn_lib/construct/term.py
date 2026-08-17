@@ -23,6 +23,15 @@ class LecunNormal(Init): ...
 
 
 @dataclass(frozen=True)
+class Normal(Init):
+    std: float
+
+
+@dataclass(frozen=True)
+class Orthogonal(Init): ...
+
+
+@dataclass(frozen=True)
 class PytorchUniform(Init): ...
 
 
@@ -59,6 +68,29 @@ class Softmax(Activation): ...
 
 @dataclass(frozen=True)
 class Identity(Activation): ...
+
+
+@dataclass(frozen=True)
+class Knob[HP, P]: ...
+
+
+@dataclass(frozen=True)
+class Hyper(Knob[jax.Array, Unit]):
+    value: float
+
+
+@dataclass(frozen=True)
+class Trained(Knob[Unit, jax.Array]):
+    value: float
+
+
+@dataclass(frozen=True)
+class Rnn[HPA, PA](Term[jax.Array, jax.Array, jax.Array, HPA, tuple[PA, eqx.nn.Linear]]):
+    n: int
+    act: Activation
+    alpha: Knob[HPA, PA]
+    init: Init
+    h0: Init
 
 
 @dataclass(frozen=True)

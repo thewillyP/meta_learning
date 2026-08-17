@@ -5,9 +5,9 @@ from meta_learn_lib.algorithms.optimizers import sgd
 from meta_learn_lib.category.lens import identity
 from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
-from meta_learn_lib.category.paralens import to_paralens
+from meta_learn_lib.category.paralens import para_autodiff, to_paralens
 from meta_learn_lib.lib_types import ArrayTree
-from meta_learn_lib.construct.leaves import activation, objective
+from meta_learn_lib.construct.leaves import activation, alpha_of, objective
 from meta_learn_lib.construct.term import (
     Activation,
     BatchData,
@@ -16,6 +16,7 @@ from meta_learn_lib.construct.term import (
     Linear,
     Loss,
     Meta,
+    Rnn,
     SameModel,
     Scan,
     Seq,
@@ -69,6 +70,34 @@ def build(t: Bias) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Arr
 def build(t: Activation) -> Mealy[Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit, Unit, Unit]:
     f = activation(t)
     return leaf(lambda p, s, x: (s, f(x)))
+
+
+@overload
+def build[HPA, PA](
+    t: Rnn[HPA, PA],
+) -> Mealy[
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    HPA,
+    HPA,
+    tuple[PA, eqx.nn.Linear],
+    tuple[PA, eqx.nn.Linear],
+]:
+    read = alpha_of(t.alpha)
+    f = activation(t.act)
+
+    def h(hp_p: tuple[HPA, tuple[PA, eqx.nn.Linear]], sx: tuple[jax.Array, jax.Array]) -> tuple[jax.Array, jax.Array]:
+        hp, (pa, layer) = hp_p
+        s, x = sx
+        a = read(hp, pa)
+        s1 = (1 - a) * s + a * f(layer(jnp.concatenate([s, x])))
+        return (s1, s1)
+
+    return Mealy(para_autodiff(h))
 
 
 @overload

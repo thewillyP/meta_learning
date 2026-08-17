@@ -24,7 +24,12 @@ def init(t: Bias, n_in: int, key: PRNG) -> tuple[tuple[Unit, jax.Array], Unit]:
 
 
 @overload
-def init(t: Activation | Loss, n_in: int, key: PRNG) -> tuple[tuple[Unit, Unit], Unit]:
+def init(t: Activation, n_in: int, key: PRNG) -> tuple[tuple[Unit, Unit], Unit]:
+    return ((Unit(), Unit()), Unit())
+
+
+@overload
+def init(t: Loss, n_in: int, key: PRNG) -> tuple[tuple[Unit, Unit], Unit]:
     return ((Unit(), Unit()), Unit())
 
 

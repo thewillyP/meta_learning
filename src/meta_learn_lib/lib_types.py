@@ -1,6 +1,7 @@
 from typing import Literal, NewType
 import equinox as eqx
 import jax
+import optax
 
 PRNG = NewType("PRNG", jax.Array)
 
@@ -38,3 +39,6 @@ type Uncanon = str
 type CarryTransform = Literal["identity", "take_last", "take_first"]
 
 type S_ID = tuple[Canon, int | None]
+
+
+ArrayTree = optax.OptState

@@ -1,14 +1,52 @@
+from meta_learn_lib.algorithms.combinators import learner
+from meta_learn_lib.algorithms.level import level, validation
+from meta_learn_lib.algorithms.optimizers import sgd
 from meta_learn_lib.category.lens import identity
 from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
 from meta_learn_lib.category.paralens import para_autodiff, to_paralens
+from meta_learn_lib.lib_types import ArrayTree
 from meta_learn_lib.construct.leaves import activation, objective
-from meta_learn_lib.construct.term import Activation, Arch, Bias, Linear, Loss, Seq, Sup
+from meta_learn_lib.construct.term import (
+    Activation,
+    Bias,
+    Linear,
+    Loss,
+    Meta,
+    SameModel,
+    Seq,
+    Sgd,
+    Sup,
+    Term,
+    Validator,
+)
 
 from typing import overload
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 from plum import dispatch
+
+
+@overload
+def validator[S, X, Y, HP, P](
+    v: SameModel[S, X, Y, HP, P], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
+) -> Mealy[S, S, tuple[tuple[Y, P], X], tuple[tuple[Y, P], X], Y, Y, HP, HP, Unit, Unit]:
+    return validation(m)
+
+
+@overload
+def validator[S, X, Y, HP, P, SV, XV, PV](
+    v: Validator[S, X, Y, HP, P, SV, XV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
+) -> Mealy[SV, SV, tuple[tuple[Y, P], XV], tuple[tuple[Y, P], XV], Y, Y, HP, HP, PV, PV]:
+    raise NotImplementedError
+
+
+@dispatch
+def validator[S, X, Y, HP, P, SV, XV, PV](
+    v: Validator[S, X, Y, HP, P, SV, XV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
+) -> Mealy[SV, SV, tuple[tuple[Y, P], XV], tuple[tuple[Y, P], XV], Y, Y, HP, HP, PV, PV]:
+    raise NotImplementedError
 
 
 @overload
@@ -68,6 +106,11 @@ def build(
 
 
 @overload
+def build[P](t: Sgd[P]) -> Mealy[ArrayTree, ArrayTree, P, P, P, P, Unit, Unit, jax.Array, jax.Array]:
+    return sgd()
+
+
+@overload
 def build[S1, S2, X, Y, Z, HP1, HP2, P1, P2](
     t: Seq[S1, S2, X, Y, Z, HP1, HP2, P1, P2],
 ) -> Mealy[
@@ -105,10 +148,29 @@ def build[S, X, HP, P](
 
 
 @overload
-def build[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+def build[S, X, HP, P, SV, XV, PV](
+    t: Meta[S, X, HP, P, SV, XV, PV],
+) -> Mealy[
+    tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
+    tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
+    tuple[X, XV],
+    tuple[X, XV],
+    jax.Array,
+    jax.Array,
+    tuple[tuple[HP, Unit], HP],
+    tuple[tuple[HP, Unit], HP],
+    tuple[tuple[jax.Array, Unit], PV],
+    tuple[tuple[jax.Array, Unit], PV],
+]:
+    below = build(t.below)
+    return level(learner(below, build(t.opt), jnp.ones_like), validator(t.val, below))
+
+
+@overload
+def build[S, X, Y, HP, P](t: Term[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     raise NotImplementedError
 
 
 @dispatch
-def build[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+def build[S, X, Y, HP, P](t: Term[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     raise NotImplementedError

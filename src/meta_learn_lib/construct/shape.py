@@ -1,4 +1,4 @@
-from meta_learn_lib.construct.term import Activation, Arch, Bias, Linear, Loss, Seq, Sup
+from meta_learn_lib.construct.term import Activation, Bias, Linear, Loss, Meta, Seq, Sup, Term
 
 from typing import overload
 from plum import dispatch
@@ -35,10 +35,15 @@ def out[S, X, HP, P](t: Sup[S, X, HP, P], n_in: int) -> int:
 
 
 @overload
-def out[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P], n_in: int) -> int:
+def out[S, X, HP, P, SV, XV, PV](t: Meta[S, X, HP, P, SV, XV, PV], n_in: int) -> int:
+    return out(t.below, n_in)
+
+
+@overload
+def out[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], n_in: int) -> int:
     raise NotImplementedError
 
 
 @dispatch
-def out[S, X, Y, HP, P](t: Arch[S, X, Y, HP, P], n_in: int) -> int:
+def out[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], n_in: int) -> int:
     raise NotImplementedError

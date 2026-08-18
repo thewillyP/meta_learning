@@ -21,6 +21,7 @@ from meta_learn_lib.construct.term import (
 )
 import meta_learn_lib.lib_types
 from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
+from meta_learn_lib.utility.util import to_vector
 
 from typing import Callable, cast, overload
 import equinox as eqx
@@ -259,20 +260,13 @@ def flat_state[S, X, Y, HP, P](
     t: Term[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: int, key: PRNG
 ) -> Callable[[jax.Array], jax.Array]:
     hp, p = hp_p
-    diff, static = eqx.partition(p, eqx.is_inexact_array)
-    _, unravel = jax.flatten_util.ravel_pytree(diff)
-
-    def f(p_flat: jax.Array) -> jax.Array:
-        s = state(t, (hp, eqx.combine(unravel(p_flat), static)), ctx, key)
-        s_flat, _ = jax.flatten_util.ravel_pytree(eqx.filter(s, eqx.is_inexact_array))
-        return s_flat
-
-    return f
+    v = to_vector(p)
+    return lambda p_flat: to_vector(state(t, (hp, v.to_param(p_flat)), ctx, key)).vector
 
 
 def influence[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: int, key: PRNG) -> JACOBIAN:
     _, p = hp_p
-    p_flat, _ = jax.flatten_util.ravel_pytree(eqx.filter(p, eqx.is_inexact_array))
+    p_flat = to_vector(p).vector
     f = flat_state(t, hp_p, ctx, key)
     (n_s,) = jax.eval_shape(f, p_flat).shape
     return JACOBIAN(jax.jacfwd(f)(p_flat) if n_s > p_flat.size else jax.jacrev(f)(p_flat))
@@ -282,13 +276,6 @@ def rank_one[S, X, Y, HP, P](
     t: Term[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: int, key: PRNG, nu: jax.Array
 ) -> jax.Array:
     _, p = hp_p
-    p_flat, _ = jax.flatten_util.ravel_pytree(eqx.filter(p, eqx.is_inexact_array))
-    _, vjp = jax.vjp(flat_state(t, hp_p, ctx, key), p_flat)
+    _, vjp = jax.vjp(flat_state(t, hp_p, ctx, key), to_vector(p).vector)
     (d_p,) = vjp(nu)
     return d_p
-
-
-def init[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, P], S]:
-    k1, k2 = jax.random.split(key)
-    hp_p = port(t, ctx, PRNG(k1))
-    return hp_p, state(t, hp_p, ctx, PRNG(k2))

@@ -23,22 +23,22 @@ def immediate_influence(
         return jax.vmap(row)(jnp.eye(n))
 
 
-def rtrl_like[HP, H, X, Y, P, W](
+def rtrl_like[HP, HPM, H, X, Y, P, W](
     machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
     update_influence: Callable[
-        [tuple[HP, P], Callable[[jax.Array, jax.Array], jax.Array], Callable[[jax.Array], jax.Array], W], W
+        [HPM, Callable[[jax.Array, jax.Array], jax.Array], Callable[[jax.Array], jax.Array], W], W
     ],
-    boundary: Callable[[tuple[HP, P], H, Y, jax.Array, W], jax.Array],
-) -> Mealy[tuple[H, W], tuple[H, W], X, X, Y, Y, HP, HP, P, P]:
+    boundary: Callable[[HPM, H, Y, jax.Array, W], jax.Array],
+) -> Mealy[tuple[H, W], tuple[H, W], X, X, Y, Y, tuple[HP, HPM], tuple[HP, HPM], P, P]:
 
     def run(
-        p_sx: tuple[tuple[HP, P], tuple[tuple[H, W], X]],
+        p_sx: tuple[tuple[tuple[HP, HPM], P], tuple[tuple[H, W], X]],
     ) -> tuple[
         tuple[tuple[H, W], Y],
-        Callable[[tuple[tuple[H, W], Y]], tuple[tuple[HP, P], tuple[tuple[H, W], X]]],
+        Callable[[tuple[tuple[H, W], Y]], tuple[tuple[tuple[HP, HPM], P], tuple[tuple[H, W], X]]],
     ]:
-        hp_p, ((h0, W0), x) = p_sx
-        hp, p = hp_p
+        ((hp, hpm), p), ((h0, W0), x) = p_sx
+        hp_p = (hp, p)
         _, unflat_h = jax.flatten_util.ravel_pytree(eqx.filter(h0, eqx.is_inexact_array))
         _, unflat_p = jax.flatten_util.ravel_pytree(eqx.filter(p, eqx.is_inexact_array))
         (h1, y), put = machine.arrow.arrow.run((hp_p, (h0, x)))
@@ -57,17 +57,17 @@ def rtrl_like[HP, H, X, Y, P, W](
             dp_flat, _ = jax.flatten_util.ravel_pytree(dp)
             return dp_flat
 
-        W1 = update_influence(hp_p, push, row, W0)
+        W1 = update_influence(hpm, push, row, W0)
 
         def rev(
             ct: tuple[tuple[H, W], Y],
-        ) -> tuple[tuple[HP, P], tuple[tuple[H, W], X]]:
+        ) -> tuple[tuple[tuple[HP, HPM], P], tuple[tuple[H, W], X]]:
             (d_h_final, _), d_y = ct
             (d_hp, d_p_inner), (d_h0, d_x) = put((d_h_final, d_y))
             d_h0_flat, _ = jax.flatten_util.ravel_pytree(d_h0)
-            d_p = jax.tree.map(jnp.add, d_p_inner, unflat_p(boundary(hp_p, d_h_final, d_y, d_h0_flat, W0)))
+            d_p = jax.tree.map(jnp.add, d_p_inner, unflat_p(boundary(hpm, d_h_final, d_y, d_h0_flat, W0)))
             zero_state = zero_cotangent_like((h0, W0))
-            return (d_hp, d_p), (zero_state, d_x)
+            return ((d_hp, zero_cotangent_like(hpm)), d_p), (zero_state, d_x)
 
         return ((h1, W1), y), rev
 
@@ -76,10 +76,10 @@ def rtrl_like[HP, H, X, Y, P, W](
 
 def rtrl[HP, H, X, Y, P](
     machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
-) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, HP, HP, P, P]:
+) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, tuple[HP, Unit], tuple[HP, Unit], P, P]:
 
     def update_influence(
-        hp_p: tuple[HP, P],
+        hpm: Unit,
         push: Callable[[jax.Array, jax.Array], jax.Array],
         row: Callable[[jax.Array], jax.Array],
         M0: JACOBIAN,
@@ -93,7 +93,7 @@ def rtrl[HP, H, X, Y, P](
             M1 = jmp_M0 + J_p
         return JACOBIAN(M1)
 
-    def boundary(hp_p: tuple[HP, P], d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
+    def boundary(hpm: Unit, d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
         return d_h0 @ M0
 
     return rtrl_like(machine, update_influence, boundary)
@@ -105,26 +105,26 @@ type UORO_AUX = tuple[jax.Array, jax.Array, PRNG]
 def uoro[HP, H, X, Y, P](
     machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
     distribution: SAMPLER,
-) -> Mealy[tuple[H, UORO_AUX], tuple[H, UORO_AUX], X, X, Y, Y, HP, HP, P, P]:
+) -> Mealy[tuple[H, UORO_AUX], tuple[H, UORO_AUX], X, X, Y, Y, tuple[HP, Unit], tuple[HP, Unit], P, P]:
 
     def update_influence(
-        hp_p: tuple[HP, P],
+        hpm: Unit,
         push: Callable[[jax.Array, jax.Array], jax.Array],
         row: Callable[[jax.Array], jax.Array],
         W0: UORO_AUX,
     ) -> UORO_AUX:
         A0, B0, key = W0
         key0, key1 = jax.random.split(key)
-        nu = distribution(key0, A0.shape)
+        nu = distribution(PRNG(key0), A0.shape)
         jmp_A0 = push(jnp.zeros_like(B0), A0)
         nu_J_p = row(nu)
         rho0 = jnp.sqrt(optax.safe_norm(B0, 1e-12) / optax.safe_norm(jmp_A0, 1e-12))
         rho1 = jnp.sqrt(optax.safe_norm(nu_J_p, 1e-12) / optax.safe_norm(nu, 1e-12))
         A1: jax.Array = rho0 * jmp_A0 + rho1 * nu
         B1: jax.Array = B0 / rho0 + nu_J_p / rho1
-        return (A1, B1, key1)
+        return (A1, B1, PRNG(key1))
 
-    def boundary(hp_p: tuple[HP, P], d_h_final: H, d_y: Y, d_h0: jax.Array, W0: UORO_AUX) -> jax.Array:
+    def boundary(hpm: Unit, d_h_final: H, d_y: Y, d_h0: jax.Array, W0: UORO_AUX) -> jax.Array:
         A0, B0, _ = W0
         return (d_h0 @ A0) * B0
 
@@ -133,22 +133,19 @@ def uoro[HP, H, X, Y, P](
 
 def rflo[HP, H, X, Y, P](
     machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
-    alpha_of: Callable[[tuple[HP, P]], jax.Array],
-) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, HP, HP, P, P]:
+) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, tuple[HP, jax.Array], tuple[HP, jax.Array], P, P]:
 
     def update_influence(
-        hp_p: tuple[HP, P],
+        alpha: jax.Array,
         push: Callable[[jax.Array, jax.Array], jax.Array],
         row: Callable[[jax.Array], jax.Array],
         M0: JACOBIAN,
     ) -> JACOBIAN:
-        alpha = alpha_of(hp_p)
         n, p = M0.shape
         J_p = immediate_influence(push, row, (n, p))
         return JACOBIAN((1 - alpha) * M0 + J_p)
 
-    def boundary(hp_p: tuple[HP, P], d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
-        alpha = alpha_of(hp_p)
+    def boundary(alpha: jax.Array, d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
         c_state, _ = jax.flatten_util.ravel_pytree(d_h_final)
         c_out, _ = jax.flatten_util.ravel_pytree(d_y)
         return (1 - alpha) * ((c_state + c_out) @ M0)

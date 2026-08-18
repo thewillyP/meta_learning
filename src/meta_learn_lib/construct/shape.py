@@ -56,7 +56,7 @@ def out[S, X, HP, P](t: Sup[S, X, HP, P], n_in: int) -> int:
 
 
 @overload
-def out[S, X, HP, P, H, HPO, HPV, SV, XV, PV](t: Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV], n_in: int) -> int:
+def out[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](t: Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV], n_in: int) -> int:
     return out(t.below, n_in)
 
 
@@ -81,7 +81,7 @@ def out[S, X, Y, HP, P](t: RTRL[S, X, Y, HP, P], n_in: int) -> int:
 
 
 @overload
-def out[S, X, Y, HP, P](t: RFLO[S, X, Y, HP, P], n_in: int) -> int:
+def out[S, X, Y, HP, P, HD](t: RFLO[S, X, Y, HP, P, HD], n_in: int) -> int:
     return out(t.below, n_in)
 
 

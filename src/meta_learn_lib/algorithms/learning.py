@@ -131,21 +131,24 @@ def uoro[HP, H, X, Y, P](
     return rtrl_like(machine, update_influence, boundary)
 
 
-def rflo[HP, H, X, Y, P](
+def rflo[HP, HD, H, X, Y, P](
     machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
-) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, tuple[HP, jax.Array], tuple[HP, jax.Array], P, P]:
+    decay: Callable[[HD], jax.Array],
+) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, tuple[HP, HD], tuple[HP, HD], P, P]:
 
     def update_influence(
-        alpha: jax.Array,
+        hd: HD,
         push: Callable[[jax.Array, jax.Array], jax.Array],
         row: Callable[[jax.Array], jax.Array],
         M0: JACOBIAN,
     ) -> JACOBIAN:
+        alpha = decay(hd)
         n, p = M0.shape
         J_p = immediate_influence(push, row, (n, p))
         return JACOBIAN((1 - alpha) * M0 + J_p)
 
-    def boundary(alpha: jax.Array, d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
+    def boundary(hd: HD, d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
+        alpha = decay(hd)
         c_state, _ = jax.flatten_util.ravel_pytree(d_h_final)
         c_out, _ = jax.flatten_util.ravel_pytree(d_y)
         return (1 - alpha) * ((c_state + c_out) @ M0)

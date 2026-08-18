@@ -85,6 +85,11 @@ class Trained(Knob[Unit, jax.Array]):
 
 
 @dataclass(frozen=True)
+class Const(Knob[Unit, Unit]):
+    value: float
+
+
+@dataclass(frozen=True)
 class Rnn[HPA, PA](Term[jax.Array, jax.Array, jax.Array, HPA, tuple[PA, eqx.nn.Linear]]):
     n: int
     act: Activation
@@ -126,12 +131,43 @@ class Sup[S, X, HP, P](
 
 
 @dataclass(frozen=True)
-class Opt[HPO, H, P](Term[ArrayTree, P, P, HPO, H]): ...
+class Opt[SO, HPO, H, P](Term[SO, P, P, HPO, H]): ...
 
 
 @dataclass(frozen=True)
-class Sgd[P](Opt[Unit, jax.Array, P]):
-    lr: float
+class Sgd[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
+    lr: Knob[HL, Unit]
+    wd: Knob[HW, Unit]
+    momentum: Knob[HM, Unit]
+
+
+@dataclass(frozen=True)
+class SgdNormalized[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
+    lr: Knob[HL, Unit]
+    wd: Knob[HW, Unit]
+    momentum: Knob[HM, Unit]
+
+
+@dataclass(frozen=True)
+class Adam[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
+    lr: Knob[HL, Unit]
+    wd: Knob[HW, Unit]
+    momentum: Knob[HM, Unit]
+    b2: float
+    eps: float
+    eps_root: float
+
+
+@dataclass(frozen=True)
+class Frozen[P](Opt[ArrayTree, Unit, Unit, P]): ...
+
+
+@dataclass(frozen=True)
+class Split[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2](
+    Opt[tuple[SO1, SO2], tuple[HPO1, HPO2], tuple[H1, H2], tuple[P1, P2]]
+):
+    first: Opt[SO1, HPO1, H1, P1]
+    second: Opt[SO2, HPO2, H2, P2]
 
 
 @dataclass(frozen=True)
@@ -156,11 +192,11 @@ class Noise: ...
 
 
 @dataclass(frozen=True)
-class Rademacher(Noise): ...
+class Gaussian(Noise): ...
 
 
 @dataclass(frozen=True)
-class Gaussian(Noise): ...
+class Rademacher(Noise): ...
 
 
 @dataclass(frozen=True)
@@ -173,9 +209,9 @@ class RTRL[S, X, Y, HP, P](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, Unit], P]):
 
 
 @dataclass(frozen=True)
-class RFLO[S, X, Y, HP, P](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, jax.Array], P]):
+class RFLO[S, X, Y, HP, P, HD](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, HD], P]):
     below: Term[S, X, Y, HP, P]
-    decay: Hyper
+    decay: Knob[HD, Unit]
 
 
 @dataclass(frozen=True)
@@ -193,9 +229,9 @@ class SameModel[S, X, Y, HP, P](Validator[S, X, Y, HP, P, S, X, Unit, Unit]): ..
 
 
 @dataclass(frozen=True)
-class Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
+class Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
     Term[
-        tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
+        tuple[tuple[tuple[S, tuple[SO, P]], Unit], SV],
         tuple[X, XV],
         jax.Array,
         tuple[tuple[HPO, Unit], HPV],
@@ -203,5 +239,5 @@ class Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
     ]
 ):
     below: Term[S, X, jax.Array, HP, P]
-    opt: Opt[HPO, H, P]
+    opt: Opt[SO, HPO, H, P]
     val: Validator[S, X, jax.Array, HP, P, SV, XV, HPV, PV]

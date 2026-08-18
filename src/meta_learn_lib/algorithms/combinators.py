@@ -110,13 +110,13 @@ def batch_pop[S, X, Y, HP, P](m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]) -> Mealy
     return batch_with_axes(m, lambda dp: dp, eqx.if_array(0))
 
 
-def learner[HP, HPO, S, X, Y, P, H](
+def learner[HP, HPO, SO, S, X, Y, P, H](
     machine: Mealy[S, S, X, X, Y, Y, HP, HP, P, P],
-    opt: Mealy[optax.OptState, optax.OptState, P, P, P, P, HPO, HPO, H, H],
+    opt: Mealy[SO, SO, P, P, P, P, HPO, HPO, H, H],
     d_out: Callable[[Y], Y],
 ) -> Mealy[
-    tuple[S, tuple[optax.OptState, P]],
-    tuple[S, tuple[optax.OptState, P]],
+    tuple[S, tuple[SO, P]],
+    tuple[S, tuple[SO, P]],
     X,
     X,
     tuple[Y, tuple[HP, P]],
@@ -127,8 +127,8 @@ def learner[HP, HPO, S, X, Y, P, H](
     tuple[HP, H],
 ]:
     def step(
-        hp_h: tuple[HPO, tuple[HP, H]], sv: tuple[tuple[S, tuple[optax.OptState, P]], X]
-    ) -> tuple[tuple[S, tuple[optax.OptState, P]], tuple[Y, tuple[HP, P]]]:
+        hp_h: tuple[HPO, tuple[HP, H]], sv: tuple[tuple[S, tuple[SO, P]], X]
+    ) -> tuple[tuple[S, tuple[SO, P]], tuple[Y, tuple[HP, P]]]:
         hp_o, (hp, lam) = hp_h
         (s_m, (opt_st, theta)), x = sv
         (s_m1, y), put = machine.arrow.arrow.run(((hp, theta), (s_m, x)))

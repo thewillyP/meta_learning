@@ -1,7 +1,9 @@
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
     Activation,
+    Const,
     CrossEntropy,
+    Gaussian,
     Hyper,
     Identity,
     Init,
@@ -13,7 +15,6 @@ from meta_learn_lib.construct.term import (
     Normal,
     Orthogonal,
     PytorchUniform,
-    Gaussian,
     Rademacher,
     Relu,
     Sigmoid,
@@ -23,15 +24,13 @@ from meta_learn_lib.construct.term import (
     UniformUnit,
     Zeros,
 )
+from meta_learn_lib.lib_types import PRNG
+from meta_learn_lib.utility.distributions import rademacher, uniform_unit
 
 from typing import Callable, overload
 import jax
 import jax.numpy as jnp
 import optax
-import meta_learn_lib.lib_types
-from meta_learn_lib.lib_types import PRNG
-from meta_learn_lib.utility.distributions import rademacher, uniform_unit
-
 from plum import dispatch
 
 
@@ -136,6 +135,11 @@ def knob(k: Trained) -> tuple[Unit, jax.Array]:
 
 
 @overload
+def knob(k: Const) -> tuple[Unit, Unit]:
+    return (Unit(), Unit())
+
+
+@overload
 def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
     raise NotImplementedError
 
@@ -153,6 +157,12 @@ def reader(k: Hyper) -> Callable[[jax.Array, Unit], jax.Array]:
 @overload
 def reader(k: Trained) -> Callable[[Unit, jax.Array], jax.Array]:
     return lambda hp, p: p
+
+
+@overload
+def reader(k: Const) -> Callable[[Unit, Unit], jax.Array]:
+    v = jnp.asarray(k.value)
+    return lambda hp, p: v
 
 
 @overload

@@ -1,11 +1,14 @@
+from meta_learn_lib.algorithms.optimizers import adam, frozen, sgd, sgd_normalized
 from meta_learn_lib.category.lib_types import Unit
-from meta_learn_lib.construct.leaves import initializer, knob, sampler
+from meta_learn_lib.construct.leaves import initializer, knob, reader, sampler
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
     Activation,
+    Adam,
     BatchData,
     BatchPop,
     Bias,
+    Frozen,
     Linear,
     Loss,
     Meta,
@@ -17,12 +20,13 @@ from meta_learn_lib.construct.term import (
     Scan,
     Seq,
     Sgd,
+    SgdNormalized,
+    Split,
     Sup,
     Term,
     UORO,
     Validator,
 )
-import meta_learn_lib.lib_types
 from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
 from meta_learn_lib.utility.util import to_vector
 
@@ -87,8 +91,42 @@ def port(t: Loss, ctx: int, key: PRNG) -> tuple[Unit, Unit]:
 
 
 @overload
-def port[P](t: Sgd[P], ctx: int, key: PRNG) -> tuple[Unit, jax.Array]:
-    return (Unit(), jnp.asarray(t.lr))
+def port[HL, HW, HM, P](t: Sgd[HL, HW, HM, P], ctx: int, key: PRNG) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
+    lr, _ = knob(t.lr)
+    wd, _ = knob(t.wd)
+    m, _ = knob(t.momentum)
+    return (Unit(), ((lr, wd), m))
+
+
+@overload
+def port[HL, HW, HM, P](t: SgdNormalized[HL, HW, HM, P], ctx: int, key: PRNG) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
+    lr, _ = knob(t.lr)
+    wd, _ = knob(t.wd)
+    m, _ = knob(t.momentum)
+    return (Unit(), ((lr, wd), m))
+
+
+@overload
+def port[HL, HW, HM, P](t: Adam[HL, HW, HM, P], ctx: int, key: PRNG) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
+    lr, _ = knob(t.lr)
+    wd, _ = knob(t.wd)
+    m, _ = knob(t.momentum)
+    return (Unit(), ((lr, wd), m))
+
+
+@overload
+def port[P](t: Frozen[P], ctx: int, key: PRNG) -> tuple[Unit, Unit]:
+    return (Unit(), Unit())
+
+
+@overload
+def port[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2](
+    t: Split[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2], ctx: int, key: PRNG
+) -> tuple[tuple[HPO1, HPO2], tuple[H1, H2]]:
+    k1, k2 = jax.random.split(key)
+    hp1, h1 = port(t.first, ctx, PRNG(k1))
+    hp2, h2 = port(t.second, ctx, PRNG(k2))
+    return ((hp1, hp2), (h1, h2))
 
 
 @overload
@@ -110,8 +148,8 @@ def port[S, X, HP, P](
 
 
 @overload
-def port[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
-    t: Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV], ctx: int, key: PRNG
+def port[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
+    t: Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV], ctx: int, key: PRNG
 ) -> tuple[tuple[tuple[HPO, Unit], HPV], tuple[tuple[tuple[HP, H], Unit], PV]]:
     k1, k2, k3 = jax.random.split(key, 3)
     hp, _ = port(t.below, ctx, PRNG(k1))
@@ -142,7 +180,7 @@ def port[S, X, Y, HP, P](t: RTRL[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[
 
 
 @overload
-def port[S, X, Y, HP, P](t: RFLO[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, jax.Array], P]:
+def port[S, X, Y, HP, P, HD](t: RFLO[S, X, Y, HP, P, HD], ctx: int, key: PRNG) -> tuple[tuple[HP, HD], P]:
     hp, p = port(t.below, ctx, key)
     d, _ = knob(t.decay)
     return ((hp, d), p)
@@ -209,9 +247,55 @@ def state[HPA, PA](t: Rnn[HPA, PA], hp_p: tuple[HPA, tuple[PA, eqx.nn.Linear]], 
 
 
 @overload
-def state[P](t: Sgd[P], hp_p: tuple[Unit, jax.Array], ctx: P, key: PRNG) -> ArrayTree:
-    _, lr = hp_p
-    return optax.sgd(lr).init(cast(optax.Params, ctx))
+def state[HL, HW, HM, P](
+    t: Sgd[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], ctx: P, key: PRNG
+) -> ArrayTree:
+    _, ((lr, wd), m) = hp_p
+    tx = sgd(reader(t.lr)(lr, Unit()), reader(t.wd)(wd, Unit()), reader(t.momentum)(m, Unit()))
+    return tx.init(cast(optax.Params, ctx))
+
+
+@overload
+def state[HL, HW, HM, P](
+    t: SgdNormalized[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], ctx: P, key: PRNG
+) -> ArrayTree:
+    _, ((lr, wd), m) = hp_p
+    tx = sgd_normalized(reader(t.lr)(lr, Unit()), reader(t.wd)(wd, Unit()), reader(t.momentum)(m, Unit()))
+    return tx.init(cast(optax.Params, ctx))
+
+
+@overload
+def state[HL, HW, HM, P](
+    t: Adam[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], ctx: P, key: PRNG
+) -> ArrayTree:
+    _, ((lr, wd), m) = hp_p
+    tx = adam(
+        reader(t.lr)(lr, Unit()),
+        reader(t.wd)(wd, Unit()),
+        reader(t.momentum)(m, Unit()),
+        t.b2,
+        t.eps,
+        t.eps_root,
+    )
+    return tx.init(cast(optax.Params, ctx))
+
+
+@overload
+def state[P](t: Frozen[P], hp_p: tuple[Unit, Unit], ctx: P, key: PRNG) -> ArrayTree:
+    return frozen().init(cast(optax.Params, ctx))
+
+
+@overload
+def state[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2](
+    t: Split[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2],
+    hp_p: tuple[tuple[HPO1, HPO2], tuple[H1, H2]],
+    ctx: tuple[P1, P2],
+    key: PRNG,
+) -> tuple[SO1, SO2]:
+    (hp1, hp2), (h1, h2) = hp_p
+    p1, p2 = ctx
+    k1, k2 = jax.random.split(key)
+    return (state(t.first, (hp1, h1), p1, PRNG(k1)), state(t.second, (hp2, h2), p2, PRNG(k2)))
 
 
 @overload
@@ -238,17 +322,17 @@ def state[S, X, HP, P](
 
 
 @overload
-def state[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
-    t: Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV],
+def state[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
+    t: Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV],
     hp_p: tuple[tuple[tuple[HPO, Unit], HPV], tuple[tuple[tuple[HP, H], Unit], PV]],
     ctx: int,
     key: PRNG,
-) -> tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV]:
-    _, (((hp, h), _), _) = hp_p
+) -> tuple[tuple[tuple[S, tuple[SO, P]], Unit], SV]:
+    ((hp_o, _), _), (((hp, h), _), _) = hp_p
     k1, k2, k3 = jax.random.split(key, 3)
     _, p_b = port(t.below, ctx, PRNG(k1))
     s = state(t.below, (hp, p_b), ctx, PRNG(k2))
-    opt_st = state(t.opt, (Unit(), h), p_b, PRNG(k3))
+    opt_st = state(t.opt, (hp_o, h), p_b, PRNG(k3))
     return (((s, (opt_st, p_b)), Unit()), val_state(t.val, s, ctx, key))
 
 
@@ -277,8 +361,8 @@ def state[S, X, Y, HP, P](
 
 
 @overload
-def state[S, X, Y, HP, P](
-    t: RFLO[S, X, Y, HP, P], hp_p: tuple[tuple[HP, jax.Array], P], ctx: int, key: PRNG
+def state[S, X, Y, HP, P, HD](
+    t: RFLO[S, X, Y, HP, P, HD], hp_p: tuple[tuple[HP, HD], P], ctx: int, key: PRNG
 ) -> tuple[S, JACOBIAN]:
     (hp, _), p = hp_p
     return (state(t.below, (hp, p), ctx, key), influence(t.below, (hp, p), ctx, key))

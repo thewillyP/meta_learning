@@ -2,19 +2,20 @@ from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner
 from meta_learn_lib.algorithms.learning import rflo, rtrl, uoro
 from meta_learn_lib.algorithms.level import level, validation
 from meta_learn_lib.algorithms.model import leaf
-from meta_learn_lib.algorithms.optimizers import sgd
+from meta_learn_lib.algorithms.optimizers import adam, additive, frozen, optimizer, sgd, sgd_normalized
 from meta_learn_lib.category.lens import identity
 from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
 from meta_learn_lib.category.paralens import para_autodiff, to_paralens
-import meta_learn_lib.lib_types
 from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
 from meta_learn_lib.construct.leaves import activation, objective, reader, sampler
 from meta_learn_lib.construct.term import (
     Activation,
+    Adam,
     BatchData,
     BatchPop,
     Bias,
+    Frozen,
     Linear,
     Loss,
     Meta,
@@ -25,6 +26,8 @@ from meta_learn_lib.construct.term import (
     Scan,
     Seq,
     Sgd,
+    SgdNormalized,
+    Split,
     Sup,
     Term,
     UORO,
@@ -35,6 +38,7 @@ from typing import overload
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import optax
 from plum import dispatch
 
 
@@ -125,8 +129,98 @@ def build(
 
 
 @overload
-def build[P](t: Sgd[P]) -> Mealy[ArrayTree, ArrayTree, P, P, P, P, Unit, Unit, jax.Array, jax.Array]:
-    return sgd()
+def build[HL, HW, HM, P](
+    t: Sgd[HL, HW, HM, P],
+) -> Mealy[
+    ArrayTree,
+    ArrayTree,
+    P,
+    P,
+    P,
+    P,
+    Unit,
+    Unit,
+    tuple[tuple[HL, HW], HM],
+    tuple[tuple[HL, HW], HM],
+]:
+    r_lr, r_wd, r_m = reader(t.lr), reader(t.wd), reader(t.momentum)
+
+    def make(h: tuple[tuple[HL, HW], HM]) -> optax.GradientTransformation:
+        (lr, wd), m = h
+        return sgd(r_lr(lr, Unit()), r_wd(wd, Unit()), r_m(m, Unit()))
+
+    return optimizer(make, additive)
+
+
+@overload
+def build[HL, HW, HM, P](
+    t: SgdNormalized[HL, HW, HM, P],
+) -> Mealy[
+    ArrayTree,
+    ArrayTree,
+    P,
+    P,
+    P,
+    P,
+    Unit,
+    Unit,
+    tuple[tuple[HL, HW], HM],
+    tuple[tuple[HL, HW], HM],
+]:
+    r_lr, r_wd, r_m = reader(t.lr), reader(t.wd), reader(t.momentum)
+
+    def make(h: tuple[tuple[HL, HW], HM]) -> optax.GradientTransformation:
+        (lr, wd), m = h
+        return sgd_normalized(r_lr(lr, Unit()), r_wd(wd, Unit()), r_m(m, Unit()))
+
+    return optimizer(make, additive)
+
+
+@overload
+def build[HL, HW, HM, P](
+    t: Adam[HL, HW, HM, P],
+) -> Mealy[
+    ArrayTree,
+    ArrayTree,
+    P,
+    P,
+    P,
+    P,
+    Unit,
+    Unit,
+    tuple[tuple[HL, HW], HM],
+    tuple[tuple[HL, HW], HM],
+]:
+    r_lr, r_wd, r_m = reader(t.lr), reader(t.wd), reader(t.momentum)
+
+    def make(h: tuple[tuple[HL, HW], HM]) -> optax.GradientTransformation:
+        (lr, wd), m = h
+        return adam(r_lr(lr, Unit()), r_wd(wd, Unit()), r_m(m, Unit()), t.b2, t.eps, t.eps_root)
+
+    return optimizer(make, additive)
+
+
+@overload
+def build[P](t: Frozen[P]) -> Mealy[ArrayTree, ArrayTree, P, P, P, P, Unit, Unit, Unit, Unit]:
+    return optimizer(lambda h: frozen(), additive)
+
+
+@overload
+def build[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2](
+    t: Split[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2],
+) -> Mealy[
+    tuple[SO1, SO2],
+    tuple[SO1, SO2],
+    tuple[P1, P2],
+    tuple[P1, P2],
+    tuple[P1, P2],
+    tuple[P1, P2],
+    tuple[HPO1, HPO2],
+    tuple[HPO1, HPO2],
+    tuple[H1, H2],
+    tuple[H1, H2],
+]:
+    return build(t.first) @ build(t.second)
 
 
 @overload
@@ -167,11 +261,11 @@ def build[S, X, HP, P](
 
 
 @overload
-def build[S, X, HP, P, H, HPO, HPV, SV, XV, PV](
-    t: Meta[S, X, HP, P, H, HPO, HPV, SV, XV, PV],
+def build[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
+    t: Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV],
 ) -> Mealy[
-    tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
-    tuple[tuple[tuple[S, tuple[ArrayTree, P]], Unit], SV],
+    tuple[tuple[tuple[S, tuple[SO, P]], Unit], SV],
+    tuple[tuple[tuple[S, tuple[SO, P]], Unit], SV],
     tuple[X, XV],
     tuple[X, XV],
     jax.Array,
@@ -208,10 +302,11 @@ def build[S, X, Y, HP, P](
 
 
 @overload
-def build[S, X, Y, HP, P](
-    t: RFLO[S, X, Y, HP, P],
-) -> Mealy[tuple[S, JACOBIAN], tuple[S, JACOBIAN], X, X, Y, Y, tuple[HP, jax.Array], tuple[HP, jax.Array], P, P]:
-    return rflo(build(t.below))
+def build[S, X, Y, HP, P, HD](
+    t: RFLO[S, X, Y, HP, P, HD],
+) -> Mealy[tuple[S, JACOBIAN], tuple[S, JACOBIAN], X, X, Y, Y, tuple[HP, HD], tuple[HP, HD], P, P]:
+    read = reader(t.decay)
+    return rflo(build(t.below), lambda hd: read(hd, Unit()))
 
 
 @overload

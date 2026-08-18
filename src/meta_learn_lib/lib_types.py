@@ -1,7 +1,6 @@
-from typing import Any, Iterable, Literal, Mapping, NewType, Union
+from typing import Iterable, Literal, Mapping, NewType, Union
 import equinox as eqx
 import jax
-import meta_learn_lib.lib_types
 import numpy as np
 
 ArrayTree = Union[
@@ -13,8 +12,8 @@ ArrayTree = Union[
     int,
     float,
     complex,
-    Iterable["meta_learn_lib.lib_types.ArrayTree"],
-    Mapping[Any, "meta_learn_lib.lib_types.ArrayTree"],
+    Iterable,
+    Mapping,
 ]
 
 PRNG = NewType("PRNG", jax.Array)

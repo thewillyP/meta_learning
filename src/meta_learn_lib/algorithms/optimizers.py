@@ -65,16 +65,23 @@ def optimizer[T, H](
     return Mealy(ParaLens(Lens(run)))
 
 
-def sgd[T]() -> Mealy[
-    optax.OptState,
-    optax.OptState,
-    T,
-    T,
-    T,
-    T,
-    Unit,
-    Unit,
-    jax.Array,
-    jax.Array,
-]:
-    return optimizer(optax.sgd, additive)
+def sgd(lr: jax.Array, wd: jax.Array, momentum: jax.Array) -> optax.GradientTransformation:
+    return optax.chain(optax.add_decayed_weights(wd), optax.sgd(lr, momentum=momentum))
+
+
+def sgd_normalized(lr: jax.Array, wd: jax.Array, momentum: jax.Array) -> optax.GradientTransformation:
+    return optax.chain(
+        optax.normalize_by_update_norm(scale_factor=1.0),
+        optax.add_decayed_weights(wd),
+        optax.sgd(lr, momentum=momentum),
+    )
+
+
+def adam(
+    lr: jax.Array, wd: jax.Array, momentum: jax.Array, b2: float, eps: float, eps_root: float
+) -> optax.GradientTransformation:
+    return optax.adamw(lr, b1=momentum, b2=b2, eps=eps, eps_root=eps_root, weight_decay=wd)
+
+
+def frozen() -> optax.GradientTransformation:
+    return optax.set_to_zero()

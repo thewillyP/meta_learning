@@ -6,11 +6,14 @@ from meta_learn_lib.construct.term import (
     Linear,
     Loss,
     Meta,
+    RFLO,
+    RTRL,
     Rnn,
     Scan,
     Seq,
     Sup,
     Term,
+    UORO,
 )
 
 from typing import overload
@@ -69,6 +72,21 @@ def out[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P], n_in: int) -> int:
 
 @overload
 def out[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P], n_in: int) -> int:
+    return out(t.below, n_in)
+
+
+@overload
+def out[S, X, Y, HP, P](t: RTRL[S, X, Y, HP, P], n_in: int) -> int:
+    return out(t.below, n_in)
+
+
+@overload
+def out[S, X, Y, HP, P](t: RFLO[S, X, Y, HP, P], n_in: int) -> int:
+    return out(t.below, n_in)
+
+
+@overload
+def out[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P], n_in: int) -> int:
     return out(t.below, n_in)
 
 

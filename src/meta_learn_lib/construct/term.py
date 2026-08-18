@@ -1,5 +1,5 @@
 from meta_learn_lib.category.lib_types import Unit
-from meta_learn_lib.lib_types import ArrayTree
+from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
 
 from dataclasses import dataclass
 import equinox as eqx
@@ -149,6 +149,39 @@ class BatchData[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
 class BatchPop[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
     below: Term[S, X, Y, HP, P]
     n: int
+
+
+@dataclass(frozen=True)
+class Noise: ...
+
+
+@dataclass(frozen=True)
+class Rademacher(Noise): ...
+
+
+@dataclass(frozen=True)
+class Gaussian(Noise): ...
+
+
+@dataclass(frozen=True)
+class UniformUnit(Noise): ...
+
+
+@dataclass(frozen=True)
+class RTRL[S, X, Y, HP, P](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, Unit], P]):
+    below: Term[S, X, Y, HP, P]
+
+
+@dataclass(frozen=True)
+class RFLO[S, X, Y, HP, P](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, jax.Array], P]):
+    below: Term[S, X, Y, HP, P]
+    decay: Hyper
+
+
+@dataclass(frozen=True)
+class UORO[S, X, Y, HP, P](Term[tuple[S, tuple[jax.Array, jax.Array, PRNG]], X, Y, tuple[HP, Unit], P]):
+    below: Term[S, X, Y, HP, P]
+    noise: Noise
 
 
 @dataclass(frozen=True)

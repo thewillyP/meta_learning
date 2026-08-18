@@ -1,4 +1,5 @@
 from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner, scan
+from meta_learn_lib.algorithms.learning import rflo, rtrl, uoro
 from meta_learn_lib.algorithms.level import level, validation
 from meta_learn_lib.algorithms.model import leaf
 from meta_learn_lib.algorithms.optimizers import sgd
@@ -6,8 +7,9 @@ from meta_learn_lib.category.lens import identity
 from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
 from meta_learn_lib.category.paralens import para_autodiff, to_paralens
-from meta_learn_lib.lib_types import ArrayTree
-from meta_learn_lib.construct.leaves import activation, alpha_of, objective
+import meta_learn_lib.lib_types
+from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
+from meta_learn_lib.construct.leaves import activation, objective, reader, sampler
 from meta_learn_lib.construct.term import (
     Activation,
     BatchData,
@@ -16,6 +18,8 @@ from meta_learn_lib.construct.term import (
     Linear,
     Loss,
     Meta,
+    RFLO,
+    RTRL,
     Rnn,
     SameModel,
     Scan,
@@ -23,6 +27,7 @@ from meta_learn_lib.construct.term import (
     Sgd,
     Sup,
     Term,
+    UORO,
     Validator,
 )
 
@@ -87,7 +92,7 @@ def build[HPA, PA](
     tuple[PA, eqx.nn.Linear],
     tuple[PA, eqx.nn.Linear],
 ]:
-    read = alpha_of(t.alpha)
+    read = reader(t.alpha)
     f = activation(t.act)
 
     def h(hp_p: tuple[HPA, tuple[PA, eqx.nn.Linear]], sx: tuple[jax.Array, jax.Array]) -> tuple[jax.Array, jax.Array]:
@@ -193,6 +198,38 @@ def build[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, 
 @overload
 def build[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     return batch_pop(build(t.below))
+
+
+@overload
+def build[S, X, Y, HP, P](
+    t: RTRL[S, X, Y, HP, P],
+) -> Mealy[tuple[S, JACOBIAN], tuple[S, JACOBIAN], X, X, Y, Y, tuple[HP, Unit], tuple[HP, Unit], P, P]:
+    return rtrl(build(t.below))
+
+
+@overload
+def build[S, X, Y, HP, P](
+    t: RFLO[S, X, Y, HP, P],
+) -> Mealy[tuple[S, JACOBIAN], tuple[S, JACOBIAN], X, X, Y, Y, tuple[HP, jax.Array], tuple[HP, jax.Array], P, P]:
+    return rflo(build(t.below))
+
+
+@overload
+def build[S, X, Y, HP, P](
+    t: UORO[S, X, Y, HP, P],
+) -> Mealy[
+    tuple[S, tuple[jax.Array, jax.Array, PRNG]],
+    tuple[S, tuple[jax.Array, jax.Array, PRNG]],
+    X,
+    X,
+    Y,
+    Y,
+    tuple[HP, Unit],
+    tuple[HP, Unit],
+    P,
+    P,
+]:
+    return uoro(build(t.below), sampler(t.noise))
 
 
 @overload

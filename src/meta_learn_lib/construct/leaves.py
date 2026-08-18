@@ -9,14 +9,18 @@ from meta_learn_lib.construct.term import (
     L2,
     LecunNormal,
     Loss,
+    Noise,
     Normal,
     Orthogonal,
     PytorchUniform,
+    Gaussian,
+    Rademacher,
     Relu,
     Sigmoid,
     Softmax,
     Tanh,
     Trained,
+    UniformUnit,
     Zeros,
 )
 
@@ -24,6 +28,10 @@ from typing import Callable, overload
 import jax
 import jax.numpy as jnp
 import optax
+import meta_learn_lib.lib_types
+from meta_learn_lib.lib_types import PRNG
+from meta_learn_lib.utility.distributions import rademacher, uniform_unit
+
 from plum import dispatch
 
 
@@ -138,20 +146,45 @@ def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
 
 
 @overload
-def alpha_of(k: Hyper) -> Callable[[jax.Array, Unit], jax.Array]:
+def reader(k: Hyper) -> Callable[[jax.Array, Unit], jax.Array]:
     return lambda hp, p: hp
 
 
 @overload
-def alpha_of(k: Trained) -> Callable[[Unit, jax.Array], jax.Array]:
+def reader(k: Trained) -> Callable[[Unit, jax.Array], jax.Array]:
     return lambda hp, p: p
 
 
 @overload
-def alpha_of[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
+def reader[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
     raise NotImplementedError
 
 
 @dispatch
-def alpha_of[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
+def reader[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
+    raise NotImplementedError
+
+
+@overload
+def sampler(t: Gaussian) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
+    return jax.random.normal
+
+
+@overload
+def sampler(t: Rademacher) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
+    return rademacher
+
+
+@overload
+def sampler(t: UniformUnit) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
+    return uniform_unit
+
+
+@overload
+def sampler(t: Noise) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
+    raise NotImplementedError
+
+
+@dispatch
+def sampler(t: Noise) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
     raise NotImplementedError

@@ -1,5 +1,5 @@
 from meta_learn_lib.category.lib_types import Unit
-from meta_learn_lib.construct.leaves import initializer, knob
+from meta_learn_lib.construct.leaves import initializer, knob, sampler
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
     Activation,
@@ -10,6 +10,8 @@ from meta_learn_lib.construct.term import (
     Loss,
     Meta,
     Orthogonal,
+    RFLO,
+    RTRL,
     Rnn,
     SameModel,
     Scan,
@@ -17,6 +19,7 @@ from meta_learn_lib.construct.term import (
     Sgd,
     Sup,
     Term,
+    UORO,
     Validator,
 )
 import meta_learn_lib.lib_types
@@ -133,6 +136,25 @@ def port[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P], ctx: int, key: PRNG) -> tu
 
 
 @overload
+def port[S, X, Y, HP, P](t: RTRL[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, Unit], P]:
+    hp, p = port(t.below, ctx, key)
+    return ((hp, Unit()), p)
+
+
+@overload
+def port[S, X, Y, HP, P](t: RFLO[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, jax.Array], P]:
+    hp, p = port(t.below, ctx, key)
+    d, _ = knob(t.decay)
+    return ((hp, d), p)
+
+
+@overload
+def port[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, Unit], P]:
+    hp, p = port(t.below, ctx, key)
+    return ((hp, Unit()), p)
+
+
+@overload
 def port[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[HP, P]:
     raise NotImplementedError
 
@@ -244,6 +266,33 @@ def state[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx:
 def state[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: int, key: PRNG) -> S:
     hp, p = hp_p
     return eqx.filter_vmap(lambda h, q, k: state(t.below, (h, q), ctx, PRNG(k)))(hp, p, jax.random.split(key, t.n))
+
+
+@overload
+def state[S, X, Y, HP, P](
+    t: RTRL[S, X, Y, HP, P], hp_p: tuple[tuple[HP, Unit], P], ctx: int, key: PRNG
+) -> tuple[S, JACOBIAN]:
+    (hp, _), p = hp_p
+    return (state(t.below, (hp, p), ctx, key), influence(t.below, (hp, p), ctx, key))
+
+
+@overload
+def state[S, X, Y, HP, P](
+    t: RFLO[S, X, Y, HP, P], hp_p: tuple[tuple[HP, jax.Array], P], ctx: int, key: PRNG
+) -> tuple[S, JACOBIAN]:
+    (hp, _), p = hp_p
+    return (state(t.below, (hp, p), ctx, key), influence(t.below, (hp, p), ctx, key))
+
+
+@overload
+def state[S, X, Y, HP, P](
+    t: UORO[S, X, Y, HP, P], hp_p: tuple[tuple[HP, Unit], P], ctx: int, key: PRNG
+) -> tuple[S, tuple[jax.Array, jax.Array, PRNG]]:
+    (hp, _), p = hp_p
+    k_nu, k_next = jax.random.split(key)
+    s = state(t.below, (hp, p), ctx, key)
+    nu = sampler(t.noise)(PRNG(k_nu), to_vector(s).vector.shape)
+    return (s, (nu, rank_one(t.below, (hp, p), ctx, key, nu), PRNG(k_next)))
 
 
 @overload

@@ -393,6 +393,7 @@ def state[S, X, Y, HP, HP2, P, P2](
     return state(t.below, cook(t.below)(reparametrizer(t.r)(hp_p)), ctx, key)
 
 
+@overload
 def state[S, X, Y, HP, P, C](t: Term[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: C, key: PRNG) -> S:
     raise NotImplementedError
 

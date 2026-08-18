@@ -1,6 +1,7 @@
 from meta_learn_lib.algorithms.optimizers import adam, frozen, sgd, sgd_normalized
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.leaves import initializer, knob, reader, sampler
+from meta_learn_lib.construct.reparam import cook, reparametrizer, seed, store
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
     Activation,
@@ -15,6 +16,7 @@ from meta_learn_lib.construct.term import (
     Orthogonal,
     RFLO,
     RTRL,
+    Reparametrized,
     Rnn,
     SameModel,
     Scan,
@@ -190,6 +192,11 @@ def port[S, X, Y, HP, P, HD](t: RFLO[S, X, Y, HP, P, HD], ctx: int, key: PRNG) -
 def port[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, Unit], P]:
     hp, p = port(t.below, ctx, key)
     return ((hp, Unit()), p)
+
+
+@overload
+def port[S, X, Y, HP, HP2, P, P2](t: Reparametrized[S, X, Y, HP, HP2, P, P2], ctx: int, key: PRNG) -> tuple[HP2, P2]:
+    return seed(t.r, store(t.below, port(t.below, ctx, key)))
 
 
 @overload
@@ -380,6 +387,12 @@ def state[S, X, Y, HP, P](
 
 
 @overload
+def state[S, X, Y, HP, HP2, P, P2](
+    t: Reparametrized[S, X, Y, HP, HP2, P, P2], hp_p: tuple[HP2, P2], ctx: int, key: PRNG
+) -> S:
+    return state(t.below, cook(t.below)(reparametrizer(t.r)(hp_p)), ctx, key)
+
+
 def state[S, X, Y, HP, P, C](t: Term[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: C, key: PRNG) -> S:
     raise NotImplementedError
 

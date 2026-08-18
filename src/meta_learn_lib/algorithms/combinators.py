@@ -138,3 +138,10 @@ def learner[HP, HPO, SO, S, X, Y, P, H](
         return ((s_m1, (opt_st1, theta1)), (y, (hp, theta1)))
 
     return Mealy(para_autodiff(step))
+
+
+def reparametrize[A1, A2, B1, B2, C1, C2, HP1, HP2, P1, P2, HQ1, HQ2, Q1, Q2](
+    m: Mealy[A1, A2, B1, B2, C1, C2, HP1, HP2, P1, P2],
+    r: Lens[tuple[HQ1, Q1], tuple[HQ2, Q2], tuple[HP1, P1], tuple[HP2, P2]],
+) -> Mealy[A1, A2, B1, B2, C1, C2, HQ1, HQ2, Q1, Q2]:
+    return Mealy(ParaLens((r @ identity(Proxy[tuple[tuple[A1, B1], tuple[A2, B2]]]())) >> m.arrow.arrow))

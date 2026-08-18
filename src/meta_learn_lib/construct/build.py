@@ -1,13 +1,14 @@
-from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner, scan
+from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner, reparametrize, scan
 from meta_learn_lib.algorithms.learning import rflo, rtrl, uoro
 from meta_learn_lib.algorithms.level import level, validation
 from meta_learn_lib.algorithms.model import leaf
 from meta_learn_lib.algorithms.optimizers import adam, additive, frozen, optimizer, sgd, sgd_normalized
-from meta_learn_lib.category.lens import identity
+from meta_learn_lib.category.lens import autodiff, identity
 from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
 from meta_learn_lib.category.paralens import para_autodiff, to_paralens
 from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
+from meta_learn_lib.construct.reparam import cook, reparametrizer
 from meta_learn_lib.construct.leaves import activation, objective, reader, sampler
 from meta_learn_lib.construct.term import (
     Activation,
@@ -21,6 +22,7 @@ from meta_learn_lib.construct.term import (
     Meta,
     RFLO,
     RTRL,
+    Reparametrized,
     Rnn,
     SameModel,
     Scan,
@@ -325,6 +327,15 @@ def build[S, X, Y, HP, P](
     P,
 ]:
     return uoro(build(t.below), sampler(t.noise))
+
+
+@overload
+def build[S, X, Y, HP, HP2, P, P2](
+    t: Reparametrized[S, X, Y, HP, HP2, P, P2],
+) -> Mealy[S, S, X, X, Y, Y, HP2, HP2, P2, P2]:
+    expand = reparametrizer(t.r)
+    below = cook(t.below)
+    return reparametrize(build(t.below), autodiff(lambda hp_p: below(expand(hp_p))))
 
 
 @overload

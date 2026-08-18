@@ -8,6 +8,7 @@ from meta_learn_lib.construct.term import (
     Meta,
     RFLO,
     RTRL,
+    Reparametrized,
     Rnn,
     Scan,
     Seq,
@@ -87,6 +88,11 @@ def out[S, X, Y, HP, P, HD](t: RFLO[S, X, Y, HP, P, HD], n_in: int) -> int:
 
 @overload
 def out[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P], n_in: int) -> int:
+    return out(t.below, n_in)
+
+
+@overload
+def out[S, X, Y, HP, HP2, P, P2](t: Reparametrized[S, X, Y, HP, HP2, P, P2], n_in: int) -> int:
     return out(t.below, n_in)
 
 

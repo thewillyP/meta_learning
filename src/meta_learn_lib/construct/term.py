@@ -71,6 +71,64 @@ class Identity(Activation): ...
 
 
 @dataclass(frozen=True)
+class Reparam: ...
+
+
+@dataclass(frozen=True)
+class Unconstrained(Reparam): ...
+
+
+@dataclass(frozen=True)
+class Softplus(Reparam): ...
+
+
+@dataclass(frozen=True)
+class Rectify(Reparam): ...
+
+
+@dataclass(frozen=True)
+class SoftRelu(Reparam):
+    sharpness: float
+
+
+@dataclass(frozen=True)
+class SiluPositive(Reparam):
+    scale: float
+
+
+@dataclass(frozen=True)
+class Squared(Reparam):
+    scale: float
+
+
+@dataclass(frozen=True)
+class SoftClip(Reparam):
+    a: float | None
+    b: float | None
+    sharpness: float
+
+
+@dataclass(frozen=True)
+class Reparametrization[P2, P]: ...
+
+
+@dataclass(frozen=True)
+class RMap[P](Reparametrization[P, P]):
+    by: Reparam
+
+
+@dataclass(frozen=True)
+class RSplit[A2, A, B2, B](Reparametrization[tuple[A2, B2], tuple[A, B]]):
+    first: Reparametrization[A2, A]
+    second: Reparametrization[B2, B]
+
+
+@dataclass(frozen=True)
+class LowRank(Reparametrization[tuple[jax.Array, jax.Array], eqx.nn.Linear]):
+    rank: int
+
+
+@dataclass(frozen=True)
 class Knob[HP, P]: ...
 
 
@@ -81,6 +139,7 @@ class Setting[HP](Knob[HP, Unit]): ...
 @dataclass(frozen=True)
 class Hyper(Setting[jax.Array]):
     value: float
+    reparam: Reparam
 
 
 @dataclass(frozen=True)
@@ -91,6 +150,7 @@ class Const(Setting[Unit]):
 @dataclass(frozen=True)
 class Trained(Knob[Unit, jax.Array]):
     value: float
+    reparam: Reparam
 
 
 @dataclass(frozen=True)
@@ -245,3 +305,9 @@ class Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
     below: Term[S, X, jax.Array, HP, P]
     opt: Opt[SO, HPO, H, P]
     val: Validator[S, X, jax.Array, HP, P, SV, XV, HPV, PV]
+
+
+@dataclass(frozen=True)
+class Reparametrized[S, X, Y, HP, HP2, P, P2](Term[S, X, Y, HP2, P2]):
+    below: Term[S, X, Y, HP, P]
+    r: Reparametrization[tuple[HP2, P2], tuple[HP, P]]

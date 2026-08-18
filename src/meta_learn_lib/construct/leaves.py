@@ -16,16 +16,31 @@ from meta_learn_lib.construct.term import (
     Orthogonal,
     PytorchUniform,
     Rademacher,
+    Rectify,
     Relu,
+    Reparam,
     Sigmoid,
+    SiluPositive,
+    SoftClip,
+    SoftRelu,
     Softmax,
+    Softplus,
+    Squared,
     Tanh,
     Trained,
+    Unconstrained,
     UniformUnit,
     Zeros,
 )
 from meta_learn_lib.lib_types import PRNG
 from meta_learn_lib.utility.distributions import rademacher, uniform_unit
+from meta_learn_lib.utility.reparam import (
+    silu_positive,
+    silu_positive_inverse,
+    soft_clip,
+    soft_relu,
+    softplus_inverse,
+)
 
 from typing import Callable, overload
 import jax
@@ -121,6 +136,69 @@ def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
 
 @dispatch
 def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
+    raise NotImplementedError
+
+
+@overload
+def reparametrization(
+    r: Unconstrained,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    return (lambda x: x, lambda y: y)
+
+
+@overload
+def reparametrization(
+    r: Softplus,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    return (jax.nn.softplus, softplus_inverse)
+
+
+@overload
+def reparametrization(
+    r: Rectify,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    return (lambda x: jnp.maximum(x, 0.0), lambda y: y)
+
+
+@overload
+def reparametrization(
+    r: SoftRelu,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    return (lambda x: soft_relu(x, r.sharpness), lambda y: y)
+
+
+@overload
+def reparametrization(
+    r: SiluPositive,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    return (lambda x: silu_positive(x, r.scale), lambda y: silu_positive_inverse(y, r.scale))
+
+
+@overload
+def reparametrization(
+    r: Squared,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    return (lambda x: (r.scale * x) ** 2, lambda y: jnp.sqrt(y) / r.scale)
+
+
+@overload
+def reparametrization(
+    r: SoftClip,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    return (lambda x: soft_clip(x, r.a, r.b, r.sharpness), lambda y: y)
+
+
+@overload
+def reparametrization(
+    r: Reparam,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
+    raise NotImplementedError
+
+
+@dispatch
+def reparametrization(
+    r: Reparam,
+) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
     raise NotImplementedError
 
 

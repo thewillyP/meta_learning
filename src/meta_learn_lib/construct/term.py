@@ -75,17 +75,21 @@ class Knob[HP, P]: ...
 
 
 @dataclass(frozen=True)
-class Hyper(Knob[jax.Array, Unit]):
+class Setting[HP](Knob[HP, Unit]): ...
+
+
+@dataclass(frozen=True)
+class Hyper(Setting[jax.Array]):
+    value: float
+
+
+@dataclass(frozen=True)
+class Const(Setting[Unit]):
     value: float
 
 
 @dataclass(frozen=True)
 class Trained(Knob[Unit, jax.Array]):
-    value: float
-
-
-@dataclass(frozen=True)
-class Const(Knob[Unit, Unit]):
     value: float
 
 
@@ -136,23 +140,23 @@ class Opt[SO, HPO, H, P](Term[SO, P, P, HPO, H]): ...
 
 @dataclass(frozen=True)
 class Sgd[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Knob[HL, Unit]
-    wd: Knob[HW, Unit]
-    momentum: Knob[HM, Unit]
+    lr: Setting[HL]
+    wd: Setting[HW]
+    momentum: Setting[HM]
 
 
 @dataclass(frozen=True)
 class SgdNormalized[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Knob[HL, Unit]
-    wd: Knob[HW, Unit]
-    momentum: Knob[HM, Unit]
+    lr: Setting[HL]
+    wd: Setting[HW]
+    momentum: Setting[HM]
 
 
 @dataclass(frozen=True)
 class Adam[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Knob[HL, Unit]
-    wd: Knob[HW, Unit]
-    momentum: Knob[HM, Unit]
+    lr: Setting[HL]
+    wd: Setting[HW]
+    momentum: Setting[HM]
     b2: float
     eps: float
     eps_root: float
@@ -211,7 +215,7 @@ class RTRL[S, X, Y, HP, P](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, Unit], P]):
 @dataclass(frozen=True)
 class RFLO[S, X, Y, HP, P, HD](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, HD], P]):
     below: Term[S, X, Y, HP, P]
-    decay: Knob[HD, Unit]
+    decay: Setting[HD]
 
 
 @dataclass(frozen=True)

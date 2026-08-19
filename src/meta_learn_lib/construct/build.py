@@ -8,8 +8,9 @@ from meta_learn_lib.category.lib_types import Proxy, Unit
 from meta_learn_lib.category.mealy import Mealy, to_mealy
 from meta_learn_lib.category.paralens import para_autodiff, to_paralens
 from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
-from meta_learn_lib.construct.reparam import cook, reparametrizer
 from meta_learn_lib.construct.leaves import activation, objective, reader, sampler
+from meta_learn_lib.construct.reparam import cook, reparametrizer
+from meta_learn_lib.construct.share import route
 from meta_learn_lib.construct.term import (
     Activation,
     Adam,
@@ -29,6 +30,7 @@ from meta_learn_lib.construct.term import (
     Seq,
     Sgd,
     SgdNormalized,
+    Shared,
     Split,
     Sup,
     Term,
@@ -335,7 +337,12 @@ def build[S, X, Y, HP, HP2, P, P2](
 ) -> Mealy[S, S, X, X, Y, Y, HP2, HP2, P2, P2]:
     expand = reparametrizer(t.r)
     below = cook(t.below)
-    return reparametrize(build(t.below), autodiff(lambda hp_p: below(expand(hp_p))))
+    return reparametrize(build(t.below), autodiff(lambda hp_p: route(t.below, below(expand(hp_p)))))
+
+
+@overload
+def build[S, X, Y, HP, P](t: Shared[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+    return reparametrize(build(t.below), autodiff(lambda hp_p: route(t.below, hp_p)))
 
 
 @overload

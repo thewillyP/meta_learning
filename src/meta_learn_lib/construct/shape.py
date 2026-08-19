@@ -12,6 +12,7 @@ from meta_learn_lib.construct.term import (
     Rnn,
     Scan,
     Seq,
+    Shared,
     Sup,
     Term,
     UORO,
@@ -93,6 +94,11 @@ def out[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P], n_in: int) -> int:
 
 @overload
 def out[S, X, Y, HP, HP2, P, P2](t: Reparametrized[S, X, Y, HP, HP2, P, P2], n_in: int) -> int:
+    return out(t.below, n_in)
+
+
+@overload
+def out[S, X, Y, HP, P](t: Shared[S, X, Y, HP, P], n_in: int) -> int:
     return out(t.below, n_in)
 
 

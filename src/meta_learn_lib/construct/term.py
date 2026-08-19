@@ -36,14 +36,34 @@ class PytorchUniform(Init): ...
 
 
 @dataclass(frozen=True)
+class Label: ...
+
+
+@dataclass(frozen=True)
+class Anon(Label): ...
+
+
+@dataclass(frozen=True)
+class Declares(Label):
+    name: str
+
+
+@dataclass(frozen=True)
+class Uses(Label):
+    name: str
+
+
+@dataclass(frozen=True)
 class Linear(Term[Unit, jax.Array, jax.Array, Unit, eqx.nn.Linear]):
     n: int
     init: Init
+    label: Label
 
 
 @dataclass(frozen=True)
 class Bias(Term[Unit, jax.Array, jax.Array, Unit, jax.Array]):
     init: Init
+    label: Label
 
 
 @dataclass(frozen=True)
@@ -140,6 +160,7 @@ class Setting[HP](Knob[HP, Unit]): ...
 class Hyper(Setting[jax.Array]):
     value: float
     reparam: Reparam
+    label: Label
 
 
 @dataclass(frozen=True)
@@ -151,6 +172,7 @@ class Const(Setting[Unit]):
 class Trained(Knob[Unit, jax.Array]):
     value: float
     reparam: Reparam
+    label: Label
 
 
 @dataclass(frozen=True)
@@ -160,6 +182,7 @@ class Rnn[HPA, PA](Term[jax.Array, jax.Array, jax.Array, HPA, tuple[PA, eqx.nn.L
     alpha: Knob[HPA, PA]
     init: Init
     h0: Init
+    label: Label
 
 
 @dataclass(frozen=True)
@@ -311,3 +334,9 @@ class Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
 class Reparametrized[S, X, Y, HP, HP2, P, P2](Term[S, X, Y, HP2, P2]):
     below: Term[S, X, Y, HP, P]
     r: Reparametrization[tuple[HP2, P2], tuple[HP, P]]
+    label: Label
+
+
+@dataclass(frozen=True)
+class Shared[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
+    below: Term[S, X, Y, HP, P]

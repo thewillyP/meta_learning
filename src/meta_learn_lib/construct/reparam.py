@@ -26,6 +26,7 @@ from meta_learn_lib.construct.term import (
     Seq,
     Sgd,
     SgdNormalized,
+    Shared,
     Split,
     Sup,
     Term,
@@ -251,9 +252,7 @@ def reparam_tree[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2](
 
 
 @overload
-def reparam_tree[S, X, Y, HP, P](
-    t: Scan[S, X, Y, HP, P],
-) -> tuple[Reparametrization[HP, HP], Reparametrization[P, P]]:
+def reparam_tree[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P]) -> tuple[Reparametrization[HP, HP], Reparametrization[P, P]]:
     return reparam_tree(t.below)
 
 
@@ -272,9 +271,7 @@ def reparam_tree[S, X, Y, HP, P](
 
 
 @overload
-def reparam_tree[S, X, Y, HP, P](
-    t: RTRL[S, X, Y, HP, P],
-) -> tuple[RSplit[HP, HP, Unit, Unit], Reparametrization[P, P]]:
+def reparam_tree[S, X, Y, HP, P](t: RTRL[S, X, Y, HP, P]) -> tuple[RSplit[HP, HP, Unit, Unit], Reparametrization[P, P]]:
     hp, p = reparam_tree(t.below)
     return (RSplit(hp, RMap(Unconstrained())), p)
 
@@ -289,9 +286,7 @@ def reparam_tree[S, X, Y, HP, P, HD](
 
 
 @overload
-def reparam_tree[S, X, Y, HP, P](
-    t: UORO[S, X, Y, HP, P],
-) -> tuple[RSplit[HP, HP, Unit, Unit], Reparametrization[P, P]]:
+def reparam_tree[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P]) -> tuple[RSplit[HP, HP, Unit, Unit], Reparametrization[P, P]]:
     hp, p = reparam_tree(t.below)
     return (RSplit(hp, RMap(Unconstrained())), p)
 
@@ -315,6 +310,13 @@ def reparam_tree[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
 @overload
 def reparam_tree[S, X, Y, HP, HP2, P, P2](t: Reparametrized[S, X, Y, HP, HP2, P, P2]) -> tuple[RMap[HP2], RMap[P2]]:
     return (RMap(Unconstrained()), RMap(Unconstrained()))
+
+
+@overload
+def reparam_tree[S, X, Y, HP, P](
+    t: Shared[S, X, Y, HP, P],
+) -> tuple[Reparametrization[HP, HP], Reparametrization[P, P]]:
+    return reparam_tree(t.below)
 
 
 @overload

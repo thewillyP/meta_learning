@@ -36,21 +36,20 @@ class PytorchUniform(Init): ...
 
 
 @dataclass(frozen=True)
-class Label: ...
+class Unlabeled: ...
 
 
 @dataclass(frozen=True)
-class Anon(Label): ...
-
-
-@dataclass(frozen=True)
-class Declares(Label):
+class Declares:
     name: str
 
 
 @dataclass(frozen=True)
-class Uses(Label):
+class Uses:
     name: str
+
+
+type Label = Unlabeled | Declares | Uses
 
 
 @dataclass(frozen=True)
@@ -149,29 +148,19 @@ class LowRank(Reparametrization[tuple[jax.Array, jax.Array], eqx.nn.Linear]):
 
 
 @dataclass(frozen=True)
-class Knob[HP, P]: ...
-
-
-@dataclass(frozen=True)
-class Setting[HP](Knob[HP, Unit]): ...
-
-
-@dataclass(frozen=True)
-class Hyper(Setting[jax.Array]):
+class HyperStorage(Term[Unit, Unit, jax.Array, jax.Array, Unit]):
     value: float
-    reparam: Reparam
     label: Label
 
 
 @dataclass(frozen=True)
-class Const(Setting[Unit]):
+class Const(Term[Unit, Unit, jax.Array, Unit, Unit]):
     value: float
 
 
 @dataclass(frozen=True)
-class Trained(Knob[Unit, jax.Array]):
+class TrainedStorage(Term[Unit, Unit, jax.Array, Unit, jax.Array]):
     value: float
-    reparam: Reparam
     label: Label
 
 
@@ -179,7 +168,7 @@ class Trained(Knob[Unit, jax.Array]):
 class Rnn[HPA, PA](Term[jax.Array, jax.Array, jax.Array, HPA, tuple[PA, eqx.nn.Linear]]):
     n: int
     act: Activation
-    alpha: Knob[HPA, PA]
+    alpha: Term[Unit, Unit, jax.Array, HPA, PA]
     init: Init
     h0: Init
     label: Label
@@ -222,24 +211,22 @@ class Opt[SO, HPO, H, P](Term[SO, P, P, HPO, H]): ...
 
 
 @dataclass(frozen=True)
-class Sgd[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Setting[HL]
-    wd: Setting[HW]
-    momentum: Setting[HM]
+class Descent[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
+    lr: Term[Unit, Unit, jax.Array, Unit, HL]
+    wd: Term[Unit, Unit, jax.Array, Unit, HW]
+    momentum: Term[Unit, Unit, jax.Array, Unit, HM]
 
 
 @dataclass(frozen=True)
-class SgdNormalized[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Setting[HL]
-    wd: Setting[HW]
-    momentum: Setting[HM]
+class Sgd[HL, HW, HM, P](Descent[HL, HW, HM, P]): ...
 
 
 @dataclass(frozen=True)
-class Adam[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Setting[HL]
-    wd: Setting[HW]
-    momentum: Setting[HM]
+class SgdNormalized[HL, HW, HM, P](Descent[HL, HW, HM, P]): ...
+
+
+@dataclass(frozen=True)
+class Adam[HL, HW, HM, P](Descent[HL, HW, HM, P]):
     b2: float
     eps: float
     eps_root: float
@@ -298,7 +285,7 @@ class RTRL[S, X, Y, HP, P](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, Unit], P]):
 @dataclass(frozen=True)
 class RFLO[S, X, Y, HP, P, HD](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, HD], P]):
     below: Term[S, X, Y, HP, P]
-    decay: Setting[HD]
+    decay: Term[Unit, Unit, jax.Array, HD, Unit]
 
 
 @dataclass(frozen=True)

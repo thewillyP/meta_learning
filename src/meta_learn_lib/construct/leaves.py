@@ -1,24 +1,30 @@
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
     Activation,
-    Const,
+    Adam,
+    Anon,
     CrossEntropy,
+    Descent,
     Gaussian,
-    Hyper,
+    HyperStorage,
     Identity,
     Init,
-    Knob,
     L2,
+    Label,
     LecunNormal,
     Loss,
     Noise,
     Normal,
     Orthogonal,
     PytorchUniform,
+    RMap,
     Rademacher,
     Rectify,
     Relu,
     Reparam,
+    Reparametrized,
+    Sgd,
+    SgdNormalized,
     Sigmoid,
     SiluPositive,
     SoftClip,
@@ -27,11 +33,13 @@ from meta_learn_lib.construct.term import (
     Softplus,
     Squared,
     Tanh,
-    Trained,
+    Term,
+    TrainedStorage,
     Unconstrained,
     UniformUnit,
     Zeros,
 )
+from meta_learn_lib.algorithms.optimizers import adam, sgd, sgd_normalized
 from meta_learn_lib.lib_types import PRNG
 from meta_learn_lib.utility.distributions import rademacher, uniform_unit
 from meta_learn_lib.utility.reparam import (
@@ -203,53 +211,31 @@ def reparametrization(
 
 
 @overload
-def knob(k: Hyper) -> tuple[jax.Array, Unit]:
-    return (jnp.asarray(k.value), Unit())
+def chain(t: Sgd) -> Callable[[jax.Array, jax.Array, jax.Array], optax.GradientTransformation]:
+    return sgd
 
 
 @overload
-def knob(k: Trained) -> tuple[Unit, jax.Array]:
-    return (Unit(), jnp.asarray(k.value))
+def chain(t: SgdNormalized) -> Callable[[jax.Array, jax.Array, jax.Array], optax.GradientTransformation]:
+    return sgd_normalized
 
 
 @overload
-def knob(k: Const) -> tuple[Unit, Unit]:
-    return (Unit(), Unit())
+def chain(t: Adam) -> Callable[[jax.Array, jax.Array, jax.Array], optax.GradientTransformation]:
+    return lambda lr, wd, m: adam(lr, wd, m, t.b2, t.eps, t.eps_root)
 
 
 @overload
-def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
+def chain[HL, HW, HM, P](
+    t: Descent[HL, HW, HM, P],
+) -> Callable[[jax.Array, jax.Array, jax.Array], optax.GradientTransformation]:
     raise NotImplementedError
 
 
 @dispatch
-def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
-    raise NotImplementedError
-
-
-@overload
-def reader(k: Hyper) -> Callable[[jax.Array, Unit], jax.Array]:
-    return lambda hp, p: hp
-
-
-@overload
-def reader(k: Trained) -> Callable[[Unit, jax.Array], jax.Array]:
-    return lambda hp, p: p
-
-
-@overload
-def reader(k: Const) -> Callable[[Unit, Unit], jax.Array]:
-    v = jnp.asarray(k.value)
-    return lambda hp, p: v
-
-
-@overload
-def reader[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
-    raise NotImplementedError
-
-
-@dispatch
-def reader[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
+def chain[HL, HW, HM, P](
+    t: Descent[HL, HW, HM, P],
+) -> Callable[[jax.Array, jax.Array, jax.Array], optax.GradientTransformation]:
     raise NotImplementedError
 
 
@@ -276,3 +262,11 @@ def sampler(t: Noise) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
 @dispatch
 def sampler(t: Noise) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
     raise NotImplementedError
+
+
+def Hyper(value: float, reparam: Reparam, label: Label) -> Term[Unit, Unit, jax.Array, jax.Array, Unit]:
+    return Reparametrized(HyperStorage(value, label), RMap(reparam), Anon())
+
+
+def Trained(value: float, reparam: Reparam, label: Label) -> Term[Unit, Unit, jax.Array, Unit, jax.Array]:
+    return Reparametrized(TrainedStorage(value, label), RMap(reparam), Anon())

@@ -1,13 +1,9 @@
-from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
     Activation,
-    Const,
     CrossEntropy,
     Gaussian,
-    Hyper,
     Identity,
     Init,
-    Knob,
     L2,
     LecunNormal,
     Loss,
@@ -16,31 +12,15 @@ from meta_learn_lib.construct.term import (
     Orthogonal,
     PytorchUniform,
     Rademacher,
-    Rectify,
     Relu,
-    Reparam,
     Sigmoid,
-    SiluPositive,
-    SoftClip,
-    SoftRelu,
     Softmax,
-    Softplus,
-    Squared,
     Tanh,
-    Trained,
-    Unconstrained,
     UniformUnit,
     Zeros,
 )
 from meta_learn_lib.lib_types import PRNG
 from meta_learn_lib.utility.distributions import rademacher, uniform_unit
-from meta_learn_lib.utility.reparam import (
-    silu_positive,
-    silu_positive_inverse,
-    soft_clip,
-    soft_relu,
-    softplus_inverse,
-)
 
 from typing import Callable, overload
 import jax
@@ -136,120 +116,6 @@ def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
 
 @dispatch
 def objective(t: Loss) -> Callable[[jax.Array, jax.Array], jax.Array]:
-    raise NotImplementedError
-
-
-@overload
-def reparametrization(
-    r: Unconstrained,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    return (lambda x: x, lambda y: y)
-
-
-@overload
-def reparametrization(
-    r: Softplus,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    return (jax.nn.softplus, softplus_inverse)
-
-
-@overload
-def reparametrization(
-    r: Rectify,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    return (lambda x: jnp.maximum(x, 0.0), lambda y: y)
-
-
-@overload
-def reparametrization(
-    r: SoftRelu,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    return (lambda x: soft_relu(x, r.sharpness), lambda y: y)
-
-
-@overload
-def reparametrization(
-    r: SiluPositive,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    return (lambda x: silu_positive(x, r.scale), lambda y: silu_positive_inverse(y, r.scale))
-
-
-@overload
-def reparametrization(
-    r: Squared,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    return (lambda x: (r.scale * x) ** 2, lambda y: jnp.sqrt(y) / r.scale)
-
-
-@overload
-def reparametrization(
-    r: SoftClip,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    return (lambda x: soft_clip(x, r.a, r.b, r.sharpness), lambda y: y)
-
-
-@overload
-def reparametrization(
-    r: Reparam,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    raise NotImplementedError
-
-
-@dispatch
-def reparametrization(
-    r: Reparam,
-) -> tuple[Callable[[jax.Array], jax.Array], Callable[[jax.Array], jax.Array]]:
-    raise NotImplementedError
-
-
-@overload
-def knob(k: Hyper) -> tuple[jax.Array, Unit]:
-    return (jnp.asarray(k.value), Unit())
-
-
-@overload
-def knob(k: Trained) -> tuple[Unit, jax.Array]:
-    return (Unit(), jnp.asarray(k.value))
-
-
-@overload
-def knob(k: Const) -> tuple[Unit, Unit]:
-    return (Unit(), Unit())
-
-
-@overload
-def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
-    raise NotImplementedError
-
-
-@dispatch
-def knob[HP, P](k: Knob[HP, P]) -> tuple[HP, P]:
-    raise NotImplementedError
-
-
-@overload
-def reader(k: Hyper) -> Callable[[jax.Array, Unit], jax.Array]:
-    return lambda hp, p: hp
-
-
-@overload
-def reader(k: Trained) -> Callable[[Unit, jax.Array], jax.Array]:
-    return lambda hp, p: p
-
-
-@overload
-def reader(k: Const) -> Callable[[Unit, Unit], jax.Array]:
-    v = jnp.asarray(k.value)
-    return lambda hp, p: v
-
-
-@overload
-def reader[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
-    raise NotImplementedError
-
-
-@dispatch
-def reader[HP, P](k: Knob[HP, P]) -> Callable[[HP, P], jax.Array]:
     raise NotImplementedError
 
 

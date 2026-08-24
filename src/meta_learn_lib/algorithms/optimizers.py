@@ -42,23 +42,23 @@ def exponentiated_gradient[H](
     return make
 
 
-def optimizer[T, H](
-    make: Callable[[H], optax.GradientTransformation],
+def optimizer[T, HPO, H](
+    make: Callable[[tuple[HPO, H]], optax.GradientTransformation],
     apply: Callable[[T, optax.Updates], T],
-) -> Mealy[optax.OptState, optax.OptState, T, T, T, T, Unit, Unit, H, H]:
+) -> Mealy[optax.OptState, optax.OptState, T, T, T, T, HPO, HPO, H, H]:
     def run(
-        p_sx: tuple[tuple[Unit, H], tuple[optax.OptState, T]],
+        p_sx: tuple[tuple[HPO, H], tuple[optax.OptState, T]],
     ) -> tuple[
         tuple[optax.OptState, T],
-        Callable[[tuple[optax.OptState, T]], tuple[tuple[Unit, H], tuple[optax.OptState, T]]],
+        Callable[[tuple[optax.OptState, T]], tuple[tuple[HPO, H], tuple[optax.OptState, T]]],
     ]:
-        (_, hp), (opt_st, theta) = p_sx
+        hp_h, (opt_st, theta) = p_sx
 
-        def rev(ct: tuple[optax.OptState, T]) -> tuple[tuple[Unit, H], tuple[optax.OptState, T]]:
+        def rev(ct: tuple[optax.OptState, T]) -> tuple[tuple[HPO, H], tuple[optax.OptState, T]]:
             _, d_theta = ct
-            updates, opt_st1 = make(hp).update(cast(optax.Params, d_theta), opt_st, cast(optax.Params, theta))
+            updates, opt_st1 = make(hp_h).update(cast(optax.Params, d_theta), opt_st, cast(optax.Params, theta))
             theta1 = apply(theta, updates)
-            return (Unit(), zero_cotangent_like(hp)), (opt_st1, theta1)
+            return zero_cotangent_like(hp_h), (opt_st1, theta1)
 
         return (opt_st, theta), rev
 

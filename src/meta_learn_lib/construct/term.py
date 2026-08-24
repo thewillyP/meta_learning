@@ -36,21 +36,91 @@ class PytorchUniform(Init): ...
 
 
 @dataclass(frozen=True)
-class Label: ...
+class Anon: ...
 
 
 @dataclass(frozen=True)
-class Anon(Label): ...
-
-
-@dataclass(frozen=True)
-class Declares(Label):
+class Declares:
     name: str
 
 
 @dataclass(frozen=True)
-class Uses(Label):
+class Uses:
     name: str
+
+
+type Label = Anon | Declares | Uses
+
+
+@dataclass(frozen=True)
+class Reparametrization[P2, P]: ...
+
+
+@dataclass(frozen=True)
+class Unconstrained[P](Reparametrization[P, P]): ...
+
+
+@dataclass(frozen=True)
+class Softplus(Reparametrization[jax.Array, jax.Array]): ...
+
+
+@dataclass(frozen=True)
+class Rectify(Reparametrization[jax.Array, jax.Array]): ...
+
+
+@dataclass(frozen=True)
+class SoftRelu(Reparametrization[jax.Array, jax.Array]):
+    sharpness: float
+
+
+@dataclass(frozen=True)
+class SiluPositive(Reparametrization[jax.Array, jax.Array]):
+    scale: float
+
+
+@dataclass(frozen=True)
+class Squared(Reparametrization[jax.Array, jax.Array]):
+    scale: float
+
+
+@dataclass(frozen=True)
+class SoftClip(Reparametrization[jax.Array, jax.Array]):
+    a: float | None
+    b: float | None
+    sharpness: float
+
+
+@dataclass(frozen=True)
+class RMap[P](Reparametrization[P, P]):
+    by: Reparametrization[jax.Array, jax.Array]
+
+
+@dataclass(frozen=True)
+class RSplit[A2, A, B2, B](Reparametrization[tuple[A2, B2], tuple[A, B]]):
+    first: Reparametrization[A2, A]
+    second: Reparametrization[B2, B]
+
+
+@dataclass(frozen=True)
+class LowRank(Reparametrization[tuple[jax.Array, jax.Array], eqx.nn.Linear]):
+    rank: int
+
+
+@dataclass(frozen=True)
+class Hyper(Term[Unit, Unit, jax.Array, jax.Array, Unit]):
+    value: float
+    label: Label
+
+
+@dataclass(frozen=True)
+class Trained(Term[Unit, Unit, jax.Array, Unit, jax.Array]):
+    value: float
+    label: Label
+
+
+@dataclass(frozen=True)
+class Const(Term[Unit, Unit, jax.Array, Unit, Unit]):
+    value: float
 
 
 @dataclass(frozen=True)
@@ -91,95 +161,10 @@ class Identity(Activation): ...
 
 
 @dataclass(frozen=True)
-class Reparam: ...
-
-
-@dataclass(frozen=True)
-class Unconstrained(Reparam): ...
-
-
-@dataclass(frozen=True)
-class Softplus(Reparam): ...
-
-
-@dataclass(frozen=True)
-class Rectify(Reparam): ...
-
-
-@dataclass(frozen=True)
-class SoftRelu(Reparam):
-    sharpness: float
-
-
-@dataclass(frozen=True)
-class SiluPositive(Reparam):
-    scale: float
-
-
-@dataclass(frozen=True)
-class Squared(Reparam):
-    scale: float
-
-
-@dataclass(frozen=True)
-class SoftClip(Reparam):
-    a: float | None
-    b: float | None
-    sharpness: float
-
-
-@dataclass(frozen=True)
-class Reparametrization[P2, P]: ...
-
-
-@dataclass(frozen=True)
-class RMap[P](Reparametrization[P, P]):
-    by: Reparam
-
-
-@dataclass(frozen=True)
-class RSplit[A2, A, B2, B](Reparametrization[tuple[A2, B2], tuple[A, B]]):
-    first: Reparametrization[A2, A]
-    second: Reparametrization[B2, B]
-
-
-@dataclass(frozen=True)
-class LowRank(Reparametrization[tuple[jax.Array, jax.Array], eqx.nn.Linear]):
-    rank: int
-
-
-@dataclass(frozen=True)
-class Knob[HP, P]: ...
-
-
-@dataclass(frozen=True)
-class Setting[HP](Knob[HP, Unit]): ...
-
-
-@dataclass(frozen=True)
-class Hyper(Setting[jax.Array]):
-    value: float
-    reparam: Reparam
-    label: Label
-
-
-@dataclass(frozen=True)
-class Const(Setting[Unit]):
-    value: float
-
-
-@dataclass(frozen=True)
-class Trained(Knob[Unit, jax.Array]):
-    value: float
-    reparam: Reparam
-    label: Label
-
-
-@dataclass(frozen=True)
 class Rnn[HPA, PA](Term[jax.Array, jax.Array, jax.Array, HPA, tuple[PA, eqx.nn.Linear]]):
     n: int
     act: Activation
-    alpha: Knob[HPA, PA]
+    alpha: Term[Unit, Unit, jax.Array, HPA, PA]
     init: Init
     h0: Init
     label: Label
@@ -222,24 +207,24 @@ class Opt[SO, HPO, H, P](Term[SO, P, P, HPO, H]): ...
 
 
 @dataclass(frozen=True)
-class Sgd[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Setting[HL]
-    wd: Setting[HW]
-    momentum: Setting[HM]
+class Sgd[HL, PL, HW, PW, HM, PM, P](Opt[ArrayTree, tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM], P]):
+    lr: Term[Unit, Unit, jax.Array, HL, PL]
+    wd: Term[Unit, Unit, jax.Array, HW, PW]
+    momentum: Term[Unit, Unit, jax.Array, HM, PM]
 
 
 @dataclass(frozen=True)
-class SgdNormalized[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Setting[HL]
-    wd: Setting[HW]
-    momentum: Setting[HM]
+class SgdNormalized[HL, PL, HW, PW, HM, PM, P](Opt[ArrayTree, tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM], P]):
+    lr: Term[Unit, Unit, jax.Array, HL, PL]
+    wd: Term[Unit, Unit, jax.Array, HW, PW]
+    momentum: Term[Unit, Unit, jax.Array, HM, PM]
 
 
 @dataclass(frozen=True)
-class Adam[HL, HW, HM, P](Opt[ArrayTree, Unit, tuple[tuple[HL, HW], HM], P]):
-    lr: Setting[HL]
-    wd: Setting[HW]
-    momentum: Setting[HM]
+class Adam[HL, PL, HW, PW, HM, PM, P](Opt[ArrayTree, tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM], P]):
+    lr: Term[Unit, Unit, jax.Array, HL, PL]
+    wd: Term[Unit, Unit, jax.Array, HW, PW]
+    momentum: Term[Unit, Unit, jax.Array, HM, PM]
     b2: float
     eps: float
     eps_root: float
@@ -298,7 +283,7 @@ class RTRL[S, X, Y, HP, P](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, Unit], P]):
 @dataclass(frozen=True)
 class RFLO[S, X, Y, HP, P, HD](Term[tuple[S, JACOBIAN], X, Y, tuple[HP, HD], P]):
     below: Term[S, X, Y, HP, P]
-    decay: Setting[HD]
+    decay: Term[Unit, Unit, jax.Array, HD, Unit]
 
 
 @dataclass(frozen=True)

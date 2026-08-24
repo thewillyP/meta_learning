@@ -1,7 +1,9 @@
+from meta_learn_lib.algorithms.model import read_value
 from meta_learn_lib.algorithms.optimizers import adam, frozen, sgd, sgd_normalized
 from meta_learn_lib.category.lib_types import Unit
-from meta_learn_lib.construct.leaves import initializer, knob, reader, sampler
-from meta_learn_lib.construct.reparam import cook, reparametrizer, seed, store
+from meta_learn_lib.construct.build import build
+from meta_learn_lib.construct.leaves import initializer, sampler
+from meta_learn_lib.construct.reparam import reparametrizer, seed
 from meta_learn_lib.construct.share import route, unroute
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
@@ -10,7 +12,9 @@ from meta_learn_lib.construct.term import (
     BatchData,
     BatchPop,
     Bias,
+    Const,
     Frozen,
+    Hyper,
     Linear,
     Loss,
     Meta,
@@ -28,6 +32,7 @@ from meta_learn_lib.construct.term import (
     Split,
     Sup,
     Term,
+    Trained,
     UORO,
     Validator,
 )
@@ -63,6 +68,21 @@ def val_port[S, X, Y, HP, P, SV, XV, HPV, PV](
 
 
 @overload
+def port(t: Hyper, ctx: int, key: PRNG) -> tuple[jax.Array, Unit]:
+    return (jnp.asarray(t.value), Unit())
+
+
+@overload
+def port(t: Trained, ctx: int, key: PRNG) -> tuple[Unit, jax.Array]:
+    return (Unit(), jnp.asarray(t.value))
+
+
+@overload
+def port(t: Const, ctx: int, key: PRNG) -> tuple[Unit, Unit]:
+    return (Unit(), Unit())
+
+
+@overload
 def port(t: Linear, ctx: int, key: PRNG) -> tuple[Unit, eqx.nn.Linear]:
     k_layer, k_w = jax.random.split(key)
     layer = eqx.nn.Linear(ctx, t.n, use_bias=False, key=k_layer)
@@ -76,11 +96,11 @@ def port(t: Bias, ctx: int, key: PRNG) -> tuple[Unit, jax.Array]:
 
 @overload
 def port[HPA, PA](t: Rnn[HPA, PA], ctx: int, key: PRNG) -> tuple[HPA, tuple[PA, eqx.nn.Linear]]:
-    k_layer, k_rec, k_in = jax.random.split(key, 3)
+    k_layer, k_rec, k_in, k_a = jax.random.split(key, 4)
     layer = eqx.nn.Linear(t.n + ctx, t.n, use_bias=False, key=k_layer)
     w_rec = initializer(Orthogonal())(k_rec, (t.n, t.n))
     w_in = initializer(t.init)(k_in, (t.n, ctx))
-    hp, p = knob(t.alpha)
+    hp, p = port(t.alpha, ctx, PRNG(k_a))
     return (hp, (p, eqx.tree_at(lambda l: l.weight, layer, jnp.hstack([w_rec, w_in]))))
 
 
@@ -95,27 +115,36 @@ def port(t: Loss, ctx: int, key: PRNG) -> tuple[Unit, Unit]:
 
 
 @overload
-def port[HL, HW, HM, P](t: Sgd[HL, HW, HM, P], ctx: int, key: PRNG) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
-    lr, _ = knob(t.lr)
-    wd, _ = knob(t.wd)
-    m, _ = knob(t.momentum)
-    return (Unit(), ((lr, wd), m))
+def port[HL, PL, HW, PW, HM, PM, P](
+    t: Sgd[HL, PL, HW, PW, HM, PM, P], ctx: int, key: PRNG
+) -> tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]:
+    k1, k2, k3 = jax.random.split(key, 3)
+    hl, pl = port(t.lr, ctx, PRNG(k1))
+    hw, pw = port(t.wd, ctx, PRNG(k2))
+    hm, pm = port(t.momentum, ctx, PRNG(k3))
+    return (((hl, hw), hm), ((pl, pw), pm))
 
 
 @overload
-def port[HL, HW, HM, P](t: SgdNormalized[HL, HW, HM, P], ctx: int, key: PRNG) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
-    lr, _ = knob(t.lr)
-    wd, _ = knob(t.wd)
-    m, _ = knob(t.momentum)
-    return (Unit(), ((lr, wd), m))
+def port[HL, PL, HW, PW, HM, PM, P](
+    t: SgdNormalized[HL, PL, HW, PW, HM, PM, P], ctx: int, key: PRNG
+) -> tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]:
+    k1, k2, k3 = jax.random.split(key, 3)
+    hl, pl = port(t.lr, ctx, PRNG(k1))
+    hw, pw = port(t.wd, ctx, PRNG(k2))
+    hm, pm = port(t.momentum, ctx, PRNG(k3))
+    return (((hl, hw), hm), ((pl, pw), pm))
 
 
 @overload
-def port[HL, HW, HM, P](t: Adam[HL, HW, HM, P], ctx: int, key: PRNG) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
-    lr, _ = knob(t.lr)
-    wd, _ = knob(t.wd)
-    m, _ = knob(t.momentum)
-    return (Unit(), ((lr, wd), m))
+def port[HL, PL, HW, PW, HM, PM, P](
+    t: Adam[HL, PL, HW, PW, HM, PM, P], ctx: int, key: PRNG
+) -> tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]:
+    k1, k2, k3 = jax.random.split(key, 3)
+    hl, pl = port(t.lr, ctx, PRNG(k1))
+    hw, pw = port(t.wd, ctx, PRNG(k2))
+    hm, pm = port(t.momentum, ctx, PRNG(k3))
+    return (((hl, hw), hm), ((pl, pw), pm))
 
 
 @overload
@@ -185,8 +214,9 @@ def port[S, X, Y, HP, P](t: RTRL[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[
 
 @overload
 def port[S, X, Y, HP, P, HD](t: RFLO[S, X, Y, HP, P, HD], ctx: int, key: PRNG) -> tuple[tuple[HP, HD], P]:
-    hp, p = port(t.below, ctx, key)
-    d, _ = knob(t.decay)
+    k1, k2 = jax.random.split(key)
+    hp, p = port(t.below, ctx, PRNG(k1))
+    d, _ = port(t.decay, ctx, PRNG(k2))
     return ((hp, d), p)
 
 
@@ -198,7 +228,7 @@ def port[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[
 
 @overload
 def port[S, X, Y, HP, HP2, P, P2](t: Reparametrized[S, X, Y, HP, HP2, P, P2], ctx: int, key: PRNG) -> tuple[HP2, P2]:
-    return seed(t.r, store(t.below, unroute(t.below, port(t.below, ctx, key))))
+    return seed(t.r, unroute(t.below, port(t.below, ctx, key)))
 
 
 @overload
@@ -236,6 +266,21 @@ def val_state[S, X, Y, HP, P, SV, XV, HPV, PV](
 
 
 @overload
+def state(t: Hyper, hp_p: tuple[jax.Array, Unit], ctx: int, key: PRNG) -> Unit:
+    return Unit()
+
+
+@overload
+def state(t: Trained, hp_p: tuple[Unit, jax.Array], ctx: int, key: PRNG) -> Unit:
+    return Unit()
+
+
+@overload
+def state(t: Const, hp_p: tuple[Unit, Unit], ctx: int, key: PRNG) -> Unit:
+    return Unit()
+
+
+@overload
 def state(t: Linear, hp_p: tuple[Unit, eqx.nn.Linear], ctx: int, key: PRNG) -> Unit:
     return Unit()
 
@@ -261,37 +306,45 @@ def state[HPA, PA](t: Rnn[HPA, PA], hp_p: tuple[HPA, tuple[PA, eqx.nn.Linear]], 
 
 
 @overload
-def state[HL, HW, HM, P](
-    t: Sgd[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], ctx: P, key: PRNG
+def state[HL, PL, HW, PW, HM, PM, P](
+    t: Sgd[HL, PL, HW, PW, HM, PM, P],
+    hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]],
+    ctx: P,
+    key: PRNG,
 ) -> ArrayTree:
-    _, ((lr, wd), m) = hp_p
-    tx = sgd(reader(t.lr)(lr, Unit()), reader(t.wd)(wd, Unit()), reader(t.momentum)(m, Unit()))
-    return tx.init(cast(optax.Params, ctx))
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    lr = read_value(build(t.lr))((hl, pl))
+    wd = read_value(build(t.wd))((hw, pw))
+    m = read_value(build(t.momentum))((hm, pm))
+    return sgd(lr, wd, m).init(cast(optax.Params, ctx))
 
 
 @overload
-def state[HL, HW, HM, P](
-    t: SgdNormalized[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], ctx: P, key: PRNG
+def state[HL, PL, HW, PW, HM, PM, P](
+    t: SgdNormalized[HL, PL, HW, PW, HM, PM, P],
+    hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]],
+    ctx: P,
+    key: PRNG,
 ) -> ArrayTree:
-    _, ((lr, wd), m) = hp_p
-    tx = sgd_normalized(reader(t.lr)(lr, Unit()), reader(t.wd)(wd, Unit()), reader(t.momentum)(m, Unit()))
-    return tx.init(cast(optax.Params, ctx))
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    lr = read_value(build(t.lr))((hl, pl))
+    wd = read_value(build(t.wd))((hw, pw))
+    m = read_value(build(t.momentum))((hm, pm))
+    return sgd_normalized(lr, wd, m).init(cast(optax.Params, ctx))
 
 
 @overload
-def state[HL, HW, HM, P](
-    t: Adam[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], ctx: P, key: PRNG
+def state[HL, PL, HW, PW, HM, PM, P](
+    t: Adam[HL, PL, HW, PW, HM, PM, P],
+    hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]],
+    ctx: P,
+    key: PRNG,
 ) -> ArrayTree:
-    _, ((lr, wd), m) = hp_p
-    tx = adam(
-        reader(t.lr)(lr, Unit()),
-        reader(t.wd)(wd, Unit()),
-        reader(t.momentum)(m, Unit()),
-        t.b2,
-        t.eps,
-        t.eps_root,
-    )
-    return tx.init(cast(optax.Params, ctx))
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    lr = read_value(build(t.lr))((hl, pl))
+    wd = read_value(build(t.wd))((hw, pw))
+    m = read_value(build(t.momentum))((hm, pm))
+    return adam(lr, wd, m, t.b2, t.eps, t.eps_root).init(cast(optax.Params, ctx))
 
 
 @overload
@@ -343,11 +396,11 @@ def state[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
     key: PRNG,
 ) -> tuple[tuple[tuple[S, tuple[SO, P]], Unit], SV]:
     ((hp_o, _), _), (((hp, h), _), _) = hp_p
-    k1, k2, k3 = jax.random.split(key, 3)
+    k1, k2, k3, k4 = jax.random.split(key, 4)
     _, p_b = port(t.below, ctx, PRNG(k1))
     s = state(t.below, (hp, p_b), ctx, PRNG(k2))
     opt_st = state(t.opt, (hp_o, h), p_b, PRNG(k3))
-    return (((s, (opt_st, p_b)), Unit()), val_state(t.val, s, ctx, key))
+    return (((s, (opt_st, p_b)), Unit()), val_state(t.val, s, ctx, PRNG(k4)))
 
 
 @overload
@@ -397,7 +450,7 @@ def state[S, X, Y, HP, P](
 def state[S, X, Y, HP, HP2, P, P2](
     t: Reparametrized[S, X, Y, HP, HP2, P, P2], hp_p: tuple[HP2, P2], ctx: int, key: PRNG
 ) -> S:
-    return state(t.below, route(t.below, cook(t.below)(reparametrizer(t.r)(hp_p))), ctx, key)
+    return state(t.below, route(t.below, reparametrizer(t.r)(hp_p)), ctx, key)
 
 
 @overload
@@ -438,3 +491,8 @@ def rank_one[S, X, Y, HP, P](
     _, vjp = jax.vjp(flat_state(t, hp_p, ctx, key), to_vector(p).vector)
     (d_p,) = vjp(nu)
     return d_p
+
+
+def setup[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[tuple[HP, P], S]:
+    hp_p = port(t, ctx, key)
+    return (hp_p, state(t, hp_p, ctx, key))

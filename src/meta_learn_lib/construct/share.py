@@ -10,7 +10,6 @@ from meta_learn_lib.construct.term import (
     Declares,
     Frozen,
     Hyper,
-    Knob,
     Label,
     Linear,
     Loss,
@@ -39,112 +38,6 @@ from jaxtyping import PyTree
 import jax
 import jax.numpy as jnp
 from plum import dispatch
-
-
-@overload
-def label_source(l: Anon, v: PyTree) -> dict[str, PyTree]:
-    return {}
-
-
-@overload
-def label_source(l: Declares, v: PyTree) -> dict[str, PyTree]:
-    return {l.name: v}
-
-
-@overload
-def label_source(l: Uses, v: PyTree) -> dict[str, PyTree]:
-    return {}
-
-
-@overload
-def label_source(l: Label, v: PyTree) -> dict[str, PyTree]:
-    raise NotImplementedError
-
-
-@dispatch
-def label_source(l: Label, v: PyTree) -> dict[str, PyTree]:
-    raise NotImplementedError
-
-
-@overload
-def label_target(l: Anon, v: PyTree, shared: dict[str, PyTree]) -> PyTree:
-    return v
-
-
-@overload
-def label_target(l: Declares, v: PyTree, shared: dict[str, PyTree]) -> PyTree:
-    return v
-
-
-@overload
-def label_target(l: Uses, v: PyTree, shared: dict[str, PyTree]) -> PyTree:
-    if l.name not in shared:
-        raise KeyError(f"Uses({l.name!r}) has no source; declared names are {sorted(shared)}")
-    return shared[l.name]
-
-
-@overload
-def label_target(l: Label, v: PyTree, shared: dict[str, PyTree]) -> PyTree:
-    raise NotImplementedError
-
-
-@dispatch
-def label_target(l: Label, v: PyTree, shared: dict[str, PyTree]) -> PyTree:
-    raise NotImplementedError
-
-
-@overload
-def knob_source(k: Hyper, hp_p: tuple[jax.Array, Unit]) -> dict[str, PyTree]:
-    hp, _ = hp_p
-    return label_source(k.label, hp)
-
-
-@overload
-def knob_source(k: Trained, hp_p: tuple[Unit, jax.Array]) -> dict[str, PyTree]:
-    _, p = hp_p
-    return label_source(k.label, p)
-
-
-@overload
-def knob_source(k: Const, hp_p: tuple[Unit, Unit]) -> dict[str, PyTree]:
-    return {}
-
-
-@overload
-def knob_source[HP, P](k: Knob[HP, P], hp_p: tuple[HP, P]) -> dict[str, PyTree]:
-    raise NotImplementedError
-
-
-@dispatch
-def knob_source[HP, P](k: Knob[HP, P], hp_p: tuple[HP, P]) -> dict[str, PyTree]:
-    raise NotImplementedError
-
-
-@overload
-def knob_target(k: Hyper, hp_p: tuple[jax.Array, Unit], shared: dict[str, PyTree]) -> tuple[jax.Array, Unit]:
-    hp, u = hp_p
-    return (label_target(k.label, hp, shared), u)
-
-
-@overload
-def knob_target(k: Trained, hp_p: tuple[Unit, jax.Array], shared: dict[str, PyTree]) -> tuple[Unit, jax.Array]:
-    u, p = hp_p
-    return (u, label_target(k.label, p, shared))
-
-
-@overload
-def knob_target(k: Const, hp_p: tuple[Unit, Unit], shared: dict[str, PyTree]) -> tuple[Unit, Unit]:
-    return hp_p
-
-
-@overload
-def knob_target[HP, P](k: Knob[HP, P], hp_p: tuple[HP, P], shared: dict[str, PyTree]) -> tuple[HP, P]:
-    raise NotImplementedError
-
-
-@dispatch
-def knob_target[HP, P](k: Knob[HP, P], hp_p: tuple[HP, P], shared: dict[str, PyTree]) -> tuple[HP, P]:
-    raise NotImplementedError
 
 
 @overload
@@ -185,16 +78,51 @@ def val_target[S, X, Y, HP, P, SV, XV, HPV, PV](
     raise NotImplementedError
 
 
+def label_source(l: Label, v: PyTree) -> dict[str, PyTree]:
+    match l:
+        case Declares(name):
+            return {name: v}
+        case _:
+            return {}
+
+
+def label_target(l: Label, v: PyTree, shared: dict[str, PyTree]) -> PyTree:
+    match l:
+        case Uses(name):
+            if name not in shared:
+                raise KeyError(f"Uses({name!r}) has no source; declared names are {sorted(shared)}")
+            return shared[name]
+        case _:
+            return v
+
+
+@overload
+def sources(t: Hyper, hp_p: tuple[jax.Array, Unit]) -> dict[str, PyTree]:
+    hp, _ = hp_p
+    return label_source(t.label, hp)
+
+
+@overload
+def sources(t: Trained, hp_p: tuple[Unit, jax.Array]) -> dict[str, PyTree]:
+    _, p = hp_p
+    return label_source(t.label, p)
+
+
+@overload
+def sources(t: Const, hp_p: tuple[Unit, Unit]) -> dict[str, PyTree]:
+    return {}
+
+
 @overload
 def sources(t: Linear, hp_p: tuple[Unit, eqx.nn.Linear]) -> dict[str, PyTree]:
-    _, layer = hp_p
-    return label_source(t.label, layer)
+    _, p = hp_p
+    return label_source(t.label, p)
 
 
 @overload
 def sources(t: Bias, hp_p: tuple[Unit, jax.Array]) -> dict[str, PyTree]:
-    _, b = hp_p
-    return label_source(t.label, b)
+    _, p = hp_p
+    return label_source(t.label, p)
 
 
 @overload
@@ -215,27 +143,31 @@ def sources[P](t: Frozen[P], hp_p: tuple[Unit, Unit]) -> dict[str, PyTree]:
 @overload
 def sources[HPA, PA](t: Rnn[HPA, PA], hp_p: tuple[HPA, tuple[PA, eqx.nn.Linear]]) -> dict[str, PyTree]:
     hp, (pa, lin) = hp_p
-    return knob_source(t.alpha, (hp, pa)) | label_source(t.label, lin)
+    return sources(t.alpha, (hp, pa)) | label_source(t.label, lin)
 
 
 @overload
-def sources[HL, HW, HM, P](t: Sgd[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]]) -> dict[str, PyTree]:
-    _, ((lr, wd), m) = hp_p
-    return knob_source(t.lr, (lr, Unit())) | knob_source(t.wd, (wd, Unit())) | knob_source(t.momentum, (m, Unit()))
-
-
-@overload
-def sources[HL, HW, HM, P](
-    t: SgdNormalized[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]]
+def sources[HL, PL, HW, PW, HM, PM, P](
+    t: Sgd[HL, PL, HW, PW, HM, PM, P], hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]
 ) -> dict[str, PyTree]:
-    _, ((lr, wd), m) = hp_p
-    return knob_source(t.lr, (lr, Unit())) | knob_source(t.wd, (wd, Unit())) | knob_source(t.momentum, (m, Unit()))
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    return sources(t.lr, (hl, pl)) | sources(t.wd, (hw, pw)) | sources(t.momentum, (hm, pm))
 
 
 @overload
-def sources[HL, HW, HM, P](t: Adam[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]]) -> dict[str, PyTree]:
-    _, ((lr, wd), m) = hp_p
-    return knob_source(t.lr, (lr, Unit())) | knob_source(t.wd, (wd, Unit())) | knob_source(t.momentum, (m, Unit()))
+def sources[HL, PL, HW, PW, HM, PM, P](
+    t: SgdNormalized[HL, PL, HW, PW, HM, PM, P], hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]
+) -> dict[str, PyTree]:
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    return sources(t.lr, (hl, pl)) | sources(t.wd, (hw, pw)) | sources(t.momentum, (hm, pm))
+
+
+@overload
+def sources[HL, PL, HW, PW, HM, PM, P](
+    t: Adam[HL, PL, HW, PW, HM, PM, P], hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]
+) -> dict[str, PyTree]:
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    return sources(t.lr, (hl, pl)) | sources(t.wd, (hw, pw)) | sources(t.momentum, (hm, pm))
 
 
 @overload
@@ -292,7 +224,7 @@ def sources[S, X, Y, HP, P](t: UORO[S, X, Y, HP, P], hp_p: tuple[tuple[HP, Unit]
 @overload
 def sources[S, X, Y, HP, P, HD](t: RFLO[S, X, Y, HP, P, HD], hp_p: tuple[tuple[HP, HD], P]) -> dict[str, PyTree]:
     (hp_b, d), p = hp_p
-    return sources(t.below, (hp_b, p)) | knob_source(t.decay, (d, Unit()))
+    return sources(t.below, (hp_b, p)) | sources(t.decay, (d, Unit()))
 
 
 @overload
@@ -304,7 +236,7 @@ def sources[S, X, Y, HP, HP2, P, P2](
 
 @overload
 def sources[S, X, Y, HP, P](t: Shared[S, X, Y, HP, P], hp_p: tuple[HP, P]) -> dict[str, PyTree]:
-    return sources(t.below, hp_p)
+    return {}
 
 
 @overload
@@ -318,15 +250,32 @@ def sources[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], hp_p: tuple[HP, P]) -> dict
 
 
 @overload
+def targets(t: Hyper, hp_p: tuple[jax.Array, Unit], shared: dict[str, PyTree]) -> tuple[jax.Array, Unit]:
+    hp, u = hp_p
+    return (label_target(t.label, hp, shared), u)
+
+
+@overload
+def targets(t: Trained, hp_p: tuple[Unit, jax.Array], shared: dict[str, PyTree]) -> tuple[Unit, jax.Array]:
+    u, p = hp_p
+    return (u, label_target(t.label, p, shared))
+
+
+@overload
+def targets(t: Const, hp_p: tuple[Unit, Unit], shared: dict[str, PyTree]) -> tuple[Unit, Unit]:
+    return hp_p
+
+
+@overload
 def targets(t: Linear, hp_p: tuple[Unit, eqx.nn.Linear], shared: dict[str, PyTree]) -> tuple[Unit, eqx.nn.Linear]:
-    u, layer = hp_p
-    return (u, label_target(t.label, layer, shared))
+    u, p = hp_p
+    return (u, label_target(t.label, p, shared))
 
 
 @overload
 def targets(t: Bias, hp_p: tuple[Unit, jax.Array], shared: dict[str, PyTree]) -> tuple[Unit, jax.Array]:
-    u, b = hp_p
-    return (u, label_target(t.label, b, shared))
+    u, p = hp_p
+    return (u, label_target(t.label, p, shared))
 
 
 @overload
@@ -349,41 +298,47 @@ def targets[HPA, PA](
     t: Rnn[HPA, PA], hp_p: tuple[HPA, tuple[PA, eqx.nn.Linear]], shared: dict[str, PyTree]
 ) -> tuple[HPA, tuple[PA, eqx.nn.Linear]]:
     hp, (pa, lin) = hp_p
-    a, b = knob_target(t.alpha, (hp, pa), shared)
+    a, b = targets(t.alpha, (hp, pa), shared)
     return (a, (b, label_target(t.label, lin, shared)))
 
 
 @overload
-def targets[HL, HW, HM, P](
-    t: Sgd[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], shared: dict[str, PyTree]
-) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
-    u, ((lr, wd), m) = hp_p
-    a, _ = knob_target(t.lr, (lr, Unit()), shared)
-    b, _ = knob_target(t.wd, (wd, Unit()), shared)
-    c, _ = knob_target(t.momentum, (m, Unit()), shared)
-    return (u, ((a, b), c))
+def targets[HL, PL, HW, PW, HM, PM, P](
+    t: Sgd[HL, PL, HW, PW, HM, PM, P],
+    hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]],
+    shared: dict[str, PyTree],
+) -> tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]:
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    a1, b1 = targets(t.lr, (hl, pl), shared)
+    a2, b2 = targets(t.wd, (hw, pw), shared)
+    a3, b3 = targets(t.momentum, (hm, pm), shared)
+    return (((a1, a2), a3), ((b1, b2), b3))
 
 
 @overload
-def targets[HL, HW, HM, P](
-    t: SgdNormalized[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], shared: dict[str, PyTree]
-) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
-    u, ((lr, wd), m) = hp_p
-    a, _ = knob_target(t.lr, (lr, Unit()), shared)
-    b, _ = knob_target(t.wd, (wd, Unit()), shared)
-    c, _ = knob_target(t.momentum, (m, Unit()), shared)
-    return (u, ((a, b), c))
+def targets[HL, PL, HW, PW, HM, PM, P](
+    t: SgdNormalized[HL, PL, HW, PW, HM, PM, P],
+    hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]],
+    shared: dict[str, PyTree],
+) -> tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]:
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    a1, b1 = targets(t.lr, (hl, pl), shared)
+    a2, b2 = targets(t.wd, (hw, pw), shared)
+    a3, b3 = targets(t.momentum, (hm, pm), shared)
+    return (((a1, a2), a3), ((b1, b2), b3))
 
 
 @overload
-def targets[HL, HW, HM, P](
-    t: Adam[HL, HW, HM, P], hp_p: tuple[Unit, tuple[tuple[HL, HW], HM]], shared: dict[str, PyTree]
-) -> tuple[Unit, tuple[tuple[HL, HW], HM]]:
-    u, ((lr, wd), m) = hp_p
-    a, _ = knob_target(t.lr, (lr, Unit()), shared)
-    b, _ = knob_target(t.wd, (wd, Unit()), shared)
-    c, _ = knob_target(t.momentum, (m, Unit()), shared)
-    return (u, ((a, b), c))
+def targets[HL, PL, HW, PW, HM, PM, P](
+    t: Adam[HL, PL, HW, PW, HM, PM, P],
+    hp_p: tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]],
+    shared: dict[str, PyTree],
+) -> tuple[tuple[tuple[HL, HW], HM], tuple[tuple[PL, PW], PM]]:
+    ((hl, hw), hm), ((pl, pw), pm) = hp_p
+    a1, b1 = targets(t.lr, (hl, pl), shared)
+    a2, b2 = targets(t.wd, (hw, pw), shared)
+    a3, b3 = targets(t.momentum, (hm, pm), shared)
+    return (((a1, a2), a3), ((b1, b2), b3))
 
 
 @overload
@@ -462,7 +417,7 @@ def targets[S, X, Y, HP, P, HD](
 ) -> tuple[tuple[HP, HD], P]:
     (hp_b, d), p = hp_p
     a, b = targets(t.below, (hp_b, p), shared)
-    dd, _ = knob_target(t.decay, (d, Unit()), shared)
+    dd, _ = targets(t.decay, (d, Unit()), shared)
     return ((a, dd), b)
 
 

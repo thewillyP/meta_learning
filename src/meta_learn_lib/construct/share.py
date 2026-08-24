@@ -13,6 +13,7 @@ from meta_learn_lib.construct.term import (
     Label,
     Linear,
     Loss,
+    Meta,
     RFLO,
     RTRL,
     Reparametrized,
@@ -235,6 +236,15 @@ def sources[S, X, Y, HP, HP2, P, P2](
 
 
 @overload
+def sources[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
+    t: Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV],
+    hp_p: tuple[tuple[tuple[HPO, Unit], HPV], tuple[tuple[tuple[HP, H], Unit], PV]],
+) -> dict[str, PyTree]:
+    ((hp_o, _), hpv), (((_, h), _), _) = hp_p
+    return sources(t.opt, (hp_o, h)) | val_source(t.val, hpv)
+
+
+@overload
 def sources[S, X, Y, HP, P](t: Shared[S, X, Y, HP, P], hp_p: tuple[HP, P]) -> dict[str, PyTree]:
     return {}
 
@@ -426,6 +436,17 @@ def targets[S, X, Y, HP, HP2, P, P2](
     t: Reparametrized[S, X, Y, HP, HP2, P, P2], hp_p: tuple[HP2, P2], shared: dict[str, PyTree]
 ) -> tuple[HP2, P2]:
     return label_target(t.label, hp_p, shared)
+
+
+@overload
+def targets[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV](
+    t: Meta[S, X, HP, P, SO, H, HPO, HPV, SV, XV, PV],
+    hp_p: tuple[tuple[tuple[HPO, Unit], HPV], tuple[tuple[tuple[HP, H], Unit], PV]],
+    shared: dict[str, PyTree],
+) -> tuple[tuple[tuple[HPO, Unit], HPV], tuple[tuple[tuple[HP, H], Unit], PV]]:
+    ((hp_o, u1), hpv), (((hp, h), u2), pv) = hp_p
+    a, b = targets(t.opt, (hp_o, h), shared)
+    return (((a, u1), val_target(t.val, hpv, shared)), (((hp, b), u2), pv))
 
 
 @overload

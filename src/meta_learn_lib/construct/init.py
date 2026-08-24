@@ -14,7 +14,7 @@ from meta_learn_lib.construct.term import (
     Bias,
     Const,
     Frozen,
-    Hyper,
+    HyperStorage,
     Linear,
     Loss,
     Meta,
@@ -32,7 +32,7 @@ from meta_learn_lib.construct.term import (
     Split,
     Sup,
     Term,
-    Trained,
+    TrainedStorage,
     UORO,
     Validator,
 )
@@ -68,12 +68,12 @@ def val_port[S, X, Y, HP, P, SV, XV, HPV, PV](
 
 
 @overload
-def port(t: Hyper, ctx: int, key: PRNG) -> tuple[jax.Array, Unit]:
+def port(t: HyperStorage, ctx: int, key: PRNG) -> tuple[jax.Array, Unit]:
     return (jnp.asarray(t.value), Unit())
 
 
 @overload
-def port(t: Trained, ctx: int, key: PRNG) -> tuple[Unit, jax.Array]:
+def port(t: TrainedStorage, ctx: int, key: PRNG) -> tuple[Unit, jax.Array]:
     return (Unit(), jnp.asarray(t.value))
 
 
@@ -266,12 +266,12 @@ def val_state[S, X, Y, HP, P, SV, XV, HPV, PV](
 
 
 @overload
-def state(t: Hyper, hp_p: tuple[jax.Array, Unit], ctx: int, key: PRNG) -> Unit:
+def state(t: HyperStorage, hp_p: tuple[jax.Array, Unit], ctx: int, key: PRNG) -> Unit:
     return Unit()
 
 
 @overload
-def state(t: Trained, hp_p: tuple[Unit, jax.Array], ctx: int, key: PRNG) -> Unit:
+def state(t: TrainedStorage, hp_p: tuple[Unit, jax.Array], ctx: int, key: PRNG) -> Unit:
     return Unit()
 
 

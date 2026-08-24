@@ -107,13 +107,13 @@ class LowRank(Reparametrization[tuple[jax.Array, jax.Array], eqx.nn.Linear]):
 
 
 @dataclass(frozen=True)
-class Hyper(Term[Unit, Unit, jax.Array, jax.Array, Unit]):
+class HyperStorage(Term[Unit, Unit, jax.Array, jax.Array, Unit]):
     value: float
     label: Label
 
 
 @dataclass(frozen=True)
-class Trained(Term[Unit, Unit, jax.Array, Unit, jax.Array]):
+class TrainedStorage(Term[Unit, Unit, jax.Array, Unit, jax.Array]):
     value: float
     label: Label
 

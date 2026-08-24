@@ -9,7 +9,7 @@ from meta_learn_lib.construct.term import (
     Const,
     Declares,
     Frozen,
-    Hyper,
+    HyperStorage,
     Label,
     Linear,
     Loss,
@@ -26,7 +26,7 @@ from meta_learn_lib.construct.term import (
     Split,
     Sup,
     Term,
-    Trained,
+    TrainedStorage,
     UORO,
     Uses,
     Validator,
@@ -97,13 +97,13 @@ def label_target(l: Label, v: PyTree, shared: dict[str, PyTree]) -> PyTree:
 
 
 @overload
-def sources(t: Hyper, hp_p: tuple[jax.Array, Unit]) -> dict[str, PyTree]:
+def sources(t: HyperStorage, hp_p: tuple[jax.Array, Unit]) -> dict[str, PyTree]:
     hp, _ = hp_p
     return label_source(t.label, hp)
 
 
 @overload
-def sources(t: Trained, hp_p: tuple[Unit, jax.Array]) -> dict[str, PyTree]:
+def sources(t: TrainedStorage, hp_p: tuple[Unit, jax.Array]) -> dict[str, PyTree]:
     _, p = hp_p
     return label_source(t.label, p)
 
@@ -250,13 +250,13 @@ def sources[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], hp_p: tuple[HP, P]) -> dict
 
 
 @overload
-def targets(t: Hyper, hp_p: tuple[jax.Array, Unit], shared: dict[str, PyTree]) -> tuple[jax.Array, Unit]:
+def targets(t: HyperStorage, hp_p: tuple[jax.Array, Unit], shared: dict[str, PyTree]) -> tuple[jax.Array, Unit]:
     hp, u = hp_p
     return (label_target(t.label, hp, shared), u)
 
 
 @overload
-def targets(t: Trained, hp_p: tuple[Unit, jax.Array], shared: dict[str, PyTree]) -> tuple[Unit, jax.Array]:
+def targets(t: TrainedStorage, hp_p: tuple[Unit, jax.Array], shared: dict[str, PyTree]) -> tuple[Unit, jax.Array]:
     u, p = hp_p
     return (u, label_target(t.label, p, shared))
 

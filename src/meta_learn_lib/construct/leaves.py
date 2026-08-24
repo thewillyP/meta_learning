@@ -1,21 +1,30 @@
+from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
     Activation,
+    Anon,
     CrossEntropy,
     Gaussian,
+    HyperStorage,
     Identity,
     Init,
     L2,
+    Label,
     LecunNormal,
     Loss,
     Noise,
     Normal,
     Orthogonal,
     PytorchUniform,
+    RMap,
     Rademacher,
     Relu,
+    Reparametrization,
+    Reparametrized,
     Sigmoid,
     Softmax,
     Tanh,
+    Term,
+    TrainedStorage,
     UniformUnit,
     Zeros,
 )
@@ -142,3 +151,15 @@ def sampler(t: Noise) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
 @dispatch
 def sampler(t: Noise) -> Callable[[PRNG, tuple[int, ...]], jax.Array]:
     raise NotImplementedError
+
+
+def Hyper(
+    value: float, reparam: Reparametrization[jax.Array, jax.Array], label: Label
+) -> Term[Unit, Unit, jax.Array, jax.Array, Unit]:
+    return Reparametrized(HyperStorage(value, Anon()), RMap(reparam), label)
+
+
+def Trained(
+    value: float, reparam: Reparametrization[jax.Array, jax.Array], label: Label
+) -> Term[Unit, Unit, jax.Array, Unit, jax.Array]:
+    return Reparametrized(TrainedStorage(value, Anon()), RMap(reparam), label)

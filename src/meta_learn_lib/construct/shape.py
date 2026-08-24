@@ -4,7 +4,7 @@ from meta_learn_lib.construct.term import (
     BatchPop,
     Bias,
     Const,
-    Hyper,
+    HyperStorage,
     Linear,
     Loss,
     Meta,
@@ -17,7 +17,7 @@ from meta_learn_lib.construct.term import (
     Shared,
     Sup,
     Term,
-    Trained,
+    TrainedStorage,
     UORO,
 )
 
@@ -26,12 +26,12 @@ from plum import dispatch
 
 
 @overload
-def out(t: Hyper, n_in: int) -> int:
+def out(t: HyperStorage, n_in: int) -> int:
     return 1
 
 
 @overload
-def out(t: Trained, n_in: int) -> int:
+def out(t: TrainedStorage, n_in: int) -> int:
     return 1
 
 

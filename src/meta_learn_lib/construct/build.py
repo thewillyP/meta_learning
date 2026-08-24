@@ -19,7 +19,7 @@ from meta_learn_lib.construct.term import (
     Bias,
     Const,
     Frozen,
-    Hyper,
+    HyperStorage,
     Linear,
     Loss,
     Meta,
@@ -36,7 +36,7 @@ from meta_learn_lib.construct.term import (
     Split,
     Sup,
     Term,
-    Trained,
+    TrainedStorage,
     UORO,
     Validator,
 )
@@ -71,7 +71,7 @@ def validator[S, X, Y, HP, P, SV, XV, HPV, PV](
 
 
 @overload
-def build(t: Hyper) -> Mealy[Unit, Unit, Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit]:
+def build(t: HyperStorage) -> Mealy[Unit, Unit, Unit, Unit, jax.Array, jax.Array, jax.Array, jax.Array, Unit, Unit]:
     def h(hp_p: tuple[jax.Array, Unit], su: tuple[Unit, Unit]) -> tuple[Unit, jax.Array]:
         hp, _ = hp_p
         s, _ = su
@@ -81,7 +81,7 @@ def build(t: Hyper) -> Mealy[Unit, Unit, Unit, Unit, jax.Array, jax.Array, jax.A
 
 
 @overload
-def build(t: Trained) -> Mealy[Unit, Unit, Unit, Unit, jax.Array, jax.Array, Unit, Unit, jax.Array, jax.Array]:
+def build(t: TrainedStorage) -> Mealy[Unit, Unit, Unit, Unit, jax.Array, jax.Array, Unit, Unit, jax.Array, jax.Array]:
     def h(hp_p: tuple[Unit, jax.Array], su: tuple[Unit, Unit]) -> tuple[Unit, jax.Array]:
         _, p = hp_p
         s, _ = su

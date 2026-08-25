@@ -12,6 +12,7 @@ from meta_learn_lib.construct.leaves import activation, objective, sampler
 from meta_learn_lib.construct.reparam import reparametrizer
 from meta_learn_lib.construct.share import route
 from meta_learn_lib.construct.term import (
+    Validate,
     Activation,
     Adam,
     BatchData,
@@ -65,6 +66,25 @@ def validator[S, X, Y, HP, P](
     Unit,
 ]:
     return validation(m, same_model)
+
+
+@overload
+def validator[S, X, Y, HP, P, SV, XV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
+) -> Mealy[
+    SV,
+    SV,
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    Y,
+    Y,
+    Unit,
+    Unit,
+    Unit,
+    Unit,
+]:
+    expand = reparametrizer(v.r)
+    return validation(build(v.term), lambda wire, own: expand((wire, own)))
 
 
 @overload

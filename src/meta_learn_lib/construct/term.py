@@ -96,6 +96,22 @@ class RMap[P](Reparametrization[P, P]):
 
 
 @dataclass(frozen=True)
+class PortOf[HP, P, S](Reparametrization[tuple[tuple[tuple[HP, P], S], tuple[Unit, Unit]], tuple[HP, P]]): ...
+
+
+@dataclass(frozen=True)
+class Demoted[HP1, HP0, H, PV, S0, SO, P0, SV](
+    Reparametrization[
+        tuple[
+            tuple[tuple[HP1, tuple[tuple[tuple[HP0, H], Unit], PV]], tuple[tuple[tuple[S0, tuple[SO, P0]], Unit], SV]],
+            tuple[Unit, Unit],
+        ],
+        tuple[HP0, P0],
+    ]
+): ...
+
+
+@dataclass(frozen=True)
 class RSplit[A2, A, B2, B](Reparametrization[tuple[A2, B2], tuple[A, B]]):
     first: Reparametrization[A2, A]
     second: Reparametrization[B2, B]
@@ -294,6 +310,12 @@ class UORO[S, X, Y, HP, P](Term[tuple[S, tuple[jax.Array, jax.Array, PRNG]], X, 
 
 @dataclass(frozen=True)
 class Validator[S, X, Y, HP, P, SV, XV, HPV, PV]: ...
+
+
+@dataclass(frozen=True)
+class Validate[S, X, Y, HP, P, SV, XV, HQ, Q](Validator[S, X, Y, HP, P, SV, XV, Unit, Unit]):
+    term: Term[SV, XV, Y, HQ, Q]
+    r: Reparametrization[tuple[tuple[tuple[HP, P], S], tuple[Unit, Unit]], tuple[HQ, Q]]
 
 
 @dataclass(frozen=True)

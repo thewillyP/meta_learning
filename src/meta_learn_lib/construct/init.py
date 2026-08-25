@@ -7,6 +7,7 @@ from meta_learn_lib.construct.reparam import reparametrizer, seed
 from meta_learn_lib.construct.share import route, unroute
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
+    Validate,
     Activation,
     Adam,
     BatchData,
@@ -50,6 +51,13 @@ from plum import dispatch
 
 @overload
 def val_port[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[Unit, Unit]:
+    return (Unit(), Unit())
+
+
+@overload
+def val_port[S, X, Y, HP, P, SV, XV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], ctx: int, key: PRNG
+) -> tuple[Unit, Unit]:
     return (Unit(), Unit())
 
 
@@ -249,6 +257,14 @@ def port[S, X, Y, HP, P](t: Term[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[
 @overload
 def val_state[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], s: S, ctx: int, key: PRNG) -> S:
     return s
+
+
+@overload
+def val_state[S, X, Y, HP, P, SV, XV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], s: S, ctx: int, key: PRNG
+) -> SV:
+    k_port, k_state = jax.random.split(key)
+    return state(v.term, port(v.term, ctx, PRNG(k_port)), ctx, PRNG(k_state))
 
 
 @overload

@@ -1,8 +1,8 @@
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
+    Validate,
     Activation,
     Adam,
-    Anon,
     BatchData,
     BatchPop,
     Bias,
@@ -47,6 +47,13 @@ def val_source[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], hp: Unit) -> dict[s
 
 
 @overload
+def val_source[S, X, Y, HP, P, SV, XV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], hp: Unit
+) -> dict[str, PyTree]:
+    return {}
+
+
+@overload
 def val_source[S, X, Y, HP, P, SV, XV, HPV, PV](
     v: Validator[S, X, Y, HP, P, SV, XV, HPV, PV], hp: HPV
 ) -> dict[str, PyTree]:
@@ -62,6 +69,13 @@ def val_source[S, X, Y, HP, P, SV, XV, HPV, PV](
 
 @overload
 def val_target[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], hp: Unit, shared: dict[str, PyTree]) -> Unit:
+    return hp
+
+
+@overload
+def val_target[S, X, Y, HP, P, SV, XV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], hp: Unit, shared: dict[str, PyTree]
+) -> Unit:
     return hp
 
 

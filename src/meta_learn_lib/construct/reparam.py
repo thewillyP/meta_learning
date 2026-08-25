@@ -1,4 +1,7 @@
+from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
+    Demoted,
+    PortOf,
     LowRank,
     RMap,
     RSplit,
@@ -89,6 +92,41 @@ def reparametrizer(r: LowRank) -> Callable[[tuple[jax.Array, jax.Array]], eqx.nn
         return eqx.tree_at(lambda l: l.weight, shell, a @ b)
 
     return expand
+
+
+@overload
+def reparametrizer[HP, P, S](
+    r: PortOf[HP, P, S],
+) -> Callable[[tuple[tuple[tuple[HP, P], S], tuple[Unit, Unit]]], tuple[HP, P]]:
+    def project(p: tuple[tuple[tuple[HP, P], S], tuple[Unit, Unit]]) -> tuple[HP, P]:
+        (hp_p, _), _ = p
+        return hp_p
+
+    return project
+
+
+@overload
+def reparametrizer[HP1, HP0, H, PV, S0, SO, P0, SV](
+    r: Demoted[HP1, HP0, H, PV, S0, SO, P0, SV],
+) -> Callable[
+    [
+        tuple[
+            tuple[tuple[HP1, tuple[tuple[tuple[HP0, H], Unit], PV]], tuple[tuple[tuple[S0, tuple[SO, P0]], Unit], SV]],
+            tuple[Unit, Unit],
+        ]
+    ],
+    tuple[HP0, P0],
+]:
+    def project(
+        p: tuple[
+            tuple[tuple[HP1, tuple[tuple[tuple[HP0, H], Unit], PV]], tuple[tuple[tuple[S0, tuple[SO, P0]], Unit], SV]],
+            tuple[Unit, Unit],
+        ],
+    ) -> tuple[HP0, P0]:
+        ((_, (((hp0, _), _), _)), (((_, (_, theta)), _), _)), _ = p
+        return (hp0, theta)
+
+    return project
 
 
 @overload

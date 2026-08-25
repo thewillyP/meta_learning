@@ -1,5 +1,7 @@
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
+    RCompose,
+    Below,
     Demoted,
     PortOf,
     LowRank,
@@ -130,6 +132,40 @@ def reparametrizer[HP1, HP0, H, PV, S0, SO, P0, SV](
 
 
 @overload
+def reparametrizer[A, B, C](r: RCompose[A, B, C]) -> Callable[[A], C]:
+    first, second = reparametrizer(r.first), reparametrizer(r.second)
+    return lambda a: second(first(a))
+
+
+@overload
+def reparametrizer[HP2, HP1, H2, PV2, S1, SO2, P1, SV2](
+    r: Below[HP2, HP1, H2, PV2, S1, SO2, P1, SV2],
+) -> Callable[
+    [
+        tuple[
+            tuple[
+                tuple[HP2, tuple[tuple[tuple[HP1, H2], Unit], PV2]], tuple[tuple[tuple[S1, tuple[SO2, P1]], Unit], SV2]
+            ],
+            tuple[Unit, Unit],
+        ]
+    ],
+    tuple[tuple[tuple[HP1, P1], S1], tuple[Unit, Unit]],
+]:
+    def project(
+        p: tuple[
+            tuple[
+                tuple[HP2, tuple[tuple[tuple[HP1, H2], Unit], PV2]], tuple[tuple[tuple[S1, tuple[SO2, P1]], Unit], SV2]
+            ],
+            tuple[Unit, Unit],
+        ],
+    ) -> tuple[tuple[tuple[HP1, P1], S1], tuple[Unit, Unit]]:
+        ((_, (((hp1, _), _), _)), (((s1, (_, p1)), _), _)), own = p
+        return (((hp1, p1), s1), own)
+
+    return project
+
+
+@overload
 def reparametrizer[P2, P](r: Reparametrization[P2, P]) -> Callable[[P2], P]:
     raise NotImplementedError
 
@@ -190,6 +226,11 @@ def seed(r: LowRank, p: eqx.nn.Linear) -> tuple[jax.Array, jax.Array]:
     u, sv, vt = jnp.linalg.svd(p.weight, full_matrices=False)
     root = jnp.sqrt(sv[: r.rank])
     return (u[:, : r.rank] * root, vt[: r.rank, :] * root[:, None])
+
+
+@overload
+def seed[A, B, C](r: RCompose[A, B, C], p: C) -> A:
+    return seed(r.first, seed(r.second, p))
 
 
 @overload

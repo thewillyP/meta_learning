@@ -4,8 +4,8 @@ from meta_learn_lib.category.mealy import Mealy
 from meta_learn_lib.utility.util import zero_cotangent_like
 
 import equinox as eqx
+from jaxtyping import PyTree
 import jax.numpy as jnp
-import optax
 
 
 def scan[S, X, Y, HP, P](cell: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
@@ -82,7 +82,7 @@ def scan[S, X, Y, HP, P](cell: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]) -> Mealy[S
 def batch_with_axes[S, X, Y, HP, P](
     m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P],
     from_p: Callable[[tuple[HP, P]], tuple[HP, P]],
-    axes: Callable[[object], int | None] | None,
+    axes: PyTree,
 ) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     def run(
         p_sx: tuple[tuple[HP, P], tuple[S, X]],
@@ -108,6 +108,14 @@ def batch_data[S, X, Y, HP, P](m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]) -> Meal
 
 def batch_pop[S, X, Y, HP, P](m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     return batch_with_axes(m, lambda dp: dp, eqx.if_array(0))
+
+
+def batch_params[S, X, Y, HP, P](m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+    def from_p(dp: tuple[HP, P]) -> tuple[HP, P]:
+        d_hp, d_p = dp
+        return (jax.tree.map(lambda a: a.sum(0), d_hp), d_p)
+
+    return batch_with_axes(m, from_p, (None, eqx.if_array(0)))
 
 
 def learner[HP, HPO, SO, S, X, Y, P, H](

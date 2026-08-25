@@ -112,6 +112,26 @@ class Demoted[HP1, HP0, H, PV, S0, SO, P0, SV](
 
 
 @dataclass(frozen=True)
+class RCompose[A, B, C](Reparametrization[A, C]):
+    first: Reparametrization[A, B]
+    second: Reparametrization[B, C]
+
+
+@dataclass(frozen=True)
+class Below[HP2, HP1, H2, PV2, S1, SO2, P1, SV2](
+    Reparametrization[
+        tuple[
+            tuple[
+                tuple[HP2, tuple[tuple[tuple[HP1, H2], Unit], PV2]], tuple[tuple[tuple[S1, tuple[SO2, P1]], Unit], SV2]
+            ],
+            tuple[Unit, Unit],
+        ],
+        tuple[tuple[tuple[HP1, P1], S1], tuple[Unit, Unit]],
+    ]
+): ...
+
+
+@dataclass(frozen=True)
 class RSplit[A2, A, B2, B](Reparametrization[tuple[A2, B2], tuple[A, B]]):
     first: Reparametrization[A2, A]
     second: Reparametrization[B2, B]
@@ -265,6 +285,12 @@ class Scan[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
 
 @dataclass(frozen=True)
 class BatchData[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
+    below: Term[S, X, Y, HP, P]
+    n: int
+
+
+@dataclass(frozen=True)
+class BatchParams[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
     below: Term[S, X, Y, HP, P]
     n: int
 

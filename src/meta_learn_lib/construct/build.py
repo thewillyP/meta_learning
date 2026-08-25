@@ -1,4 +1,4 @@
-from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner, reparametrize, scan
+from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner, reparametrize, scan, batch_params
 from meta_learn_lib.algorithms.learning import rflo, rtrl, uoro
 from meta_learn_lib.algorithms.level import level, validation, same_model
 from meta_learn_lib.algorithms.model import leaf, read_value
@@ -12,6 +12,7 @@ from meta_learn_lib.construct.leaves import activation, objective, sampler
 from meta_learn_lib.construct.reparam import reparametrizer
 from meta_learn_lib.construct.share import route
 from meta_learn_lib.construct.term import (
+    BatchParams,
     Validate,
     Activation,
     Adam,
@@ -373,6 +374,11 @@ def build[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP
 @overload
 def build[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
     return batch_data(build(t.below))
+
+
+@overload
+def build[S, X, Y, HP, P](t: BatchParams[S, X, Y, HP, P]) -> Mealy[S, S, X, X, Y, Y, HP, HP, P, P]:
+    return batch_params(build(t.below))
 
 
 @overload

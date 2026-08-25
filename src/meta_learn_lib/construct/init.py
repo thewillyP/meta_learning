@@ -7,6 +7,7 @@ from meta_learn_lib.construct.reparam import reparametrizer, seed
 from meta_learn_lib.construct.share import route, unroute
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
+    BatchParams,
     Validate,
     Activation,
     Adam,
@@ -207,6 +208,18 @@ def port[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[
 @overload
 def port[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[HP, P]:
     return port(t.below, ctx, key)
+
+
+@overload
+def port[S, X, Y, HP, P](t: BatchParams[S, X, Y, HP, P], ctx: int, key: PRNG) -> tuple[HP, P]:
+    k_hp, k_p = jax.random.split(key)
+    hp, _ = port(t.below, ctx, PRNG(k_hp))
+
+    def member(k: jax.Array) -> P:
+        _, p = port(t.below, ctx, PRNG(k))
+        return p
+
+    return (hp, eqx.filter_vmap(member)(jax.random.split(k_p, t.n)))
 
 
 @overload
@@ -427,6 +440,12 @@ def state[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: int,
 @overload
 def state[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: int, key: PRNG) -> S:
     return eqx.filter_vmap(lambda k: state(t.below, hp_p, ctx, PRNG(k)))(jax.random.split(key, t.n))
+
+
+@overload
+def state[S, X, Y, HP, P](t: BatchParams[S, X, Y, HP, P], hp_p: tuple[HP, P], ctx: int, key: PRNG) -> S:
+    hp, p = hp_p
+    return eqx.filter_vmap(lambda q, k: state(t.below, (hp, q), ctx, PRNG(k)))(p, jax.random.split(key, t.n))
 
 
 @overload

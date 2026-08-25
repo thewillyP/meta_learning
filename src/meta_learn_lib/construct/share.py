@@ -1,5 +1,6 @@
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
+    BatchParams,
     Validate,
     Activation,
     Adam,
@@ -220,6 +221,11 @@ def sources[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P], hp_p: tuple[HP, P]) ->
 
 
 @overload
+def sources[S, X, Y, HP, P](t: BatchParams[S, X, Y, HP, P], hp_p: tuple[HP, P]) -> dict[str, PyTree]:
+    return sources(t.below, hp_p)
+
+
+@overload
 def sources[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P], hp_p: tuple[HP, P]) -> dict[str, PyTree]:
     return sources(t.below, hp_p)
 
@@ -408,6 +414,13 @@ def targets[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P], hp_p: tuple[HP, P], shared:
 @overload
 def targets[S, X, Y, HP, P](
     t: BatchData[S, X, Y, HP, P], hp_p: tuple[HP, P], shared: dict[str, PyTree]
+) -> tuple[HP, P]:
+    return targets(t.below, hp_p, shared)
+
+
+@overload
+def targets[S, X, Y, HP, P](
+    t: BatchParams[S, X, Y, HP, P], hp_p: tuple[HP, P], shared: dict[str, PyTree]
 ) -> tuple[HP, P]:
     return targets(t.below, hp_p, shared)
 

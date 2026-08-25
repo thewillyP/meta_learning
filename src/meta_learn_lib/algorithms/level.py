@@ -3,27 +3,48 @@ from meta_learn_lib.category.paralens import *
 from meta_learn_lib.category.mealy import Mealy, to_mealy
 from meta_learn_lib.utility.util import zero_cotangent_like
 
+import equinox as eqx
 
-def validation[S, XV, Y, HP, P, HPV](
-    machine: Mealy[S, S, XV, XV, Y, Y, HP, HP, P, P],
-) -> Mealy[S, S, tuple[tuple[Y, tuple[HP, P]], XV], tuple[tuple[Y, tuple[HP, P]], XV], Y, Y, HPV, HPV, Unit, Unit]:
+
+def validation[S, SV, XV, Y, YV, HP, P, HPV, PV, HQ, Q](
+    machine: Mealy[SV, SV, XV, XV, YV, YV, HQ, HQ, Q, Q],
+    r: Callable[[tuple[tuple[HP, P], S], tuple[HPV, PV]], tuple[HQ, Q]],
+) -> Mealy[
+    SV,
+    SV,
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    YV,
+    YV,
+    HPV,
+    HPV,
+    PV,
+    PV,
+]:
     def run(
-        p_sx: tuple[tuple[HPV, Unit], tuple[S, tuple[tuple[Y, tuple[HP, P]], XV]]],
+        p_sx: tuple[tuple[HPV, PV], tuple[SV, tuple[tuple[Y, tuple[tuple[HP, P], S]], XV]]],
     ) -> tuple[
-        tuple[S, Y],
-        Callable[[tuple[S, Y]], tuple[tuple[HPV, Unit], tuple[S, tuple[tuple[Y, tuple[HP, P]], XV]]]],
+        tuple[SV, YV],
+        Callable[[tuple[SV, YV]], tuple[tuple[HPV, PV], tuple[SV, tuple[tuple[Y, tuple[tuple[HP, P], S]], XV]]]],
     ]:
-        (hpv, u), (s, ((y_tr, (hp, theta)), x)) = p_sx
-        (s1, y), put = machine.arrow.arrow.run(((hp, theta), (s, x)))
+        own, (sv, ((y_tr, wire), x)) = p_sx
+        port, r_rev = eqx.filter_vjp(r, wire, own)
+        (sv1, y), put = machine.arrow.arrow.run((port, (sv, x)))
 
-        def rev(ct: tuple[S, Y]) -> tuple[tuple[HPV, Unit], tuple[S, tuple[tuple[Y, tuple[HP, P]], XV]]]:
-            d_s1, d_y = ct
-            (d_hp, d_theta), (d_s, d_x) = put((d_s1, d_y))
-            return (zero_cotangent_like(hpv), u), (d_s, ((zero_cotangent_like(y_tr), (d_hp, d_theta)), d_x))
+        def rev(ct: tuple[SV, YV]) -> tuple[tuple[HPV, PV], tuple[SV, tuple[tuple[Y, tuple[tuple[HP, P], S]], XV]]]:
+            d_sv1, d_y = ct
+            d_port, (d_sv, d_x) = put((d_sv1, d_y))
+            d_wire, d_own = r_rev(d_port)
+            return d_own, (d_sv, ((zero_cotangent_like(y_tr), d_wire), d_x))
 
-        return (s1, y), rev
+        return (sv1, y), rev
 
     return Mealy(ParaLens(Lens(run)))
+
+
+def same_model[HP, P, S](wire: tuple[tuple[HP, P], S], own: tuple[Unit, Unit]) -> tuple[HP, P]:
+    hp_p, _ = wire
+    return hp_p
 
 
 def level[S, X, E, XV, YV, SV, HP, H, HPV, PV](

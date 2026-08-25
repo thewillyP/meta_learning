@@ -119,8 +119,8 @@ def learner[HP, HPO, SO, S, X, Y, P, H](
     tuple[S, tuple[SO, P]],
     X,
     X,
-    tuple[Y, tuple[HP, P]],
-    tuple[Y, tuple[HP, P]],
+    tuple[Y, tuple[tuple[HP, P], S]],
+    tuple[Y, tuple[tuple[HP, P], S]],
     HPO,
     HPO,
     tuple[HP, H],
@@ -128,14 +128,14 @@ def learner[HP, HPO, SO, S, X, Y, P, H](
 ]:
     def step(
         hp_h: tuple[HPO, tuple[HP, H]], sv: tuple[tuple[S, tuple[SO, P]], X]
-    ) -> tuple[tuple[S, tuple[SO, P]], tuple[Y, tuple[HP, P]]]:
+    ) -> tuple[tuple[S, tuple[SO, P]], tuple[Y, tuple[tuple[HP, P], S]]]:
         hp_o, (hp, lam) = hp_h
         (s_m, (opt_st, theta)), x = sv
         (s_m1, y), put = machine.arrow.arrow.run(((hp, theta), (s_m, x)))
         (_, d_theta), _ = put((zero_cotangent_like(s_m1), d_out(y)))
         _, rev_o = opt.arrow.arrow.run(((hp_o, lam), (opt_st, theta)))
         _, (opt_st1, theta1) = rev_o((opt_st, d_theta))
-        return ((s_m1, (opt_st1, theta1)), (y, (hp, theta1)))
+        return ((s_m1, (opt_st1, theta1)), (y, ((hp, theta1), s_m1)))
 
     return Mealy(para_autodiff(step))
 

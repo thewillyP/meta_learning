@@ -1,6 +1,6 @@
 from meta_learn_lib.algorithms.combinators import batch_data, batch_pop, learner, reparametrize, scan
 from meta_learn_lib.algorithms.learning import rflo, rtrl, uoro
-from meta_learn_lib.algorithms.level import level, validation
+from meta_learn_lib.algorithms.level import level, validation, same_model
 from meta_learn_lib.algorithms.model import leaf, read_value
 from meta_learn_lib.algorithms.optimizers import adam, additive, frozen, optimizer, sgd, sgd_normalized
 from meta_learn_lib.category.lens import autodiff, identity
@@ -52,21 +52,54 @@ from plum import dispatch
 @overload
 def validator[S, X, Y, HP, P](
     v: SameModel[S, X, Y, HP, P], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
-) -> Mealy[S, S, tuple[tuple[Y, tuple[HP, P]], X], tuple[tuple[Y, tuple[HP, P]], X], Y, Y, Unit, Unit, Unit, Unit]:
-    return validation(m)
+) -> Mealy[
+    S,
+    S,
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], X],
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], X],
+    Y,
+    Y,
+    Unit,
+    Unit,
+    Unit,
+    Unit,
+]:
+    return validation(m, same_model)
 
 
 @overload
 def validator[S, X, Y, HP, P, SV, XV, HPV, PV](
     v: Validator[S, X, Y, HP, P, SV, XV, HPV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
-) -> Mealy[SV, SV, tuple[tuple[Y, tuple[HP, P]], XV], tuple[tuple[Y, tuple[HP, P]], XV], Y, Y, HPV, HPV, PV, PV]:
+) -> Mealy[
+    SV,
+    SV,
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    Y,
+    Y,
+    HPV,
+    HPV,
+    PV,
+    PV,
+]:
     raise NotImplementedError
 
 
 @dispatch
 def validator[S, X, Y, HP, P, SV, XV, HPV, PV](
     v: Validator[S, X, Y, HP, P, SV, XV, HPV, PV], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
-) -> Mealy[SV, SV, tuple[tuple[Y, tuple[HP, P]], XV], tuple[tuple[Y, tuple[HP, P]], XV], Y, Y, HPV, HPV, PV, PV]:
+) -> Mealy[
+    SV,
+    SV,
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
+    Y,
+    Y,
+    HPV,
+    HPV,
+    PV,
+    PV,
+]:
     raise NotImplementedError
 
 

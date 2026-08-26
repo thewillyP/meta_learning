@@ -48,8 +48,8 @@ def val_source[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], hp: Unit) -> dict[s
 
 
 @overload
-def val_source[S, X, Y, HP, P, SV, XV, HQ, Q](
-    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], hp: Unit
+def val_source[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q], hp: HPV
 ) -> dict[str, PyTree]:
     return {}
 
@@ -74,9 +74,9 @@ def val_target[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], hp: Unit, shared: d
 
 
 @overload
-def val_target[S, X, Y, HP, P, SV, XV, HQ, Q](
-    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], hp: Unit, shared: dict[str, PyTree]
-) -> Unit:
+def val_target[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q], hp: HPV, shared: dict[str, PyTree]
+) -> HPV:
     return hp
 
 

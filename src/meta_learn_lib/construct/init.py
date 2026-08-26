@@ -3,7 +3,7 @@ from meta_learn_lib.algorithms.optimizers import adam, frozen, sgd, sgd_normaliz
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.build import build
 from meta_learn_lib.construct.leaves import initializer, sampler
-from meta_learn_lib.construct.reparam import reparametrizer, seed
+from meta_learn_lib.construct.reparam import reparametrizer, seed, own
 from meta_learn_lib.construct.share import route, unroute
 from meta_learn_lib.construct.shape import out
 from meta_learn_lib.construct.term import (
@@ -44,7 +44,6 @@ from meta_learn_lib.utility.util import to_vector
 from typing import Callable, cast, overload
 import equinox as eqx
 import jax
-import jax.flatten_util
 import jax.numpy as jnp
 import optax
 from plum import dispatch
@@ -56,10 +55,10 @@ def val_port[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], ctx: int, key: PRNG) 
 
 
 @overload
-def val_port[S, X, Y, HP, P, SV, XV, HQ, Q](
-    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], ctx: int, key: PRNG
-) -> tuple[Unit, Unit]:
-    return (Unit(), Unit())
+def val_port[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q], ctx: int, key: PRNG
+) -> tuple[HPV, PV]:
+    return own(v.r, port(v.term, ctx, key))
 
 
 @overload
@@ -273,8 +272,8 @@ def val_state[S, X, Y, HP, P](v: SameModel[S, X, Y, HP, P], s: S, ctx: int, key:
 
 
 @overload
-def val_state[S, X, Y, HP, P, SV, XV, HQ, Q](
-    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], s: S, ctx: int, key: PRNG
+def val_state[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q], s: S, ctx: int, key: PRNG
 ) -> SV:
     k_port, k_state = jax.random.split(key)
     return state(v.term, port(v.term, ctx, PRNG(k_port)), ctx, PRNG(k_state))

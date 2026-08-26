@@ -1,5 +1,6 @@
 from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.construct.term import (
+    Alongside,
     RCompose,
     Below,
     Demoted,
@@ -28,6 +29,7 @@ from typing import Callable, overload
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import PyTree
 from plum import dispatch
 
 
@@ -166,12 +168,68 @@ def reparametrizer[HP2, HP1, H2, PV2, S1, SO2, P1, SV2](
 
 
 @overload
+def reparametrizer[W, HPV, PV, HQ, Q](
+    r: Alongside[W, HPV, PV, HQ, Q],
+) -> Callable[[tuple[W, tuple[HPV, PV]]], tuple[tuple[HQ, HPV], tuple[Q, PV]]]:
+    project = reparametrizer(r.wire)
+
+    def merge(p: tuple[W, tuple[HPV, PV]]) -> tuple[tuple[HQ, HPV], tuple[Q, PV]]:
+        w, (hpv, pv) = p
+        hq, q = project((w, (Unit(), Unit())))
+        return ((hq, hpv), (q, pv))
+
+    return merge
+
+
+@overload
 def reparametrizer[P2, P](r: Reparametrization[P2, P]) -> Callable[[P2], P]:
     raise NotImplementedError
 
 
 @dispatch
 def reparametrizer[P2, P](r: Reparametrization[P2, P]) -> Callable[[P2], P]:
+    raise NotImplementedError
+
+
+@overload
+def own[W, HPV, PV, HQ, Q](
+    r: Alongside[W, HPV, PV, HQ, Q], natural: tuple[tuple[HQ, HPV], tuple[Q, PV]]
+) -> tuple[HPV, PV]:
+    (_, hpv), (_, pv) = natural
+    return (hpv, pv)
+
+
+@overload
+def own[HP, P, S](r: PortOf[HP, P, S], natural: tuple[HP, P]) -> tuple[Unit, Unit]:
+    return (Unit(), Unit())
+
+
+@overload
+def own[HP1, HP0, H, PV, S0, SO, P0, SV](
+    r: Demoted[HP1, HP0, H, PV, S0, SO, P0, SV], natural: tuple[HP0, P0]
+) -> tuple[Unit, Unit]:
+    return (Unit(), Unit())
+
+
+@overload
+def own[HP2, HP1, H2, PV2, S1, SO2, P1, SV2](
+    r: Below[HP2, HP1, H2, PV2, S1, SO2, P1, SV2], natural: tuple[tuple[tuple[HP1, P1], S1], tuple[Unit, Unit]]
+) -> tuple[Unit, Unit]:
+    return (Unit(), Unit())
+
+
+@overload
+def own[A, B, C](r: RCompose[A, B, C], natural: C) -> PyTree:
+    return own(r.second, natural)
+
+
+@overload
+def own[P2, P](r: Reparametrization[P2, P], natural: P) -> PyTree:
+    raise NotImplementedError
+
+
+@dispatch
+def own[P2, P](r: Reparametrization[P2, P], natural: P) -> PyTree:
     raise NotImplementedError
 
 

@@ -70,8 +70,8 @@ def validator[S, X, Y, HP, P](
 
 
 @overload
-def validator[S, X, Y, HP, P, SV, XV, HQ, Q](
-    v: Validate[S, X, Y, HP, P, SV, XV, HQ, Q], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
+def validator[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q](
+    v: Validate[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q], m: Mealy[S, S, X, X, Y, Y, HP, HP, P, P]
 ) -> Mealy[
     SV,
     SV,
@@ -79,10 +79,10 @@ def validator[S, X, Y, HP, P, SV, XV, HQ, Q](
     tuple[tuple[Y, tuple[tuple[HP, P], S]], XV],
     Y,
     Y,
-    Unit,
-    Unit,
-    Unit,
-    Unit,
+    HPV,
+    HPV,
+    PV,
+    PV,
 ]:
     expand = reparametrizer(v.r)
     return validation(build(v.term), lambda wire, own: expand((wire, own)))

@@ -132,6 +132,11 @@ class Below[HP2, HP1, H2, PV2, S1, SO2, P1, SV2](
 
 
 @dataclass(frozen=True)
+class Alongside[W, HPV, PV, HQ, Q](Reparametrization[tuple[W, tuple[HPV, PV]], tuple[tuple[HQ, HPV], tuple[Q, PV]]]):
+    wire: Reparametrization[tuple[W, tuple[Unit, Unit]], tuple[HQ, Q]]
+
+
+@dataclass(frozen=True)
 class RSplit[A2, A, B2, B](Reparametrization[tuple[A2, B2], tuple[A, B]]):
     first: Reparametrization[A2, A]
     second: Reparametrization[B2, B]
@@ -339,9 +344,9 @@ class Validator[S, X, Y, HP, P, SV, XV, HPV, PV]: ...
 
 
 @dataclass(frozen=True)
-class Validate[S, X, Y, HP, P, SV, XV, HQ, Q](Validator[S, X, Y, HP, P, SV, XV, Unit, Unit]):
+class Validate[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q](Validator[S, X, Y, HP, P, SV, XV, HPV, PV]):
     term: Term[SV, XV, Y, HQ, Q]
-    r: Reparametrization[tuple[tuple[tuple[HP, P], S], tuple[Unit, Unit]], tuple[HQ, Q]]
+    r: Reparametrization[tuple[tuple[tuple[HP, P], S], tuple[HPV, PV]], tuple[HQ, Q]]
 
 
 @dataclass(frozen=True)

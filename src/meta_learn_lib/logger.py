@@ -3,7 +3,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-from typing import Iterator, Protocol
+from typing import Iterator, Protocol, runtime_checkable
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from itertools import accumulate
@@ -18,6 +18,7 @@ import umap
 from meta_learn_lib.lib_types import STAT, Tag
 
 
+@runtime_checkable
 class Logger(Protocol):
     def log_scalar(
         self, title: str, series: str, value: float, iteration: int, max_count: int, iteration_offset: int

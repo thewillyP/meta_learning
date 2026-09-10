@@ -286,6 +286,7 @@ class Split[SO1, HPO1, H1, P1, SO2, HPO2, H2, P2](
 @dataclass(frozen=True)
 class Scan[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
     below: Term[S, X, Y, HP, P]
+    n: int
 
 
 @dataclass(frozen=True)

@@ -107,6 +107,7 @@ class NTMCopyTaskFamily(Task):
 class Source:
     task: Task
     num_examples_total: int
+    tasks: int
     is_test: bool
     augment: bool
     shuffle: bool
@@ -143,11 +144,15 @@ class ClearMLLoggerConfig(LoggerConfig): ...
 
 
 @dataclass(frozen=True)
-class HDF5LoggerConfig(LoggerConfig): ...
+class HDF5LoggerConfig(LoggerConfig):
+    log_dir: str
+    checkpoint_every: int
 
 
 @dataclass(frozen=True)
-class SQLiteLoggerConfig(LoggerConfig): ...
+class SQLiteLoggerConfig(LoggerConfig):
+    log_dir: str
+    checkpoint_every: int
 
 
 @dataclass(frozen=True)
@@ -169,7 +174,6 @@ class GodConfig[S, X, Y, HP, P]:
     checkpoint_every_n_epochs: int
     prefetch_buffer_size: int
     clearml_run: bool
-    log_dir: str
     log_title: str
     loggers: tuple[LoggerConfig, ...]
     scalar_queue_size: int

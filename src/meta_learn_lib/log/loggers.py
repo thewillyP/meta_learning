@@ -1,4 +1,4 @@
-from meta_learn_lib.experiment import (
+from meta_learn_lib.log.config import (
     ClearMLLoggerConfig,
     ConsoleLoggerConfig,
     HDF5LoggerConfig,

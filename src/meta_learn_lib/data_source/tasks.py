@@ -14,7 +14,8 @@ from meta_learn_lib.constants import (
     MNIST_STD,
     MNIST_WIDTH,
 )
-from meta_learn_lib.experiment import (
+from meta_learn_lib.data_source.source import (
+    Augmentation,
     CIFAR100TaskFamily,
     CIFAR10TaskFamily,
     Cifar,
@@ -22,11 +23,13 @@ from meta_learn_lib.experiment import (
     FashionMNISTTaskFamily,
     GaussianNoiseTaskFamily,
     GridTaskFamily,
+    HorizontalFlip,
     Vision,
     MNISTSequenceTaskFamily,
     MNISTTaskFamily,
     Mnist,
     NTMCopyTaskFamily,
+    RandomCrop,
     SOSTaskFamily,
     Task,
 )
@@ -155,30 +158,35 @@ def jax_random_hflip(key: PRNG, img: jax.Array) -> jax.Array:
     return jax.lax.cond(jax.random.bernoulli(key), lambda: jnp.flip(img, axis=-1), lambda: img)
 
 
-def identity_epoch_transform(x: jax.Array, key: PRNG) -> jax.Array:
-    return x
-
-
-def crop_and_flip(x: jax.Array, key: PRNG) -> jax.Array:
-    k1, k2 = jax.random.split(key)
-    x = jax_random_crop(k1, x, padding=4)
-    x = jax_random_hflip(k2, x)
-    return x
+@overload
+def augmenter(a: RandomCrop) -> Callable[[jax.Array, PRNG], jax.Array]:
+    return lambda x, key: jax_random_crop(key, x, a.padding)
 
 
 @overload
-def augment(t: Cifar, on: bool) -> Callable[[jax.Array, PRNG], jax.Array]:
-    return crop_and_flip if on else identity_epoch_transform
+def augmenter(a: HorizontalFlip) -> Callable[[jax.Array, PRNG], jax.Array]:
+    return lambda x, key: jax_random_hflip(key, x)
 
 
 @overload
-def augment(t: Task, on: bool) -> Callable[[jax.Array, PRNG], jax.Array]:
-    return identity_epoch_transform
+def augmenter(a: Augmentation) -> Callable[[jax.Array, PRNG], jax.Array]:
+    raise NotImplementedError
 
 
 @dispatch
-def augment(t: Task, on: bool) -> Callable[[jax.Array, PRNG], jax.Array]:
-    return identity_epoch_transform
+def augmenter(a: Augmentation) -> Callable[[jax.Array, PRNG], jax.Array]:
+    raise NotImplementedError
+
+
+def augmentation(augs: tuple[Augmentation, ...]) -> Callable[[jax.Array, PRNG], jax.Array]:
+    fns = [augmenter(a) for a in augs]
+
+    def apply(x: jax.Array, key: PRNG) -> jax.Array:
+        for f, k in zip(fns, jax.random.split(key, len(fns))):
+            x = f(x, PRNG(k))
+        return x
+
+    return apply
 
 
 def make_patch_reshape(

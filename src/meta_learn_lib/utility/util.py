@@ -4,6 +4,7 @@ import equinox as eqx
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
+import numpy as np
 
 
 class Vector[T](eqx.Module):
@@ -47,3 +48,8 @@ def to_vector[T](tree: T) -> Vector[T]:
     if vector.size == 0:
         vector = vector.astype(jnp.result_type(float))
     return Vector(vector=vector, to_param=lambda a: recombine(to_param(a)))
+
+
+def fold_in(seed: int, *tags: int) -> int:
+    (derived,) = np.random.SeedSequence([seed, *tags]).generate_state(1).tolist()
+    return derived

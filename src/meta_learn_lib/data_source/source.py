@@ -161,6 +161,28 @@ class Independent(Sharing): ...
 
 
 @dataclass(frozen=True)
+class Straddle: ...
+
+
+@dataclass(frozen=True)
+class Padded: ...
+
+
+type Boundary = Straddle | Padded
+
+
+@dataclass(frozen=True)
+class EveryPass: ...
+
+
+@dataclass(frozen=True)
+class EveryTick: ...
+
+
+type Regroup = EveryPass | EveryTick
+
+
+@dataclass(frozen=True)
 class Draw:
     pool: Pool
     take: int
@@ -168,6 +190,8 @@ class Draw:
     augment: tuple[Augmentation, ...]
     seeding: Seeding
     over: tuple[Role, ...]
+    boundary: Boundary
+    regroup: Regroup
 
 
 type Sources = Draw | Level

@@ -225,21 +225,3 @@ def data[S, X, Y, HP, P](t: Term[S, X, Y, HP, P]) -> Leaf | Pair:
 @dispatch
 def data[S, X, Y, HP, P](t: Term[S, X, Y, HP, P]) -> Leaf | Pair:
     raise NotImplementedError
-
-
-def nest(plan: Plan, streams: PyTree) -> PyTree:
-    match plan:
-        case Leaf(axes):
-            flags = [windowed(axis) for axis in axes]
-            order = sorted(range(len(axes)), key=flags.__getitem__)
-            shape = tuple(size(axes[i]) for i in order)
-            n_batch = flags.count(False)
-
-            def place(a: jax.Array) -> jax.Array:
-                split = a.reshape(shape + a.shape[n_batch + 1 :])
-                return jnp.moveaxis(split, list(range(len(order))), order)
-
-            return jax.tree.map(place, streams)
-        case Pair(axes, left, right):
-            first, second = streams
-            return (nest(push(axes, left), first), nest(push(axes, right), second))

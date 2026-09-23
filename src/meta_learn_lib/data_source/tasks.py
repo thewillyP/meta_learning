@@ -34,9 +34,7 @@ from meta_learn_lib.data_source.source import (
     Task,
 )
 from meta_learn_lib.lib_types import PRNG, PixelTransform
-from meta_learn_lib.utility.util import fold_in
 
-from functools import reduce
 import math
 from typing import Callable, Literal, NamedTuple, overload
 import jax
@@ -53,7 +51,6 @@ from torchvision.transforms.v2 import Compose, Lambda, Normalize, ToDtype, ToIma
 
 type Sequencer = Callable[[np.ndarray], np.ndarray]
 type Supply = tuple[Dataset, Sequencer]
-type Augmenter = Callable[[np.ndarray, int], np.ndarray]
 
 
 class SpuriousMNISTDataset(Dataset):
@@ -134,40 +131,29 @@ def generate_add_task_dataset(N: int, t_1: int, t_2: int, tau_task: int, rng_key
 
 
 @overload
-def augmenter(a: RandomCrop) -> Callable[[np.ndarray, int], np.ndarray]:
-    def crop(img: np.ndarray, seed: int) -> np.ndarray:
+def augmenter(a: RandomCrop) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
+    def crop(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
         _, height, width = img.shape
         padded = np.pad(img, ((0, 0), (a.padding, a.padding), (a.padding, a.padding)))
-        top, left = fold_in(seed, 0) % (2 * a.padding + 1), fold_in(seed, 1) % (2 * a.padding + 1)
+        top, left = rng.integers(0, 2 * a.padding + 1, size=2).tolist()
         return padded[:, top : top + height, left : left + width]
 
     return crop
 
 
 @overload
-def augmenter(a: HorizontalFlip) -> Callable[[np.ndarray, int], np.ndarray]:
-    return lambda img, seed: np.flip(img, axis=-1) if fold_in(seed) % 2 == 0 else img
+def augmenter(a: HorizontalFlip) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
+    return lambda img, rng: np.flip(img, axis=-1) if rng.random() < 0.5 else img
 
 
 @overload
-def augmenter(a: Augmentation) -> Callable[[np.ndarray, int], np.ndarray]:
+def augmenter(a: Augmentation) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
     raise NotImplementedError
 
 
 @dispatch
-def augmenter(a: Augmentation) -> Callable[[np.ndarray, int], np.ndarray]:
+def augmenter(a: Augmentation) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
     raise NotImplementedError
-
-
-def augmentation(augs: tuple[Augmentation, ...]) -> Augmenter:
-    def compose(f: Augmenter, g: Augmenter) -> Augmenter:
-        def composed(x: np.ndarray, seed: int) -> np.ndarray:
-            first, second = fold_in(seed, 0), fold_in(seed, 1)
-            return g(f(x, first), second)
-
-        return composed
-
-    return reduce(compose, map(augmenter, augs), lambda x, seed: x)
 
 
 def make_patch_reshape(height: int, width: int, channel: int, patch_h: int, patch_w: int) -> Sequencer:

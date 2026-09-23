@@ -7,6 +7,7 @@ from meta_learn_lib.construct.term import (
     Linear,
     Loss,
     Meta,
+    Over,
     RFLO,
     RTRL,
     Reparametrized,
@@ -24,9 +25,6 @@ from meta_learn_lib.construct.term import (
 
 from dataclasses import dataclass
 from typing import overload
-import jax
-import jax.numpy as jnp
-from jaxtyping import PyTree
 from plum import dispatch
 
 
@@ -36,21 +34,12 @@ class Window:
 
 
 @dataclass(frozen=True)
-class Data:
+class Batch:
     n: int
+    over: Over
 
 
-@dataclass(frozen=True)
-class Params:
-    n: int
-
-
-@dataclass(frozen=True)
-class Pop:
-    n: int
-
-
-type Axis = Window | Data | Params | Pop
+type Axis = Window | Batch
 
 
 @dataclass(frozen=True)
@@ -74,36 +63,6 @@ def prefix(axis: Axis, plan: Plan) -> Plan:
             return Leaf((axis, *axes))
         case Pair(axes, left, right):
             return Pair((axis, *axes), left, right)
-
-
-def size(axis: Axis) -> int:
-    match axis:
-        case Window(n) | Data(n) | Params(n) | Pop(n):
-            return n
-
-
-def windowed(axis: Axis) -> bool:
-    match axis:
-        case Window():
-            return True
-        case Data() | Params() | Pop():
-            return False
-
-
-def shared(axis: Axis) -> bool:
-    match axis:
-        case Data():
-            return True
-        case Window() | Params() | Pop():
-            return False
-
-
-def push(axes: tuple[Axis, ...], plan: Plan) -> Plan:
-    match plan:
-        case Leaf(own):
-            return Leaf((*axes, *own))
-        case Pair(own, left, right):
-            return Pair((*axes, *own), left, right)
 
 
 @overload
@@ -179,17 +138,17 @@ def data[S, X, Y, HP, P](t: Scan[S, X, Y, HP, P]) -> Leaf | Pair:
 
 @overload
 def data[S, X, Y, HP, P](t: BatchData[S, X, Y, HP, P]) -> Leaf | Pair:
-    return prefix(Data(t.n), data(t.below))
+    return prefix(Batch(t.n, t.over), data(t.below))
 
 
 @overload
 def data[S, X, Y, HP, P](t: BatchParams[S, X, Y, HP, P]) -> Leaf | Pair:
-    return prefix(Params(t.n), data(t.below))
+    return prefix(Batch(t.n, t.over), data(t.below))
 
 
 @overload
 def data[S, X, Y, HP, P](t: BatchPop[S, X, Y, HP, P]) -> Leaf | Pair:
-    return prefix(Pop(t.n), data(t.below))
+    return prefix(Batch(t.n, t.over), data(t.below))
 
 
 @overload

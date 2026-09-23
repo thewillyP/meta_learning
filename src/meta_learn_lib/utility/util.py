@@ -1,10 +1,10 @@
 from typing import Callable
 
 import equinox as eqx
+import hashlib
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
-import numpy as np
 
 
 class Vector[T](eqx.Module):
@@ -51,5 +51,5 @@ def to_vector[T](tree: T) -> Vector[T]:
 
 
 def fold_in(seed: int, *tags: int) -> int:
-    (derived,) = np.random.SeedSequence([seed, *tags]).generate_state(1).tolist()
-    return derived
+    words = b"".join(word.to_bytes(8, "little", signed=True) for word in (seed, *tags))
+    return int.from_bytes(hashlib.blake2b(words, digest_size=4).digest(), "little")

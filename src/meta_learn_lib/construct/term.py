@@ -290,21 +290,39 @@ class Scan[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
 
 
 @dataclass(frozen=True)
+class Tasks: ...
+
+
+@dataclass(frozen=True)
+class Examples: ...
+
+
+@dataclass(frozen=True)
+class Same: ...
+
+
+type Over = Tasks | Examples | Same
+
+
+@dataclass(frozen=True)
 class BatchData[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
     below: Term[S, X, Y, HP, P]
     n: int
+    over: Over
 
 
 @dataclass(frozen=True)
 class BatchParams[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
     below: Term[S, X, Y, HP, P]
     n: int
+    over: Over
 
 
 @dataclass(frozen=True)
 class BatchPop[S, X, Y, HP, P](Term[S, X, Y, HP, P]):
     below: Term[S, X, Y, HP, P]
     n: int
+    over: Over
 
 
 @dataclass(frozen=True)

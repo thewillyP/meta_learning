@@ -138,7 +138,7 @@ def augmenter(a: RandomCrop) -> Callable[[np.ndarray, int], np.ndarray]:
     def crop(img: np.ndarray, seed: int) -> np.ndarray:
         _, height, width = img.shape
         padded = np.pad(img, ((0, 0), (a.padding, a.padding), (a.padding, a.padding)))
-        top, left = np.random.default_rng(seed).integers(0, 2 * a.padding + 1, size=2).tolist()
+        top, left = fold_in(seed, 0) % (2 * a.padding + 1), fold_in(seed, 1) % (2 * a.padding + 1)
         return padded[:, top : top + height, left : left + width]
 
     return crop
@@ -146,7 +146,7 @@ def augmenter(a: RandomCrop) -> Callable[[np.ndarray, int], np.ndarray]:
 
 @overload
 def augmenter(a: HorizontalFlip) -> Callable[[np.ndarray, int], np.ndarray]:
-    return lambda img, seed: np.flip(img, axis=-1) if np.random.default_rng(seed).random() < 0.5 else img
+    return lambda img, seed: np.flip(img, axis=-1) if fold_in(seed) % 2 == 0 else img
 
 
 @overload

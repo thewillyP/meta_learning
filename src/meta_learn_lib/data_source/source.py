@@ -134,33 +134,6 @@ type Seeding = Fresh | Fixed
 
 
 @dataclass(frozen=True)
-class Tasks: ...
-
-
-@dataclass(frozen=True)
-class Examples: ...
-
-
-type Role = Tasks | Examples
-
-
-@dataclass(frozen=True)
-class Sharing: ...
-
-
-@dataclass(frozen=True)
-class Chunked(Sharing): ...
-
-
-@dataclass(frozen=True)
-class Shared(Sharing): ...
-
-
-@dataclass(frozen=True)
-class Independent(Sharing): ...
-
-
-@dataclass(frozen=True)
 class Straddle: ...
 
 
@@ -176,10 +149,10 @@ class EveryPass: ...
 
 
 @dataclass(frozen=True)
-class EveryTick: ...
+class EveryMinibatch: ...
 
 
-type Regroup = EveryPass | EveryTick
+type Regroup = EveryPass | EveryMinibatch
 
 
 @dataclass(frozen=True)
@@ -189,7 +162,6 @@ class Draw:
     shuffle: bool
     augment: tuple[Augmentation, ...]
     seeding: Seeding
-    over: tuple[Role, ...]
     boundary: Boundary
     regroup: Regroup
 
@@ -201,7 +173,6 @@ type Sources = Draw | Level
 class Level:
     train: Sources
     val: Sources
-    replicas: Sharing
 
 
 @dataclass(frozen=True)

@@ -1,28 +1,28 @@
-from meta_learn_lib.construct.data import Batch, Leaf, Pair, Plan, Steps, Window
-from meta_learn_lib.construct.term import Examples, Over, Same, Tasks
-from meta_learn_lib.data_source.source import Augmentation, DataConfig, Draw, Fixed, Fresh, Level, Pool, Sources
-from meta_learn_lib.data_source.tasks import Sequencer, Supply, augmenter, dataset_sources, take_datasets
+from meta_learn_lib.construct.data import Batch, Every, Leaf, Plan, Steps, Window
+from meta_learn_lib.construct.term import Examples, Same, Tasks
+from meta_learn_lib.data_source.source import Augmentation, DataConfig, Draw, Fixed, Fresh, Pool, Sources
+from meta_learn_lib.data_source.tasks import Sequencer, Supply, Table, augmenter, dataset_sources, take_datasets
 from meta_learn_lib.lib_types import PRNG
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from functools import reduce
+from fractions import Fraction
+from functools import partial, reduce
 import itertools
+import math
 import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree
-import numpy as np
+
+type Taken = Table | tuple[Taken, Taken]
 
 
 @dataclass(frozen=True)
-class Table:
-    xs: np.ndarray
-    ys: np.ndarray
-    sequence: Sequencer
-    draw: Draw
-
-
-type Taken = Table | tuple[Taken, Taken]
+class Factors:
+    time: int
+    tasks: int
+    examples: int
+    every: int
 
 
 def seeded(key: PRNG, draw: Draw) -> PRNG:
@@ -33,131 +33,138 @@ def seeded(key: PRNG, draw: Draw) -> PRNG:
             return PRNG(jax.random.key(seed))
 
 
-def materialize(
-    plan: Plan, sources: Sources, key: PRNG, pools: dict[Pool, list[Supply]], config: DataConfig
-) -> tuple[Taken, dict[Pool, list[Supply]]]:
-    def go(
-        plan: Plan, sources: Sources, key: PRNG, pools: dict[Pool, list[Supply]]
-    ) -> tuple[Taken, dict[Pool, list[Supply]]]:
-        match plan, sources:
-            case Pair(left, right), Level(train, val):
-                k_train, k_val = jax.random.split(key)
-                first, after_train = go(left, train, PRNG(k_train), pools)
-                second, after_val = go(right, val, PRNG(k_val), after_train)
-                return (first, second), after_val
-            case Steps() | Window() | Batch(), Draw() as draw:
-                k_pool, k_take = jax.random.split(seeded(key, draw))
-                if draw.pool in pools:
-                    supply = pools[draw.pool]
-                else:
-                    supply = dataset_sources(
-                        draw.pool.task,
-                        config.root_dir,
-                        draw.pool.split == "test",
-                        config.label_mask_value,
-                        config.num_tasks,
-                        PRNG(k_pool),
-                    )
-                tasks, leftover = take_datasets(PRNG(k_take), supply, draw.take, draw.shuffle)
-                first, *_ = tasks
-                table = Table(np.stack([t.xs for t in tasks]), np.stack([t.ys for t in tasks]), first.sequence, draw)
-                return table, {**pools, draw.pool: leftover}
-            case _:
-                raise ValueError(f"sources {sources} do not mirror plan {plan}")
-
-    return go(plan, sources, key, pools)
+def materialize(sources: Sources, key: PRNG, config: DataConfig) -> Taken:
+    draws, treedef = jax.tree.flatten(sources)
+    pools: dict[Pool, list[Supply]] = {}
+    tables: list[Table] = []
+    for draw, k in zip(draws, jax.random.split(key, len(draws))):
+        k_pool, k_take = jax.random.split(seeded(PRNG(k), draw))
+        if draw.pool in pools:
+            supply = pools[draw.pool]
+        else:
+            supply = dataset_sources(
+                draw.pool.task,
+                config.root_dir,
+                draw.pool.split == "test",
+                config.label_mask_value,
+                config.num_tasks,
+                PRNG(k_pool),
+            )
+        table, leftover = take_datasets(PRNG(k_take), supply, draw.take, draw.shuffle)
+        pools = {**pools, draw.pool: leftover}
+        tables = [*tables, table]
+    return jax.tree.unflatten(treedef, tables)
 
 
 def features(taken: Taken) -> PyTree:
-    match taken:
-        case (first, second):
-            return (features(first), features(second))
-        case Table(xs, ys, sequence, _):
-            return (sequence(jnp.asarray(xs[0, 0])).shape[1:], ys[0, 0].shape[1:])
+    def shapes(table: Table) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        return table.sequence(jnp.asarray(table.xs[0, 0])).shape[1:], table.ys[0, 0].shape[1:]
+
+    return jax.tree.map(shapes, taken)
 
 
-def steps(xs: jax.Array) -> jax.Array:
-    k, n, t, *rest = xs.shape
-    return xs.reshape(k * n * t, *rest)
-
-
-def chunks(n: int, ticks: jax.Array) -> jax.Array:
-    if len(ticks) % n != 0:
-        raise ValueError(f"{len(ticks)} ticks per pass are not divisible by a window of {n}")
-    return ticks.reshape(len(ticks) // n, n, *ticks.shape[1:])
-
-
-def lanes(parts: list[jax.Array]) -> jax.Array:
-    return jnp.stack(parts, axis=1)
-
-
-def split(over: Over, n: int, xs: jax.Array) -> list[jax.Array]:
-    match over:
-        case Tasks():
-            return [xs[i::n] for i in range(n)]
-        case Examples():
-            return [xs[:, i::n] for i in range(n)]
-        case Same():
-            return [xs] * n
-
-
-def epoch(plan: Leaf, xs: jax.Array) -> jax.Array:
-    match plan:
+def factors(leaf: Leaf) -> Factors:
+    match leaf:
         case Steps():
-            return steps(xs)
+            return Factors(1, 1, 1, 1)
         case Window(n, below):
-            return chunks(n, epoch(below, xs))
+            f = factors(below)
+            return Factors(n * f.time, f.tasks, f.examples, f.every)
+        case Every(n, below):
+            f = factors(below)
+            return Factors(f.time, f.tasks, f.examples, n * f.every)
         case Batch(n, over, below):
-            return lanes([epoch(below, part) for part in split(over, n, xs)])
-
-
-def lanes_of(plan: Leaf) -> tuple[int, int]:
-    match plan:
-        case Steps():
-            return 1, 1
-        case Window(_, below):
-            return lanes_of(below)
-        case Batch(n, over, below):
-            tasks, examples = lanes_of(below)
+            f = factors(below)
             match over:
                 case Tasks():
-                    return n * tasks, examples
+                    return Factors(f.time, n * f.tasks, f.examples, f.every)
                 case Examples():
-                    return tasks, n * examples
+                    return Factors(f.time, f.tasks, n * f.examples, f.every)
                 case Same():
-                    return tasks, examples
+                    return f
 
 
-def innermost(plan: Leaf) -> int | None:
-    match plan:
+def divided(leaf: Window | Batch, shape: tuple[int, int, int]) -> tuple[int, int, int]:
+    k, n, t = shape
+    match leaf:
+        case Window(m, _):
+            return (k, n, t // m)
+        case Batch(m, over, _):
+            match over:
+                case Tasks():
+                    return (k // m, n, t)
+                case Examples():
+                    return (k, n // m, t)
+                case Same():
+                    return shape
+
+
+def ticks_per_epoch(leaf: Leaf, shape: tuple[int, int, int]) -> Fraction:
+    match leaf:
         case Steps():
-            return None
-        case Window(n, below):
-            match innermost(below):
-                case None:
-                    return n
-                case inner:
-                    return inner
-        case Batch(_, _, below):
-            return innermost(below)
+            return Fraction(math.prod(shape))
+        case Every(m, below):
+            return ticks_per_epoch(below, shape) / m
+        case Window(_, below) | Batch(_, _, below):
+            return ticks_per_epoch(below, divided(leaf, shape))
 
 
-def padded(plan: Leaf, xs: jax.Array, mask: float) -> jax.Array:
-    tasks, examples = lanes_of(plan)
-    k, n, t, *rest = xs.shape
-    if k % tasks != 0:
-        raise ValueError(f"{k} tasks cannot be dealt into {tasks} lanes for {plan}")
-    match innermost(plan):
-        case None:
-            missing = 0
-        case window:
-            missing = -t % window
-    return jnp.pad(xs, [(0, 0), (0, -n % examples), (0, missing), *[(0, 0) for _ in rest]], constant_values=mask)
+def epochs_per_block(leaf: Leaf, shape: tuple[int, int, int]) -> int:
+    match leaf:
+        case Steps():
+            return 1
+        case Every(_, below):
+            return math.lcm(epochs_per_block(below, shape), ticks_per_epoch(leaf, shape).denominator)
+        case Window(_, below) | Batch(_, _, below):
+            return epochs_per_block(below, divided(leaf, shape))
 
 
-def drawn(table: Table, tasks: jax.Array, key: PRNG) -> tuple[jax.Array, jax.Array]:
+def padded(leaf: Leaf, xs: jax.Array, mask: float) -> jax.Array:
+    f = factors(leaf)
+    l, k, n, t, *rest = xs.shape
+    if k % f.tasks != 0:
+        raise ValueError(f"{k} tasks cannot be dealt into {f.tasks} lanes for {leaf}")
+    return jnp.pad(
+        xs, [(0, 0), (0, 0), (0, -n % f.examples), (0, -t % f.time), *[(0, 0) for _ in rest]], constant_values=mask
+    )
+
+
+def dealt(leaf: Window | Batch, xs: jax.Array) -> jax.Array:
+    l, k, n, t, *rest = xs.shape
+    match leaf:
+        case Window(m, below):
+            p = factors(below).time
+            parts = jnp.moveaxis(xs.reshape(l, k, n, t // (m * p), m, p, *rest), 4, 0)
+            return parts.reshape(m, l, k, n, t // m, *rest)
+        case Batch(m, over, _):
+            match over:
+                case Tasks():
+                    return jnp.moveaxis(xs.reshape(l, k // m, m, n, t, *rest), 2, 0)
+                case Examples():
+                    return jnp.moveaxis(xs.reshape(l, k, n // m, m, t, *rest), 3, 0)
+                case Same():
+                    return jnp.broadcast_to(xs, (m, *xs.shape))
+
+
+def epoch(leaf: Leaf, xs: jax.Array) -> jax.Array:
+    match leaf:
+        case Steps():
+            l, k, n, t, *rest = xs.shape
+            return xs.reshape(l * k * n * t, *rest)
+        case Every(m, below):
+            ticks = epoch(below, xs)
+            if len(ticks) % m != 0:
+                raise ValueError(f"{len(ticks)} ticks are not divisible by {m} for {leaf}")
+            return ticks.reshape(len(ticks) // m, m, *ticks.shape[1:])
+        case Window(_, below) | Batch(_, _, below):
+            return jax.vmap(lambda part: epoch(below, part), out_axes=1)(dealt(leaf, xs))
+
+
+def drawn(
+    sequence: Sequencer, draw: Draw, xs: jax.Array, ys: jax.Array, tasks: jax.Array, key: PRNG
+) -> tuple[jax.Array, jax.Array]:
     def shuffled(x: jax.Array, y: jax.Array, k_task: jax.Array) -> tuple[jax.Array, jax.Array]:
-        order = jax.random.permutation(k_task, len(x)) if table.draw.shuffle else jnp.arange(len(x))
+        order = jax.random.permutation(k_task, len(x)) if draw.shuffle else jnp.arange(len(x))
         return x[order], y[order]
 
     def augmented(x: jax.Array, k_example: jax.Array) -> jax.Array:
@@ -165,38 +172,62 @@ def drawn(table: Table, tasks: jax.Array, key: PRNG) -> tuple[jax.Array, jax.Arr
             augmentation, k_step = step
             return augmenter(augmentation)(img, PRNG(k_step))
 
-        applications = zip(table.draw.augment, jax.random.split(k_example, len(table.draw.augment)))
-        return table.sequence(reduce(apply, applications, x))
+        applications = zip(draw.augment, jax.random.split(k_example, len(draw.augment)))
+        return sequence(reduce(apply, applications, x))
 
     k_order, k_augment = jax.random.split(key)
-    xs, ys = jnp.asarray(table.xs)[tasks], jnp.asarray(table.ys)[tasks]
+    xs, ys = xs[tasks], ys[tasks]
     xs, ys = jax.vmap(shuffled)(xs, ys, jax.random.split(k_order, len(tasks))[tasks])
     return jax.vmap(jax.vmap(augmented))(xs, jax.random.split(k_augment, xs.shape[:2])[tasks]), ys
 
 
+def block(
+    leaf: Leaf,
+    draw: Draw,
+    sequence: Sequencer,
+    count: int,
+    config: DataConfig,
+    xs: jax.Array,
+    ys: jax.Array,
+    tasks: jax.Array,
+    key: PRNG,
+) -> tuple[jax.Array, jax.Array]:
+    drawn_x, drawn_y = zip(
+        *[drawn(sequence, draw, xs, ys, tasks, PRNG(jax.random.fold_in(key, l))) for l in range(count)]
+    )
+    return (
+        epoch(leaf, padded(leaf, jnp.stack(drawn_x), config.unlabeled_mask_value)),
+        epoch(leaf, padded(leaf, jnp.stack(drawn_y), config.label_mask_value)),
+    )
+
+
 def ticks(
-    plan: Leaf, table: Table, tasks: jax.Array, key: PRNG, config: DataConfig
+    leaf: Leaf, draw: Draw, table: Table, tasks: jax.Array, key: PRNG, config: DataConfig
 ) -> Iterator[tuple[jax.Array, jax.Array]]:
-    for e in itertools.count():
-        xs, ys = drawn(table, tasks, PRNG(jax.random.fold_in(key, e)))
-        yield from zip(
-            epoch(plan, padded(plan, xs, config.unlabeled_mask_value)),
-            epoch(plan, padded(plan, ys, config.label_mask_value)),
-        )
+    xs, ys = jnp.asarray(table.xs), jnp.asarray(table.ys)
+    k, n, *_ = table.xs.shape
+    t = len(table.sequence(xs[0, 0]))
+    f = factors(leaf)
+    count = epochs_per_block(leaf, (k, n + -n % f.examples, t + -t % f.time))
+    build = jax.jit(partial(block, leaf, draw, table.sequence, count, config))
+    for b in itertools.count():
+        ex, ey = build(xs, ys, tasks, PRNG(jax.random.fold_in(key, b)))
+        yield from zip(ex, ey)
 
 
-def stream(plan: Plan, taken: Taken, key: PRNG, config: DataConfig) -> Iterator[PyTree]:
+def stream(plan: Plan, sources: Sources, taken: Taken, key: PRNG, config: DataConfig) -> Iterator[PyTree]:
+    treedef = jax.tree.structure(plan)
+    if jax.tree.structure(sources) != treedef or jax.tree.structure(taken) != treedef:
+        raise ValueError(f"sources {sources} and data {taken} must mirror the plan {plan}")
     k_tasks, k_leaves = jax.random.split(key)
     tasks = jax.random.permutation(k_tasks, config.num_tasks)
-
-    def go(plan: Plan, taken: Taken, key: PRNG) -> Iterator[PyTree]:
-        match plan, taken:
-            case Pair(left, right), (first, second):
-                k_left, k_right = jax.random.split(key)
-                return zip(go(left, first, PRNG(k_left)), go(right, second, PRNG(k_right)))
-            case (Steps() | Window() | Batch()) as leaf, Table() as table:
-                return ticks(leaf, table, tasks, seeded(key, table.draw), config)
-            case _:
-                raise ValueError(f"data {taken} does not mirror plan {plan}")
-
-    return go(plan, taken, PRNG(k_leaves))
+    keys = jax.tree.unflatten(treedef, list(jax.random.split(k_leaves, treedef.num_leaves)))
+    lanes = jax.tree.map(
+        lambda leaf, draw, table, k: ticks(leaf, draw, table, tasks, seeded(PRNG(k), draw), config),
+        plan,
+        sources,
+        taken,
+        keys,
+    )
+    for parts in zip(*jax.tree.leaves(lanes)):
+        yield jax.tree.unflatten(treedef, parts)

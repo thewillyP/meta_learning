@@ -35,8 +35,9 @@ from meta_learn_lib.data_source.source import (
 )
 from meta_learn_lib.lib_types import PRNG, PixelTransform
 
+from dataclasses import dataclass
 import math
-from typing import Callable, Literal, NamedTuple, overload
+from typing import Callable, Literal, overload
 import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree
@@ -100,7 +101,8 @@ class PyTreeDataset(Dataset):
         return jax.tree.map(lambda x: x[idx], self.data)
 
 
-class PrematerializedTask(NamedTuple):
+@dataclass(frozen=True)
+class Table:
     xs: np.ndarray
     ys: np.ndarray
     sequence: Sequencer
@@ -553,12 +555,10 @@ def dataset_sources(
     raise NotImplementedError
 
 
-def take_datasets(
-    seed: PRNG, remaining: list[Supply], n: int, shuffle: bool
-) -> tuple[list[PrematerializedTask], list[Supply]]:
+def take_datasets(seed: PRNG, remaining: list[Supply], n: int, shuffle: bool) -> tuple[Table, list[Supply]]:
     keys = jax.random.split(seed, len(remaining))
 
-    def make_dataset(idx: int, key: PRNG) -> tuple[PrematerializedTask, Supply]:
+    def make_dataset(idx: int, key: PRNG) -> tuple[tuple[np.ndarray, np.ndarray], Supply]:
         ds, sequence = remaining[idx]
         generator = torch.Generator().manual_seed(jax.random.randint(key, shape=(), minval=0, maxval=2**31 - 1).item())
         take_n = min(n, len(ds))
@@ -573,7 +573,10 @@ def take_datasets(
             taken = Subset(ds, list(range(take_n)))
             leftover = Subset(ds, list(range(take_n, len(ds))))
         xs, ys = map(np.stack, zip(*numpy_collate_fn([taken[i] for i in range(len(taken))])))
-        return PrematerializedTask(xs, ys, sequence), (leftover, sequence)
+        return (xs, ys), (leftover, sequence)
 
-    datasets_out, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
-    return list(datasets_out), list(new_remaining)
+    taken, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
+    xs, ys = zip(*taken)
+    first, *_ = remaining
+    _, sequence = first
+    return Table(np.stack(xs), np.stack(ys), sequence), list(new_remaining)

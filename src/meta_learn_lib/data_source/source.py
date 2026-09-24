@@ -142,13 +142,7 @@ class Draw:
     seeding: Seeding
 
 
-type Sources = Draw | Level
-
-
-@dataclass(frozen=True)
-class Level:
-    train: Sources
-    val: Sources
+type Sources = Draw | tuple[Sources, Sources]
 
 
 @dataclass(frozen=True)

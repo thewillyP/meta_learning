@@ -49,7 +49,7 @@ import torchvision
 from torchvision.datasets import CIFAR10, MNIST
 from torchvision.transforms.v2 import Compose, Lambda, Normalize, ToDtype, ToImage, Transform
 
-type Sequencer = Callable[[np.ndarray], np.ndarray]
+type Sequencer = Callable[[jax.Array], jax.Array]
 type Supply = tuple[Dataset, Sequencer]
 
 
@@ -131,28 +131,28 @@ def generate_add_task_dataset(N: int, t_1: int, t_2: int, tau_task: int, rng_key
 
 
 @overload
-def augmenter(a: RandomCrop) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
-    def crop(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        _, height, width = img.shape
-        padded = np.pad(img, ((0, 0), (a.padding, a.padding), (a.padding, a.padding)))
-        top, left = rng.integers(0, 2 * a.padding + 1, size=2).tolist()
-        return padded[:, top : top + height, left : left + width]
+def augmenter(a: RandomCrop) -> Callable[[jax.Array, PRNG], jax.Array]:
+    def crop(img: jax.Array, key: PRNG) -> jax.Array:
+        channels, height, width = img.shape
+        padded = jnp.pad(img, ((0, 0), (a.padding, a.padding), (a.padding, a.padding)))
+        top, left = jax.random.randint(key, (2,), 0, 2 * a.padding + 1)
+        return jax.lax.dynamic_slice(padded, (0, top, left), (channels, height, width))
 
     return crop
 
 
 @overload
-def augmenter(a: HorizontalFlip) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
-    return lambda img, rng: np.flip(img, axis=-1) if rng.random() < 0.5 else img
+def augmenter(a: HorizontalFlip) -> Callable[[jax.Array, PRNG], jax.Array]:
+    return lambda img, key: jnp.where(jax.random.bernoulli(key), jnp.flip(img, axis=-1), img)
 
 
 @overload
-def augmenter(a: Augmentation) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
+def augmenter(a: Augmentation) -> Callable[[jax.Array, PRNG], jax.Array]:
     raise NotImplementedError
 
 
 @dispatch
-def augmenter(a: Augmentation) -> Callable[[np.ndarray, np.random.Generator], np.ndarray]:
+def augmenter(a: Augmentation) -> Callable[[jax.Array, PRNG], jax.Array]:
     raise NotImplementedError
 
 
@@ -161,7 +161,7 @@ def make_patch_reshape(height: int, width: int, channel: int, patch_h: int, patc
         raise ValueError(f"image ({height}, {width}) not divisible by patch ({patch_h}, {patch_w})")
     seq_len = (height // patch_h) * (width // patch_w)
 
-    def reshape(x: np.ndarray) -> np.ndarray:
+    def reshape(x: jax.Array) -> jax.Array:
         return (
             x.reshape(channel, height // patch_h, patch_h, width // patch_w, patch_w)
             .transpose(1, 3, 0, 2, 4)
@@ -296,7 +296,7 @@ def normalization(t: Vision) -> tuple[tuple[float, ...], tuple[float, ...]]:
 @overload
 def dataset_sources(
     t: Mnist, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     mean, std = normalization(t)
     x_pre, y_pre, patch_reshape_fn = image_transforms(
         mean=mean,
@@ -331,7 +331,7 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: Cifar, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     mean, std = normalization(t)
     x_pre, y_pre, patch_reshape_fn = image_transforms(
         mean=mean,
@@ -355,7 +355,7 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: DelayAddTaskFamily, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     keys = jax.random.split(seed, num_tasks)
     length = t.t_test if is_test else t.t_train
     n = t.n_test if is_test else t.n_train
@@ -375,7 +375,7 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: GaussianNoiseTaskFamily, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     keys = jax.random.split(seed, num_tasks)
 
     def make_noise_task(key: PRNG) -> Supply:
@@ -388,7 +388,7 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: GridTaskFamily, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     keys = jax.random.split(seed, num_tasks)
 
     def make_grid_task(key: PRNG) -> Supply:
@@ -410,7 +410,7 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: MNISTSequenceTaskFamily, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     x_pre = make_image_preprocessor(MNIST_MEAN, MNIST_STD, t.pixel_transform)
     pil_x_pre = Compose([ToImage(), ToDtype(torch.float32, scale=True), x_pre])
     base = torchvision.datasets.MNIST(root=f"{root_dir}/data", train=not is_test, download=True, transform=pil_x_pre)
@@ -433,7 +433,7 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: SOSTaskFamily, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     keys = jax.random.split(seed, num_tasks)
     x_min, x_max, y_min, y_max = t.region
 
@@ -506,7 +506,7 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: NTMCopyTaskFamily, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     keys = jax.random.split(seed, num_tasks)
     V = t.bits_per_vector
     T_max = t.max_seq_len
@@ -542,14 +542,14 @@ def dataset_sources(
 @overload
 def dataset_sources(
     t: Task, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     raise NotImplementedError
 
 
 @dispatch
 def dataset_sources(
     t: Task, root_dir: str, is_test: bool, y_mask: float, num_tasks: int, seed: PRNG
-) -> list[tuple[Dataset, Callable[[np.ndarray], np.ndarray]]]:
+) -> list[tuple[Dataset, Callable[[jax.Array], jax.Array]]]:
     raise NotImplementedError
 
 

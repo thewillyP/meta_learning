@@ -134,36 +134,12 @@ type Seeding = Fresh | Fixed
 
 
 @dataclass(frozen=True)
-class Straddle: ...
-
-
-@dataclass(frozen=True)
-class Padded: ...
-
-
-type Boundary = Straddle | Padded
-
-
-@dataclass(frozen=True)
-class EveryPass: ...
-
-
-@dataclass(frozen=True)
-class EveryMinibatch: ...
-
-
-type Regroup = EveryPass | EveryMinibatch
-
-
-@dataclass(frozen=True)
 class Draw:
     pool: Pool
     take: int
     shuffle: bool
     augment: tuple[Augmentation, ...]
     seeding: Seeding
-    boundary: Boundary
-    regroup: Regroup
 
 
 type Sources = Draw | Level

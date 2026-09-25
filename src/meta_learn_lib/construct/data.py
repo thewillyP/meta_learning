@@ -1,20 +1,14 @@
 from meta_learn_lib.construct.term import (
-    Activation,
     BatchData,
     BatchParams,
     BatchPop,
-    Bias,
-    Linear,
-    Loss,
     Meta,
     Over,
     RFLO,
     RTRL,
     Reparametrized,
-    Rnn,
     SameModel,
     Scan,
-    Seq,
     Shared,
     Sup,
     Term,
@@ -22,6 +16,7 @@ from meta_learn_lib.construct.term import (
     Validate,
     Validator,
 )
+from meta_learn_lib.data_source.source import Draw
 
 from dataclasses import dataclass
 from typing import overload
@@ -30,7 +25,8 @@ from plum import dispatch
 
 
 @dataclass(frozen=True)
-class Steps: ...
+class Steps:
+    draw: Draw
 
 
 @dataclass(frozen=True)
@@ -57,11 +53,31 @@ type Leaf = Steps | Window | Every | Batch
 type Plan = Leaf | tuple[Plan, Plan]
 
 
+def draw_of(leaf: Leaf) -> Draw:
+    match leaf:
+        case Steps(draw):
+            return draw
+        case Window(_, below) | Every(_, below) | Batch(_, _, below):
+            return draw_of(below)
+
+
+def redrawn(leaf: Leaf, draw: Draw) -> Leaf:
+    match leaf:
+        case Steps():
+            return Steps(draw)
+        case Window(n, below):
+            return Window(n, redrawn(below, draw))
+        case Every(n, below):
+            return Every(n, redrawn(below, draw))
+        case Batch(n, over, below):
+            return Batch(n, over, redrawn(below, draw))
+
+
 @overload
 def val_data[S, X, Y, HP, P](
     v: SameModel[S, X, Y, HP, P], below: Term[S, X, Y, HP, P]
 ) -> Steps | Window | Every | Batch | tuple:
-    return data(below)
+    return jax.tree.map(lambda leaf: redrawn(leaf, v.draw), data(below))
 
 
 @overload
@@ -86,40 +102,8 @@ def val_data[S, X, Y, HP, P, SV, XV, HPV, PV](
 
 
 @overload
-def data(t: Linear) -> Steps | Window | Every | Batch | tuple:
-    return Steps()
-
-
-@overload
-def data(t: Bias) -> Steps | Window | Every | Batch | tuple:
-    return Steps()
-
-
-@overload
-def data(t: Activation) -> Steps | Window | Every | Batch | tuple:
-    return Steps()
-
-
-@overload
-def data(t: Loss) -> Steps | Window | Every | Batch | tuple:
-    return Steps()
-
-
-@overload
-def data[HPA, PA](t: Rnn[HPA, PA]) -> Steps | Window | Every | Batch | tuple:
-    return Steps()
-
-
-@overload
 def data[S, X, HP, P](t: Sup[S, X, HP, P]) -> Steps | Window | Every | Batch | tuple:
-    return Steps()
-
-
-@overload
-def data[S1, S2, X, Y, Z, HP1, HP2, P1, P2](
-    t: Seq[S1, S2, X, Y, Z, HP1, HP2, P1, P2],
-) -> Steps | Window | Every | Batch | tuple:
-    return data(t.first)
+    return Steps(t.draw)
 
 
 @overload

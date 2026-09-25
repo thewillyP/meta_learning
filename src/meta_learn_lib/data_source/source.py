@@ -142,13 +142,10 @@ class Draw:
     seeding: Seeding
 
 
-type Sources = Draw | tuple[Sources, Sources]
-
-
 @dataclass(frozen=True)
 class DataConfig:
-    sources: Sources
     root_dir: str
     num_tasks: int
     label_mask_value: float
     unlabeled_mask_value: float
+    workers: int

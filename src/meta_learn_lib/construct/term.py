@@ -1,4 +1,5 @@
 from meta_learn_lib.category.lib_types import Unit
+from meta_learn_lib.data_source.source import Draw
 from meta_learn_lib.lib_types import ArrayTree, JACOBIAN, PRNG
 
 from dataclasses import dataclass
@@ -241,6 +242,7 @@ class Sup[S, X, HP, P](
 ):
     arch: Term[S, X, jax.Array, HP, P]
     loss: Loss
+    draw: Draw
 
 
 @dataclass(frozen=True)
@@ -369,7 +371,8 @@ class Validate[S, X, Y, HP, P, SV, XV, HPV, PV, HQ, Q](Validator[S, X, Y, HP, P,
 
 
 @dataclass(frozen=True)
-class SameModel[S, X, Y, HP, P](Validator[S, X, Y, HP, P, S, X, Unit, Unit]): ...
+class SameModel[S, X, Y, HP, P](Validator[S, X, Y, HP, P, S, X, Unit, Unit]):
+    draw: Draw
 
 
 @dataclass(frozen=True)

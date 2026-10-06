@@ -1,7 +1,6 @@
 from meta_learn_lib.category.lens import *
 from meta_learn_lib.category.paralens import *
 from meta_learn_lib.lib_types import JACOBIAN, PRNG
-from meta_learn_lib.category.mealy import Mealy
 from meta_learn_lib.utility.distributions import SAMPLER
 from meta_learn_lib.utility.util import zero_cotangent_like
 
@@ -23,63 +22,75 @@ def immediate_influence(
         return jax.vmap(row)(jnp.eye(n))
 
 
-def rtrl_like[HP, HPM, H, X, Y, P, W](
-    machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
+def rtrl_like[Theta, D, M, S, Y, W](
+    model: ParaLens[tuple[Theta, D], tuple[Theta, D], S, S, tuple[S, Y], tuple[S, Y]],
     update_influence: Callable[
-        [HPM, Callable[[jax.Array, jax.Array], jax.Array], Callable[[jax.Array], jax.Array], W], W
+        [M, Callable[[jax.Array, jax.Array], jax.Array], Callable[[jax.Array], jax.Array], W], W
     ],
-    boundary: Callable[[HPM, H, Y, jax.Array, W], jax.Array],
-) -> Mealy[tuple[H, W], tuple[H, W], X, X, Y, Y, tuple[HP, HPM], tuple[HP, HPM], P, P]:
+    boundary: Callable[[M, S, Y, jax.Array, W], jax.Array],
+) -> ParaLens[
+    tuple[Theta, tuple[M, D]],
+    tuple[Theta, tuple[M, D]],
+    tuple[S, W],
+    tuple[S, W],
+    tuple[tuple[S, W], Y],
+    tuple[tuple[S, W], Y],
+]:
 
     def run(
-        p_sx: tuple[tuple[tuple[HP, HPM], P], tuple[tuple[H, W], X]],
+        p_sw: tuple[tuple[Theta, tuple[M, D]], tuple[S, W]],
     ) -> tuple[
-        tuple[tuple[H, W], Y],
-        Callable[[tuple[tuple[H, W], Y]], tuple[tuple[tuple[HP, HPM], P], tuple[tuple[H, W], X]]],
+        tuple[tuple[S, W], Y],
+        Callable[[tuple[tuple[S, W], Y]], tuple[tuple[Theta, tuple[M, D]], tuple[S, W]]],
     ]:
-        ((hp, hpm), p), ((h0, W0), x) = p_sx
-        hp_p = (hp, p)
-        _, unflat_h = jax.flatten_util.ravel_pytree(eqx.filter(h0, eqx.is_inexact_array))
-        _, unflat_p = jax.flatten_util.ravel_pytree(eqx.filter(p, eqx.is_inexact_array))
-        (h1, y), put = machine.arrow.arrow.run((hp_p, (h0, x)))
+        (theta, (m, d)), (s0, W0) = p_sw
+        _, unflat_s = jax.flatten_util.ravel_pytree(eqx.filter(s0, eqx.is_inexact_array))
+        _, unflat_theta = jax.flatten_util.ravel_pytree(eqx.filter(theta, eqx.is_inexact_array))
+        (s1, y), put = model.arrow.run(((theta, d), s0))
         ignore_y = zero_cotangent_like(y)
-        ignore_x = zero_cotangent_like(x)
-        ignore_hp = zero_cotangent_like(hp)
-        jvp = jax.linear_transpose(put, zero_cotangent_like((h0, y)))
+        ignore_d = zero_cotangent_like(d)
+        jvp = jax.linear_transpose(put, zero_cotangent_like((s0, y)))
 
-        def push(d_p: jax.Array, d_h: jax.Array) -> jax.Array:
-            ((d_h_next, _),) = jvp(((ignore_hp, unflat_p(d_p)), (unflat_h(d_h), ignore_x)))
-            d_h_next_flat, _ = jax.flatten_util.ravel_pytree(d_h_next)
-            return d_h_next_flat
+        def push(d_theta: jax.Array, d_s: jax.Array) -> jax.Array:
+            ((d_s_next, _),) = jvp(((unflat_theta(d_theta), ignore_d), unflat_s(d_s)))
+            d_s_next_flat, _ = jax.flatten_util.ravel_pytree(d_s_next)
+            return d_s_next_flat
 
         def row(e: jax.Array) -> jax.Array:
-            (_, dp), _ = put((unflat_h(e), ignore_y))
-            dp_flat, _ = jax.flatten_util.ravel_pytree(dp)
-            return dp_flat
+            (d_theta, _), _ = put((unflat_s(e), ignore_y))
+            d_theta_flat, _ = jax.flatten_util.ravel_pytree(d_theta)
+            return d_theta_flat
 
-        W1 = update_influence(hpm, push, row, W0)
+        W1 = update_influence(m, push, row, W0)
 
         def rev(
-            ct: tuple[tuple[H, W], Y],
-        ) -> tuple[tuple[tuple[HP, HPM], P], tuple[tuple[H, W], X]]:
-            (d_h_final, _), d_y = ct
-            (d_hp, d_p_inner), (d_h0, d_x) = put((d_h_final, d_y))
-            d_h0_flat, _ = jax.flatten_util.ravel_pytree(d_h0)
-            d_p = jax.tree.map(jnp.add, d_p_inner, unflat_p(boundary(hpm, d_h_final, d_y, d_h0_flat, W0)))
-            zero_state = zero_cotangent_like((h0, W0))
-            return ((d_hp, zero_cotangent_like(hpm)), d_p), (zero_state, d_x)
+            ct: tuple[tuple[S, W], Y],
+        ) -> tuple[tuple[Theta, tuple[M, D]], tuple[S, W]]:
+            (d_s_final, _), d_y = ct
+            (d_theta_inner, d_d), d_s0 = put((d_s_final, d_y))
+            d_s0_flat, _ = jax.flatten_util.ravel_pytree(d_s0)
+            d_theta = jax.tree.map(jnp.add, d_theta_inner, unflat_theta(boundary(m, d_s_final, d_y, d_s0_flat, W0)))
+            zero_state = zero_cotangent_like((s0, W0))
+            return (d_theta, (zero_cotangent_like(m), d_d)), zero_state
 
-        return ((h1, W1), y), rev
+        return ((s1, W1), y), rev
 
-    return Mealy(ParaLens(Lens(run)))
+    return ParaLens(Lens(run))
 
 
-def rtrl[HP, H, X, Y, P](
-    machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
-) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, tuple[HP, Unit], tuple[HP, Unit], P, P]:
+def rtrl[Theta, D, S, Y](
+    model: ParaLens[tuple[Theta, D], tuple[Theta, D], S, S, tuple[S, Y], tuple[S, Y]],
+) -> ParaLens[
+    tuple[Theta, tuple[Unit, D]],
+    tuple[Theta, tuple[Unit, D]],
+    tuple[S, JACOBIAN],
+    tuple[S, JACOBIAN],
+    tuple[tuple[S, JACOBIAN], Y],
+    tuple[tuple[S, JACOBIAN], Y],
+]:
 
     def update_influence(
-        hpm: Unit,
+        m: Unit,
         push: Callable[[jax.Array, jax.Array], jax.Array],
         row: Callable[[jax.Array], jax.Array],
         M0: JACOBIAN,
@@ -93,22 +104,29 @@ def rtrl[HP, H, X, Y, P](
             M1 = jmp_M0 + J_p
         return JACOBIAN(M1)
 
-    def boundary(hpm: Unit, d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
-        return d_h0 @ M0
+    def boundary(m: Unit, d_s_final: S, d_y: Y, d_s0: jax.Array, M0: JACOBIAN) -> jax.Array:
+        return d_s0 @ M0
 
-    return rtrl_like(machine, update_influence, boundary)
+    return rtrl_like(model, update_influence, boundary)
 
 
 type UORO_AUX = tuple[jax.Array, jax.Array, PRNG]
 
 
-def uoro[HP, H, X, Y, P](
-    machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
+def uoro[Theta, D, S, Y](
+    model: ParaLens[tuple[Theta, D], tuple[Theta, D], S, S, tuple[S, Y], tuple[S, Y]],
     distribution: SAMPLER,
-) -> Mealy[tuple[H, UORO_AUX], tuple[H, UORO_AUX], X, X, Y, Y, tuple[HP, Unit], tuple[HP, Unit], P, P]:
+) -> ParaLens[
+    tuple[Theta, tuple[Unit, D]],
+    tuple[Theta, tuple[Unit, D]],
+    tuple[S, UORO_AUX],
+    tuple[S, UORO_AUX],
+    tuple[tuple[S, UORO_AUX], Y],
+    tuple[tuple[S, UORO_AUX], Y],
+]:
 
     def update_influence(
-        hpm: Unit,
+        m: Unit,
         push: Callable[[jax.Array, jax.Array], jax.Array],
         row: Callable[[jax.Array], jax.Array],
         W0: UORO_AUX,
@@ -124,17 +142,24 @@ def uoro[HP, H, X, Y, P](
         B1: jax.Array = B0 / rho0 + nu_J_p / rho1
         return (A1, B1, PRNG(key1))
 
-    def boundary(hpm: Unit, d_h_final: H, d_y: Y, d_h0: jax.Array, W0: UORO_AUX) -> jax.Array:
+    def boundary(m: Unit, d_s_final: S, d_y: Y, d_s0: jax.Array, W0: UORO_AUX) -> jax.Array:
         A0, B0, _ = W0
-        return (d_h0 @ A0) * B0
+        return (d_s0 @ A0) * B0
 
-    return rtrl_like(machine, update_influence, boundary)
+    return rtrl_like(model, update_influence, boundary)
 
 
-def rflo[HP, HD, H, X, Y, P](
-    machine: Mealy[H, H, X, X, Y, Y, HP, HP, P, P],
+def rflo[Theta, D, HD, S, Y](
+    model: ParaLens[tuple[Theta, D], tuple[Theta, D], S, S, tuple[S, Y], tuple[S, Y]],
     decay: Callable[[HD], jax.Array],
-) -> Mealy[tuple[H, JACOBIAN], tuple[H, JACOBIAN], X, X, Y, Y, tuple[HP, HD], tuple[HP, HD], P, P]:
+) -> ParaLens[
+    tuple[Theta, tuple[HD, D]],
+    tuple[Theta, tuple[HD, D]],
+    tuple[S, JACOBIAN],
+    tuple[S, JACOBIAN],
+    tuple[tuple[S, JACOBIAN], Y],
+    tuple[tuple[S, JACOBIAN], Y],
+]:
 
     def update_influence(
         hd: HD,
@@ -147,10 +172,10 @@ def rflo[HP, HD, H, X, Y, P](
         J_p = immediate_influence(push, row, (n, p))
         return JACOBIAN((1 - alpha) * M0 + J_p)
 
-    def boundary(hd: HD, d_h_final: H, d_y: Y, d_h0: jax.Array, M0: JACOBIAN) -> jax.Array:
+    def boundary(hd: HD, d_s_final: S, d_y: Y, d_s0: jax.Array, M0: JACOBIAN) -> jax.Array:
         alpha = decay(hd)
-        c_state, _ = jax.flatten_util.ravel_pytree(d_h_final)
+        c_state, _ = jax.flatten_util.ravel_pytree(d_s_final)
         c_out, _ = jax.flatten_util.ravel_pytree(d_y)
         return (1 - alpha) * ((c_state + c_out) @ M0)
 
-    return rtrl_like(machine, update_influence, boundary)
+    return rtrl_like(model, update_influence, boundary)

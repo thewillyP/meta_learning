@@ -99,3 +99,24 @@ def scan[P, S, Y](
         unit_intro(Proxy[tuple[P, P]]()),
         mapAccum(reparam(snd(Proxy[tuple[Unit, Unit, P, P]]()), cell)),
     )
+
+
+def batch[Z, P, A, B](
+    cell: ParaLens[tuple[Z, P], tuple[Z, P], A, A, B, B],
+) -> ParaLens[tuple[Z, P], tuple[Z, P], A, A, B, B]:
+    """Copies of cell side by side. z is shared by every copy; ps, the input and the output gain a leading axis."""
+
+    def run(zps_a: tuple[tuple[Z, P], A]) -> tuple[B, Callable[[B], tuple[tuple[Z, P], A]]]:
+        zps, a = zps_a
+        b = eqx.filter_vmap(cell.arrow.get, in_axes=(((None, eqx.if_array(0)), eqx.if_array(0)),))((zps, a))
+
+        def rev(d: B) -> tuple[tuple[Z, P], A]:
+            (d_z, d_ps), d_a = eqx.filter_vmap(
+                cell.arrow.set,
+                in_axes=(((None, eqx.if_array(0)), eqx.if_array(0)), eqx.if_array(0)),
+            )((zps, a), d)
+            return (jax.tree.map(lambda t: t.sum(0), d_z), d_ps), d_a
+
+        return b, rev
+
+    return ParaLens(Lens(run))

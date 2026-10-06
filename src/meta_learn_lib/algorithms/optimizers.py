@@ -1,7 +1,5 @@
 from meta_learn_lib.category.lens import *
-from meta_learn_lib.category.lib_types import Unit
 from meta_learn_lib.category.paralens import ParaLens
-from meta_learn_lib.category.mealy import Mealy
 from meta_learn_lib.utility.util import zero_cotangent_like
 
 import jax
@@ -42,27 +40,23 @@ def exponentiated_gradient[H](
     return make
 
 
-def optimizer[T, HPO, H](
-    make: Callable[[tuple[HPO, H]], optax.GradientTransformation],
+def optimizer[T, K](
+    make: Callable[[K], optax.GradientTransformation],
     apply: Callable[[T, optax.Updates], T],
-) -> Mealy[optax.OptState, optax.OptState, T, T, T, T, HPO, HPO, H, H]:
+) -> ParaLens[K, K, tuple[optax.OptState, T], tuple[optax.OptState, T], T, T]:
     def run(
-        p_sx: tuple[tuple[HPO, H], tuple[optax.OptState, T]],
-    ) -> tuple[
-        tuple[optax.OptState, T],
-        Callable[[tuple[optax.OptState, T]], tuple[tuple[HPO, H], tuple[optax.OptState, T]]],
-    ]:
-        hp_h, (opt_st, theta) = p_sx
+        k_st: tuple[K, tuple[optax.OptState, T]],
+    ) -> tuple[T, Callable[[T], tuple[K, tuple[optax.OptState, T]]]]:
+        k, (opt_st, theta) = k_st
 
-        def rev(ct: tuple[optax.OptState, T]) -> tuple[tuple[HPO, H], tuple[optax.OptState, T]]:
-            _, d_theta = ct
-            updates, opt_st1 = make(hp_h).update(cast(optax.Params, d_theta), opt_st, cast(optax.Params, theta))
+        def rev(d_theta: T) -> tuple[K, tuple[optax.OptState, T]]:
+            updates, opt_st1 = make(k).update(cast(optax.Params, d_theta), opt_st, cast(optax.Params, theta))
             theta1 = apply(theta, updates)
-            return zero_cotangent_like(hp_h), (opt_st1, theta1)
+            return zero_cotangent_like(k), (opt_st1, theta1)
 
-        return (opt_st, theta), rev
+        return theta, rev
 
-    return Mealy(ParaLens(Lens(run)))
+    return ParaLens(Lens(run))
 
 
 def sgd(lr: jax.Array, wd: jax.Array, momentum: jax.Array) -> optax.GradientTransformation:

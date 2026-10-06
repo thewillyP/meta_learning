@@ -120,3 +120,39 @@ def batch[Z, P, A, B](
         return b, rev
 
     return ParaLens(Lens(run))
+
+
+def optimised[K, SO, T, D, A, B](
+    opt: ParaLens[K, K, tuple[SO, T], tuple[SO, T], T, T],
+    body: ParaLens[tuple[T, D], tuple[T, D], A, A, B, B],
+) -> ParaLens[tuple[tuple[SO, T], tuple[K, D]], tuple[tuple[SO, T], tuple[K, D]], A, A, B, B]:
+    """The body with the optimiser plugged on the theta part of its port."""
+    return join(first(opt) >> unjoin(body))
+
+
+def put[Sigma, D, S, Y](
+    body: ParaLens[tuple[Sigma, D], tuple[Sigma, D], S, S, tuple[S, Y], tuple[S, Y]],
+) -> ParaLens[D, D, tuple[Sigma, S], tuple[Sigma, S], tuple[tuple[Sigma, S], Y], tuple[tuple[Sigma, S], Y]]:
+    """Run forwards, run backwards, hand on what came back on sigma. Sigma leaves the port and becomes a wire."""
+
+    def step(d: D, sigma_s: tuple[Sigma, S]) -> tuple[tuple[Sigma, S], Y]:
+        sigma, s = sigma_s
+        (s1, y), rev = body.arrow.run(((sigma, d), s))
+        (sigma1, _), _ = rev((zero_cotangent_like(s1), zero_cotangent_like(y)))
+        return (sigma1, s1), y
+
+    return para_autodiff(step)
+
+
+def learn[K, SO, T, D, S, Y](
+    opt: ParaLens[K, K, tuple[SO, T], tuple[SO, T], T, T],
+    body: ParaLens[tuple[T, D], tuple[T, D], S, S, tuple[S, Y], tuple[S, Y]],
+) -> ParaLens[
+    tuple[K, D],
+    tuple[K, D],
+    tuple[tuple[SO, T], S],
+    tuple[tuple[SO, T], S],
+    tuple[tuple[tuple[SO, T], S], Y],
+    tuple[tuple[tuple[SO, T], S], Y],
+]:
+    return put(optimised(opt, body))

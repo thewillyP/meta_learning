@@ -20,6 +20,7 @@ from meta_learn_lib.data_source.source import (
     CIFAR10TaskFamily,
     Cifar,
     DelayAddTaskFamily,
+    Draw,
     FashionMNISTTaskFamily,
     GaussianNoiseTaskFamily,
     GridTaskFamily,
@@ -35,8 +36,10 @@ from meta_learn_lib.data_source.source import (
 )
 from meta_learn_lib.lib_types import PRNG, PixelTransform
 
+from functools import reduce
 import math
 from typing import Callable, Literal, overload
+import grain
 import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree
@@ -51,6 +54,7 @@ from torchvision.transforms.v2 import Compose, Lambda, Normalize, ToDtype, ToIma
 
 type Sequencer = Callable[[np.ndarray], np.ndarray]
 type Supply = tuple[Dataset, Sequencer]
+type Example = tuple[np.ndarray, np.ndarray]
 
 
 class SpuriousMNISTDataset(Dataset):
@@ -570,3 +574,39 @@ def take_datasets(
 
     taken, new_remaining = zip(*map(make_dataset, range(len(remaining)), keys))
     return list(taken), list(new_remaining)
+
+
+class Source:
+    def __init__(self, records: Subset[tuple]):
+        self.records = records
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, index: int) -> tuple:
+        match self.records[index]:
+            case (x, y):
+                return x, y
+            case other:
+                raise ValueError(f"{self.records} has no example at {index}: {other}")
+
+
+def augmented(ds: grain.MapDataset, augmentation: Augmentation) -> grain.MapDataset:
+    augment = augmenter(augmentation)
+
+    def apply(xy: tuple, rng: np.random.Generator) -> tuple:
+        x, y = xy
+        return augment(np.asarray(x), rng), y
+
+    return ds.random_map(apply)
+
+
+def examples(task: Subset[tuple], draw: Draw, sequence: Sequencer, seed: int) -> grain.MapDataset:
+    def sequenced(xy: tuple) -> Example:
+        x, y = xy
+        return np.asarray(sequence(np.asarray(x))), np.asarray(y)
+
+    ds = grain.MapDataset.source(Source(task)).seed(seed)
+    if draw.shuffle:
+        ds = ds.shuffle()
+    return reduce(augmented, draw.augment, ds).map(sequenced)

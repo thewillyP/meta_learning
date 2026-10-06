@@ -1,3 +1,4 @@
+from meta_learn_lib.algorithms.lib_types import UORO_AUX
 from meta_learn_lib.category.lens import *
 from meta_learn_lib.category.paralens import *
 from meta_learn_lib.lib_types import JACOBIAN, PRNG
@@ -108,9 +109,6 @@ def rtrl[Theta, D, S, Y](
         return d_s0 @ M0
 
     return rtrl_like(model, update_influence, boundary)
-
-
-type UORO_AUX = tuple[jax.Array, jax.Array, PRNG]
 
 
 def uoro[Theta, D, S, Y](

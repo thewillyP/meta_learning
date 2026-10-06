@@ -1,6 +1,7 @@
 from meta_learn_lib.category.lens import *
 from meta_learn_lib.category.paralens import *
 from meta_learn_lib.lib_types import LOSS
+from meta_learn_lib.utility.util import zero_cotangent_like
 
 import equinox as eqx
 import jax
@@ -16,21 +17,21 @@ learning_rate_log: ParaLens[Unit, Unit, LOSS, LOSS, LOSS, LOSS] = post(
 )
 
 
-def scan[P, S, Y](
-    cell: ParaLens[P, P, S, S, tuple[S, Y], tuple[S, Y]],
-) -> ParaLens[P, P, S, S, tuple[S, Y], tuple[S, Y]]:
-    """Copies of cell in a row. The port and y gain a leading axis; s is handed from copy to copy."""
+def mapAccum[Z, P, S, Y](
+    cell: ParaLens[tuple[Z, P], tuple[Z, P], S, S, tuple[S, Y], tuple[S, Y]],
+) -> ParaLens[tuple[Z, P], tuple[Z, P], S, S, tuple[S, Y], tuple[S, Y]]:
+    """Copies of cell in a row. z is shared by every copy; ps and y gain a leading axis; s is handed from copy to copy."""
 
     def _drop[A](x: A) -> A:
         return jax.tree.map(lambda t: jax.ShapeDtypeStruct(t.shape[1:], t.dtype) if eqx.is_array(t) else t, x)
 
-    def forward(ps_s: tuple[P, S]) -> tuple[tuple[S, Y], S]:
-        ps, s = ps_s
+    def forward(zps_s: tuple[tuple[Z, P], S]) -> tuple[tuple[S, Y], S]:
+        (z, ps), s = zps_s
         arr_s, static_s = eqx.partition(s, eqx.is_array)
         arr_p, static_p = eqx.partition(ps, eqx.is_array)
 
         def y_static(ap: P) -> Y:
-            _, y = cell.arrow.get((eqx.combine(ap, static_p), s))
+            _, y = cell.arrow.get(((z, eqx.combine(ap, static_p)), s))
             _, static = eqx.partition(y, eqx.is_array)
             return static
 
@@ -39,7 +40,7 @@ def scan[P, S, Y](
         def step(arr_st: S, ap: P) -> tuple[S, tuple[S, Y]]:
             st = eqx.combine(arr_st, static_s)
             p = eqx.combine(ap, static_p)
-            st_next, y = cell.arrow.get((p, st))
+            st_next, y = cell.arrow.get(((z, p), st))
             arr_next, _ = eqx.partition(st_next, eqx.is_array)
             arr_y, _ = eqx.partition(y, eqx.is_array)
             return arr_next, (arr_st, arr_y)
@@ -48,37 +49,53 @@ def scan[P, S, Y](
         return (eqx.combine(arr_final, static_s), eqx.combine(arr_ys, static_y)), eqx.combine(arr_tape, static_s)
 
     @eqx.filter_custom_vjp
-    def f(ps_s: tuple[P, S]) -> tuple[S, Y]:
-        out, _ = forward(ps_s)
+    def f(zps_s: tuple[tuple[Z, P], S]) -> tuple[S, Y]:
+        out, _ = forward(zps_s)
         return out
 
     @f.def_fwd
     def f_fwd(
-        perturbed: tuple[P, S],
-        ps_s: tuple[P, S],
+        perturbed: tuple[tuple[Z, P], S],
+        zps_s: tuple[tuple[Z, P], S],
     ) -> tuple[tuple[S, Y], S]:
-        return forward(ps_s)
+        return forward(zps_s)
 
     @f.def_bwd
     def f_bwd(
         tape: S,
         ct: tuple[S, Y],
-        perturbed: tuple[P, S],
-        ps_s: tuple[P, S],
-    ) -> tuple[P, S]:
-        ps, _ = ps_s
+        perturbed: tuple[tuple[Z, P], S],
+        zps_s: tuple[tuple[Z, P], S],
+    ) -> tuple[tuple[Z, P], S]:
+        (z, ps), _ = zps_s
         d_s_final, d_ys = ct
         arr_tape, static_s = eqx.partition(tape, eqx.is_array)
         arr_p, static_p = eqx.partition(ps, eqx.is_array)
 
-        def step(d_s: S, inp: tuple[S, P, Y]) -> tuple[S, P]:
+        def step(carry: tuple[S, Z], inp: tuple[S, P, Y]) -> tuple[tuple[S, Z], P]:
+            d_s, d_z_acc = carry
             arr_st, ap, d_y = inp
             st = eqx.combine(arr_st, static_s)
             p = eqx.combine(ap, static_p)
-            d_p, d_st = cell.arrow.set((p, st), (d_s, d_y))
-            return d_st, d_p
+            (d_z, d_p), d_st = cell.arrow.set(((z, p), st), (d_s, d_y))
+            return (d_st, jax.tree.map(jnp.add, d_z_acc, d_z)), d_p
 
-        d_s0, d_ps = jax.lax.scan(step, d_s_final, (arr_tape, arr_p, d_ys), reverse=True)
-        return (d_ps, d_s0)
+        (d_s0, d_z), d_ps = jax.lax.scan(
+            step,
+            (d_s_final, zero_cotangent_like(z)),
+            (arr_tape, arr_p, d_ys),
+            reverse=True,
+        )
+        return ((d_z, d_ps), d_s0)
 
     return ParaLens(autodiff(f))
+
+
+def scan[P, S, Y](
+    cell: ParaLens[P, P, S, S, tuple[S, Y], tuple[S, Y]],
+) -> ParaLens[P, P, S, S, tuple[S, Y], tuple[S, Y]]:
+    """Copies of cell in a row with nothing shared: mapAccum with an empty shared part."""
+    return reparam(
+        unit_intro(Proxy[tuple[P, P]]()),
+        mapAccum(reparam(snd(Proxy[tuple[Unit, Unit, P, P]]()), cell)),
+    )

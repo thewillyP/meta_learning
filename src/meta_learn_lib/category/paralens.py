@@ -59,3 +59,29 @@ def reparam[Q1, Q2, P1, P2, A1, A2, B1, B2](
     f: ParaLens[P1, P2, A1, A2, B1, B2],
 ) -> ParaLens[Q1, Q2, A1, A2, B1, B2]:
     return ParaLens((r @ identity(Proxy[tuple[A1, A2]]())) >> f.arrow)
+
+
+def first[P1, P2, A1, A2, B1, B2, C1, C2](
+    f: ParaLens[P1, P2, A1, A2, B1, B2],
+) -> ParaLens[P1, P2, tuple[A1, C1], tuple[A2, C2], tuple[B1, C1], tuple[B2, C2]]:
+    return ParaLens(assocR(Proxy[tuple[P1, P2, A1, A2, C1, C2]]()) >> (f.arrow @ identity(Proxy[tuple[C1, C2]]())))
+
+
+def second[P1, P2, A1, A2, B1, B2, C1, C2](
+    f: ParaLens[P1, P2, A1, A2, B1, B2],
+) -> ParaLens[P1, P2, tuple[C1, A1], tuple[C2, A2], tuple[C1, B1], tuple[C2, B2]]:
+    return pre(swap(Proxy[tuple[C1, C2, A1, A2]]()), post(swap(Proxy[tuple[B1, B2, C1, C2]]()), first(f)))
+
+
+def pre[P1, P2, A1, A2, B1, B2, Z1, Z2](
+    l: Lens[Z1, Z2, A1, A2],
+    f: ParaLens[P1, P2, A1, A2, B1, B2],
+) -> ParaLens[P1, P2, Z1, Z2, B1, B2]:
+    return ParaLens((identity(Proxy[tuple[P1, P2]]()) @ l) >> f.arrow)
+
+
+def post[P1, P2, A1, A2, B1, B2, Z1, Z2](
+    l: Lens[B1, B2, Z1, Z2],
+    f: ParaLens[P1, P2, A1, A2, B1, B2],
+) -> ParaLens[P1, P2, A1, A2, Z1, Z2]:
+    return ParaLens(f.arrow >> l)

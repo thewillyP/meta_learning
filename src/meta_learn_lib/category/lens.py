@@ -7,7 +7,7 @@ from functools import reduce
 import equinox as eqx
 
 from meta_learn_lib.category.lib_types import Proxy, Unit
-from meta_learn_lib.utility.util import zero_tangent_like
+from meta_learn_lib.utility.util import zero_cotangent_like
 
 
 @dataclass(frozen=True)
@@ -134,13 +134,11 @@ def autodiff[A: PyTree, B: PyTree](f: Callable[[A], B]) -> Lens[A, A, B, B]:
     return Lens(run)
 
 
-def snd[Z1, Z2, A1, A2](
-    _: Proxy[tuple[Z1, Z2, A1, A2]],
-) -> Lens[tuple[Z1, A1], tuple[Z2, A2], A1, A2]:
+def snd[Z, A1, A2](_: Proxy[tuple[Z, A1, A2]]) -> Lens[tuple[Z, A1], tuple[Z, A2], A1, A2]:
 
-    def run(za: tuple[Z1, A1]) -> tuple[A1, Callable[[A2], tuple[Z2, A2]]]:
+    def run(za: tuple[Z, A1]) -> tuple[A1, Callable[[A2], tuple[Z, A2]]]:
         z, a = za
-        return a, lambda a2: (jax.tree.map(zero_tangent_like, z), a2)
+        return a, lambda a2: (zero_cotangent_like(z), a2)
 
     return Lens(run)
 
@@ -151,6 +149,16 @@ def unit_intro[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, tuple[Unit, A1],
         return a2
 
     return Lens(lambda a: ((Unit(), a), rev))
+
+
+def unit_elim[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[tuple[A1, Unit], tuple[A2, Unit], A1, A2]:
+    return swap(Proxy[tuple[A1, A2, Unit, Unit]]()) >> snd(Proxy[tuple[Unit, A1, A2]]())
+
+
+def drop[A](_: Proxy[A]) -> Lens[A, A, Unit, Unit]:
+    return (
+        unit_intro(Proxy[tuple[A, A]]()) >> swap(Proxy[tuple[Unit, Unit, A, A]]()) >> snd(Proxy[tuple[A, Unit, Unit]]())
+    )
 
 
 def copy[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, tuple[A1, A1], tuple[A2, A2]]:

@@ -1,7 +1,8 @@
-import equinox as eqx
+from dataclasses import dataclass
 
 
-class Proxy[A](eqx.Module): ...
+type Unit = tuple[()]
 
 
-class Unit(eqx.Module): ...
+@dataclass(frozen=True)
+class Proxy[T]: ...

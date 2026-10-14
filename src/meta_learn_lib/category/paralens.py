@@ -1,87 +1,78 @@
 from dataclasses import dataclass
-from meta_learn_lib.category.lens import *
-from meta_learn_lib.category.lib_types import *
+
+from .lib_types import Proxy, Unit
+from .lens import Lens, assocL, assocR, exchange, identity, swap, unit_elim
 
 
 @dataclass(frozen=True)
-class ParaLens[P1, P2, X1, X2, Y1, Y2]:
-    arrow: Lens[tuple[P1, X1], tuple[P2, X2], Y1, Y2]
+class ParaLens[P, DP, X, DX, Y, DY]:
+    arrow: Lens[tuple[P, X], tuple[DP, DX], Y, DY]
 
-    def __rshift__[PF1, PF2, PG1, PG2, A1, A2, B1, B2, C1, C2](
-        f: "ParaLens[PF1, PF2, A1, A2, B1, B2]",
-        g: "ParaLens[PG1, PG2, B1, B2, C1, C2]",
-    ) -> "ParaLens[tuple[PF1, PG1], tuple[PF2, PG2], A1, A2, C1, C2]":
+    def then[Q, DQ, Z, DZ](
+        self,
+        g: "ParaLens[Q, DQ, Y, DY, Z, DZ]",
+    ) -> "ParaLens[tuple[P, Q], tuple[DP, DQ], X, DX, Z, DZ]":
+        return ParaLens((identity(Proxy[tuple[Q, DQ]]()) @ self.arrow) >> g.arrow).join()
 
-        return join(ParaLens((identity(Proxy[tuple[PG1, PG2]]()) @ f.arrow) >> g.arrow))
+    def tensor[Q, DQ, U, DU, V, DV](
+        self,
+        g: "ParaLens[Q, DQ, U, DU, V, DV]",
+    ) -> "ParaLens[tuple[P, Q], tuple[DP, DQ], tuple[X, U], tuple[DX, DU], tuple[Y, V], tuple[DY, DV]]":
+        return ParaLens(exchange(Proxy[tuple[P, DP, Q, DQ, X, DX, U, DU]]()) >> (self.arrow @ g.arrow))
 
-    def __matmul__[PF1, PF2, PG1, PG2, A1, A2, B1, B2, C1, C2, D1, D2](
-        f: "ParaLens[PF1, PF2, A1, A2, B1, B2]",
-        g: "ParaLens[PG1, PG2, C1, C2, D1, D2]",
-    ) -> "ParaLens[tuple[PF1, PG1], tuple[PF2, PG2], tuple[A1, C1], tuple[A2, C2], tuple[B1, D1], tuple[B2, D2]]":
+    def __rshift__[PF, DPF, PG, DPG, A, DA, B, DB, C, DC](
+        f: "ParaLens[PF, DPF, A, DA, B, DB]",
+        g: "ParaLens[PG, DPG, B, DB, C, DC]",
+    ) -> "ParaLens[tuple[PF, PG], tuple[DPF, DPG], A, DA, C, DC]":
+        return f.then(g)
 
-        return ParaLens(exchange(Proxy[tuple[PF1, PF2, PG1, PG2, A1, A2, C1, C2]]()) >> (f.arrow @ g.arrow))
+    def __matmul__[PF, DPF, PG, DPG, A, DA, B, DB, C, DC, D, DD](
+        f: "ParaLens[PF, DPF, A, DA, B, DB]",
+        g: "ParaLens[PG, DPG, C, DC, D, DD]",
+    ) -> "ParaLens[tuple[PF, PG], tuple[DPF, DPG], tuple[A, C], tuple[DA, DC], tuple[B, D], tuple[DB, DD]]":
+        return f.tensor(g)
 
+    def reparam[Q, DQ](self, r: Lens[Q, DQ, P, DP]) -> "ParaLens[Q, DQ, X, DX, Y, DY]":
+        return ParaLens((r @ identity(Proxy[tuple[X, DX]]())) >> self.arrow)
 
-def para_autodiff[P, X, Y](f: Callable[[P, X], Y]) -> ParaLens[P, P, X, X, Y, Y]:
-    def uncurried(px: tuple[P, X]) -> Y:
-        p, x = px
-        return f(p, x)
+    def pre[W, DW](self, f: Lens[W, DW, X, DX]) -> "ParaLens[P, DP, W, DW, Y, DY]":
+        return ParaLens((identity(Proxy[tuple[P, DP]]()) @ f) >> self.arrow)
 
-    return ParaLens(autodiff(uncurried))
+    def post[Z, DZ](self, g: Lens[Y, DY, Z, DZ]) -> "ParaLens[P, DP, X, DX, Z, DZ]":
+        return ParaLens(self.arrow >> g)
 
+    def first[C, DC](
+        self, _: Proxy[tuple[C, DC]]
+    ) -> "ParaLens[P, DP, tuple[X, C], tuple[DX, DC], tuple[Y, C], tuple[DY, DC]]":
+        return ParaLens(assocR(Proxy[tuple[P, DP, X, DX, C, DC]]()) >> self.arrow.first(Proxy[tuple[C, DC]]()))
 
-def unit[A1, A2, B1, B2](f: Lens[A1, A2, B1, B2]) -> ParaLens[Unit, Unit, A1, A2, B1, B2]:
-    return ParaLens(snd(Proxy[tuple[Unit, Unit, A1, A2]]()) >> f)
+    def second[C, DC](
+        self, _: Proxy[tuple[C, DC]]
+    ) -> "ParaLens[P, DP, tuple[C, X], tuple[DC, DX], tuple[C, Y], tuple[DC, DY]]":
+        return (
+            self.first(Proxy[tuple[C, DC]]())
+            .pre(swap(Proxy[tuple[C, DC, X, DX]]()))
+            .post(swap(Proxy[tuple[Y, DY, C, DC]]()))
+        )
 
+    def join[Q, DQ, A, DA](
+        self: "ParaLens[P, DP, tuple[Q, A], tuple[DQ, DA], Y, DY]",
+    ) -> "ParaLens[tuple[Q, P], tuple[DQ, DP], A, DA, Y, DY]":
+        return ParaLens(
+            (swap(Proxy[tuple[Q, DQ, P, DP]]()) @ identity(Proxy[tuple[A, DA]]()))
+            >> assocL(Proxy[tuple[P, DP, Q, DQ, A, DA]]())
+            >> self.arrow
+        )
 
-def join[Q1, Q2, P1, P2, A1, A2, B1, B2](
-    f: ParaLens[P1, P2, tuple[Q1, A1], tuple[Q2, A2], B1, B2],
-) -> ParaLens[tuple[Q1, P1], tuple[Q2, P2], A1, A2, B1, B2]:
-    return ParaLens(
-        (swap(Proxy[tuple[Q1, Q2, P1, P2]]()) @ identity(Proxy[tuple[A1, A2]]()))
-        >> assocL(Proxy[tuple[P1, P2, Q1, Q2, A1, A2]]())
-        >> f.arrow
-    )
-
-
-def unjoin[Q1, Q2, P1, P2, A1, A2, B1, B2](
-    f: ParaLens[tuple[Q1, P1], tuple[Q2, P2], A1, A2, B1, B2],
-) -> ParaLens[P1, P2, tuple[Q1, A1], tuple[Q2, A2], B1, B2]:
-    return ParaLens(
-        assocR(Proxy[tuple[P1, P2, Q1, Q2, A1, A2]]())
-        >> (swap(Proxy[tuple[P1, P2, Q1, Q2]]()) @ identity(Proxy[tuple[A1, A2]]()))
-        >> f.arrow
-    )
-
-
-def reparam[Q1, Q2, P1, P2, A1, A2, B1, B2](
-    r: Lens[Q1, Q2, P1, P2],
-    f: ParaLens[P1, P2, A1, A2, B1, B2],
-) -> ParaLens[Q1, Q2, A1, A2, B1, B2]:
-    return ParaLens((r @ identity(Proxy[tuple[A1, A2]]())) >> f.arrow)
-
-
-def first[P1, P2, A1, A2, B1, B2, C1, C2](
-    f: ParaLens[P1, P2, A1, A2, B1, B2],
-) -> ParaLens[P1, P2, tuple[A1, C1], tuple[A2, C2], tuple[B1, C1], tuple[B2, C2]]:
-    return ParaLens(assocR(Proxy[tuple[P1, P2, A1, A2, C1, C2]]()) >> (f.arrow @ identity(Proxy[tuple[C1, C2]]())))
-
-
-def second[P1, P2, A1, A2, B1, B2, C1, C2](
-    f: ParaLens[P1, P2, A1, A2, B1, B2],
-) -> ParaLens[P1, P2, tuple[C1, A1], tuple[C2, A2], tuple[C1, B1], tuple[C2, B2]]:
-    return pre(swap(Proxy[tuple[C1, C2, A1, A2]]()), post(swap(Proxy[tuple[B1, B2, C1, C2]]()), first(f)))
-
-
-def pre[P1, P2, A1, A2, B1, B2, Z1, Z2](
-    l: Lens[Z1, Z2, A1, A2],
-    f: ParaLens[P1, P2, A1, A2, B1, B2],
-) -> ParaLens[P1, P2, Z1, Z2, B1, B2]:
-    return ParaLens((identity(Proxy[tuple[P1, P2]]()) @ l) >> f.arrow)
+    def unjoin[Q, DQ, R, DR](
+        self: "ParaLens[tuple[Q, R], tuple[DQ, DR], X, DX, Y, DY]",
+    ) -> "ParaLens[R, DR, tuple[Q, X], tuple[DQ, DX], Y, DY]":
+        return ParaLens(
+            assocR(Proxy[tuple[R, DR, Q, DQ, X, DX]]())
+            >> (swap(Proxy[tuple[R, DR, Q, DQ]]()) @ identity(Proxy[tuple[X, DX]]()))
+            >> self.arrow
+        )
 
 
-def post[P1, P2, A1, A2, B1, B2, Z1, Z2](
-    l: Lens[B1, B2, Z1, Z2],
-    f: ParaLens[P1, P2, A1, A2, B1, B2],
-) -> ParaLens[P1, P2, A1, A2, Z1, Z2]:
-    return ParaLens(f.arrow >> l)
+def unit[X, DX, Y, DY](f: Lens[X, DX, Y, DY]) -> ParaLens[Unit, Unit, X, DX, Y, DY]:
+    return ParaLens(swap(Proxy[tuple[Unit, Unit, X, DX]]()) >> unit_elim(Proxy[tuple[X, DX]]()) >> f)

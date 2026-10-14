@@ -1,179 +1,203 @@
 from dataclasses import dataclass
-from typing import Callable
-import jax
-import jax.numpy as jnp
-from jaxtyping import PyTree
 from functools import reduce
-import equinox as eqx
+from typing import Callable
 
-from meta_learn_lib.category.lib_types import Proxy, Unit
-from meta_learn_lib.utility.util import zero_cotangent_like
+from .lib_types import Proxy, Unit
 
 
 @dataclass(frozen=True)
-class Lens[X1, X2, Y1, Y2]:
-    run: Callable[[X1], tuple[Y1, Callable[[Y2], X2]]]
+class Lens[X, DX, Y, DY]:
+    run: Callable[[X], tuple[Y, Callable[[DY], DX]]]
 
     @property
-    def get(self) -> Callable[[X1], Y1]:
-        def _get(x: X1) -> Y1:
+    def get(self) -> Callable[[X], Y]:
+        def _get(x: X) -> Y:
             y, _ = self.run(x)
             return y
 
         return _get
 
     @property
-    def set(self) -> Callable[[X1, Y2], X2]:
-        def _set(x: X1, y2: Y2) -> X2:
-            _, rev = self.run(x)
-            return rev(y2)
+    def set(self) -> Callable[[X, DY], DX]:
+        def _set(x: X, dy: DY) -> DX:
+            _, backward = self.run(x)
+            return backward(dy)
 
         return _set
 
-    def __rshift__[A1, A2, B1, B2, C1, C2](
-        f: "Lens[A1, A2, B1, B2]",
-        g: "Lens[B1, B2, C1, C2]",
-    ) -> "Lens[A1, A2, C1, C2]":
-        def run(a: A1) -> tuple[C1, Callable[[C2], A2]]:
-            b, fb = f.run(a)
-            c, gb = g.run(b)
-            return c, lambda c2: fb(gb(c2))
+    def then[Z, DZ](self, g: "Lens[Y, DY, Z, DZ]") -> "Lens[X, DX, Z, DZ]":
+        def run(x: X) -> tuple[Z, Callable[[DZ], DX]]:
+            y, backward_f = self.run(x)
+            z, backward_g = g.run(y)
+
+            return z, lambda dz: backward_f(backward_g(dz))
 
         return Lens(run)
 
-    def __matmul__[A1, A2, B1, B2, C1, C2, D1, D2](
-        f: "Lens[A1, A2, B1, B2]",
-        g: "Lens[C1, C2, D1, D2]",
-    ) -> "Lens[tuple[A1, C1], tuple[A2, C2], tuple[B1, D1], tuple[B2, D2]]":
-        def run(ac: tuple[A1, C1]) -> tuple[tuple[B1, D1], Callable[[tuple[B2, D2]], tuple[A2, C2]]]:
-            a, c = ac
-            b, fb = f.run(a)
-            d, gd = g.run(c)
+    def tensor[U, DU, V, DV](
+        self,
+        g: "Lens[U, DU, V, DV]",
+    ) -> "Lens[tuple[X, U], tuple[DX, DU], tuple[Y, V], tuple[DY, DV]]":
+        def run(xu: tuple[X, U]) -> tuple[tuple[Y, V], Callable[[tuple[DY, DV]], tuple[DX, DU]]]:
+            x, u = xu
+            y, backward_f = self.run(x)
+            v, backward_g = g.run(u)
 
-            def rev(bd: tuple[B2, D2]) -> tuple[A2, C2]:
-                b2, d2 = bd
-                return fb(b2), gd(d2)
+            def backward(dydv: tuple[DY, DV]) -> tuple[DX, DU]:
+                dy, dv = dydv
+                return backward_f(dy), backward_g(dv)
 
-            return (b, d), rev
+            return (y, v), backward
 
         return Lens(run)
 
+    def __rshift__[A, DA, B, DB, C, DC](
+        f: "Lens[A, DA, B, DB]",
+        g: "Lens[B, DB, C, DC]",
+    ) -> "Lens[A, DA, C, DC]":
+        return f.then(g)
 
-def identity[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, A1, A2]:
-    return Lens(lambda x: (x, lambda y: y))
+    def __matmul__[A, DA, B, DB, C, DC, D, DD](
+        f: "Lens[A, DA, B, DB]",
+        g: "Lens[C, DC, D, DD]",
+    ) -> "Lens[tuple[A, C], tuple[DA, DC], tuple[B, D], tuple[DB, DD]]":
+        return f.tensor(g)
 
+    def pre[W, DW](self, f: "Lens[W, DW, X, DX]") -> "Lens[W, DW, Y, DY]":
+        return f >> self
 
-def assocL_fwd[A, B, C](t: tuple[tuple[A, B], C]) -> tuple[A, tuple[B, C]]:
-    ab, c = t
-    a, b = ab
-    return a, (b, c)
+    def post[Z, DZ](self, g: "Lens[Y, DY, Z, DZ]") -> "Lens[X, DX, Z, DZ]":
+        return self >> g
 
+    def first[C, DC](self, _: Proxy[tuple[C, DC]]) -> "Lens[tuple[X, C], tuple[DX, DC], tuple[Y, C], tuple[DY, DC]]":
+        return self @ identity(Proxy[tuple[C, DC]]())
 
-def assocR_fwd[A, B, C](t: tuple[A, tuple[B, C]]) -> tuple[tuple[A, B], C]:
-    a, bc = t
-    b, c = bc
-    return (a, b), c
-
-
-def assocL[A1, A2, B1, B2, C1, C2](
-    _: Proxy[tuple[A1, A2, B1, B2, C1, C2]],
-) -> Lens[tuple[tuple[A1, B1], C1], tuple[tuple[A2, B2], C2], tuple[A1, tuple[B1, C1]], tuple[A2, tuple[B2, C2]]]:
-    def run(
-        t: tuple[tuple[A1, B1], C1],
-    ) -> tuple[tuple[A1, tuple[B1, C1]], Callable[[tuple[A2, tuple[B2, C2]]], tuple[tuple[A2, B2], C2]]]:
-        x = assocL_fwd(t)
-        return x, lambda xx: assocR_fwd(xx)
-
-    return Lens(run)
+    def second[C, DC](self, _: Proxy[tuple[C, DC]]) -> "Lens[tuple[C, X], tuple[DC, DX], tuple[C, Y], tuple[DC, DY]]":
+        return identity(Proxy[tuple[C, DC]]()) @ self
 
 
-def assocR[A1, A2, B1, B2, C1, C2](
-    _: Proxy[tuple[A1, A2, B1, B2, C1, C2]],
-) -> Lens[tuple[A1, tuple[B1, C1]], tuple[A2, tuple[B2, C2]], tuple[tuple[A1, B1], C1], tuple[tuple[A2, B2], C2]]:
-    def run(
-        t: tuple[A1, tuple[B1, C1]],
-    ) -> tuple[tuple[tuple[A1, B1], C1], Callable[[tuple[tuple[A2, B2], C2]], tuple[A2, tuple[B2, C2]]]]:
-        x = assocR_fwd(t)
-        return x, lambda xx: assocL_fwd(xx)
-
-    return Lens(run)
+def wiring[X, DX, Y, DY](forward: Callable[[X], Y], backward: Callable[[DY], DX]) -> Lens[X, DX, Y, DY]:
+    return Lens(lambda x: (forward(x), backward))
 
 
-def swap_fwd[A, B](t: tuple[A, B]) -> tuple[B, A]:
-    a, b = t
-    return b, a
+def identity[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, X, DX]:
+    return wiring(lambda x: x, lambda dx: dx)
 
 
-def swap[A1, A2, B1, B2](
-    _: Proxy[tuple[A1, A2, B1, B2]],
-) -> Lens[tuple[A1, B1], tuple[A2, B2], tuple[B1, A1], tuple[B2, A2]]:
-    return Lens(lambda t: (swap_fwd(t), lambda xx: swap_fwd(xx)))
+def swap_fwd[X, Y](xy: tuple[X, Y]) -> tuple[Y, X]:
+    x, y = xy
+    return y, x
 
 
-def exchange_fwd[A, B, C, D](t: tuple[tuple[A, B], tuple[C, D]]) -> tuple[tuple[A, C], tuple[B, D]]:
-    (a, b), (c, d) = t
-    return (a, c), (b, d)
+def swap[X, DX, Y, DY](_: Proxy[tuple[X, DX, Y, DY]]) -> Lens[tuple[X, Y], tuple[DX, DY], tuple[Y, X], tuple[DY, DX]]:
+    return wiring(swap_fwd, swap_fwd)
 
 
-def exchange[A1, A2, B1, B2, C1, C2, D1, D2](
-    _: Proxy[tuple[A1, A2, B1, B2, C1, C2, D1, D2]],
+def assocL_fwd[X, Y, Z](xyz: tuple[tuple[X, Y], Z]) -> tuple[X, tuple[Y, Z]]:
+    xy, z = xyz
+    x, y = xy
+    return x, (y, z)
+
+
+def assocR_fwd[X, Y, Z](xyz: tuple[X, tuple[Y, Z]]) -> tuple[tuple[X, Y], Z]:
+    x, yz = xyz
+    y, z = yz
+    return (x, y), z
+
+
+def assocL[X, DX, Y, DY, Z, DZ](
+    _: Proxy[tuple[X, DX, Y, DY, Z, DZ]],
 ) -> Lens[
-    tuple[tuple[A1, B1], tuple[C1, D1]],
-    tuple[tuple[A2, B2], tuple[C2, D2]],
-    tuple[tuple[A1, C1], tuple[B1, D1]],
-    tuple[tuple[A2, C2], tuple[B2, D2]],
+    tuple[tuple[X, Y], Z],
+    tuple[tuple[DX, DY], DZ],
+    tuple[X, tuple[Y, Z]],
+    tuple[DX, tuple[DY, DZ]],
 ]:
-    return Lens(lambda t: (exchange_fwd(t), lambda xx: exchange_fwd(xx)))
+    return wiring(assocL_fwd, assocR_fwd)
 
 
-def autodiff[A: PyTree, B: PyTree](f: Callable[[A], B]) -> Lens[A, A, B, B]:
-    def run(a: A) -> tuple[B, Callable[[B], A]]:
-        b, vjp = eqx.filter_vjp(f, a)
-        return b, lambda b2: vjp(b2)[0]  # vjp returns a 1-tuple per argument
+def assocR[X, DX, Y, DY, Z, DZ](
+    _: Proxy[tuple[X, DX, Y, DY, Z, DZ]],
+) -> Lens[
+    tuple[X, tuple[Y, Z]],
+    tuple[DX, tuple[DY, DZ]],
+    tuple[tuple[X, Y], Z],
+    tuple[tuple[DX, DY], DZ],
+]:
+    return wiring(assocR_fwd, assocL_fwd)
+
+
+def exchange_fwd[X, Y, Z, W](xyzw: tuple[tuple[X, Y], tuple[Z, W]]) -> tuple[tuple[X, Z], tuple[Y, W]]:
+    xy, zw = xyzw
+    x, y = xy
+    z, w = zw
+    return (x, z), (y, w)
+
+
+def exchange[X, DX, Y, DY, Z, DZ, W, DW](
+    _: Proxy[tuple[X, DX, Y, DY, Z, DZ, W, DW]],
+) -> Lens[
+    tuple[tuple[X, Y], tuple[Z, W]],
+    tuple[tuple[DX, DY], tuple[DZ, DW]],
+    tuple[tuple[X, Z], tuple[Y, W]],
+    tuple[tuple[DX, DZ], tuple[DY, DW]],
+]:
+    return wiring(exchange_fwd, exchange_fwd)
+
+
+def fst[X, DX, Z, DZ](
+    _: Proxy[tuple[X, DX, Z, DZ]],
+    zero: Callable[[Z], DZ],
+) -> Lens[tuple[X, Z], tuple[DX, DZ], X, DX]:
+    return swap(Proxy[tuple[X, DX, Z, DZ]]()) >> snd(Proxy[tuple[Z, DZ, X, DX]](), zero)
+
+
+def snd[Z, DZ, X, DX](
+    _: Proxy[tuple[Z, DZ, X, DX]],
+    zero: Callable[[Z], DZ],
+) -> Lens[tuple[Z, X], tuple[DZ, DX], X, DX]:
+    def run(zx: tuple[Z, X]) -> tuple[X, Callable[[DX], tuple[DZ, DX]]]:
+        z, x = zx
+        return x, lambda dx: (zero(z), dx)
 
     return Lens(run)
 
 
-def snd[Z, A1, A2](_: Proxy[tuple[Z, A1, A2]]) -> Lens[tuple[Z, A1], tuple[Z, A2], A1, A2]:
+def unit_intro[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[Unit, X], tuple[Unit, DX]]:
+    def backward(unit_dx: tuple[Unit, DX]) -> DX:
+        _, dx = unit_dx
+        return dx
 
-    def run(za: tuple[Z, A1]) -> tuple[A1, Callable[[A2], tuple[Z, A2]]]:
-        z, a = za
-        return a, lambda a2: (zero_cotangent_like(z), a2)
-
-    return Lens(run)
-
-
-def unit_intro[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, tuple[Unit, A1], tuple[Unit, A2]]:
-    def rev(ua: tuple[Unit, A2]) -> A2:
-        _, a2 = ua
-        return a2
-
-    return Lens(lambda a: ((Unit(), a), rev))
+    return wiring(lambda x: ((), x), backward)
 
 
-def unit_elim[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[tuple[A1, Unit], tuple[A2, Unit], A1, A2]:
-    return swap(Proxy[tuple[A1, A2, Unit, Unit]]()) >> snd(Proxy[tuple[Unit, A1, A2]]())
+def unit_elim[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[tuple[X, Unit], tuple[DX, Unit], X, DX]:
+    return swap(Proxy[tuple[X, DX, Unit, Unit]]()) >> snd(Proxy[tuple[Unit, Unit, X, DX]](), lambda _: ())
 
 
-def drop[A](_: Proxy[A]) -> Lens[A, A, Unit, Unit]:
+def drop[X, DX](_: Proxy[tuple[X, DX]], zero: Callable[[X], DX]) -> Lens[X, DX, Unit, Unit]:
     return (
-        unit_intro(Proxy[tuple[A, A]]()) >> swap(Proxy[tuple[Unit, Unit, A, A]]()) >> snd(Proxy[tuple[A, Unit, Unit]]())
+        unit_intro(Proxy[tuple[X, DX]]())
+        >> swap(Proxy[tuple[Unit, Unit, X, DX]]())
+        >> snd(Proxy[tuple[X, DX, Unit, Unit]](), zero)
     )
 
 
-def copy[A1, A2](_: Proxy[tuple[A1, A2]]) -> Lens[A1, A2, tuple[A1, A1], tuple[A2, A2]]:
-    def run(a: A1) -> tuple[tuple[A1, A1], Callable[[tuple[A2, A2]], A2]]:
-        def rev(d: tuple[A2, A2]) -> A2:
-            d1, d2 = d
-            return jax.tree.map(jnp.add, d1, d2)
+def copy[X, DX](_: Proxy[tuple[X, DX]], add: Callable[[DX, DX], DX]) -> Lens[X, DX, tuple[X, X], tuple[DX, DX]]:
+    def backward(dxs: tuple[DX, DX]) -> DX:
+        dx1, dx2 = dxs
+        return add(dx1, dx2)
 
-        return (a, a), rev
-
-    return Lens(run)
+    return wiring(lambda x: (x, x), backward)
 
 
-def diagonal[A1, A2](_: Proxy[tuple[A1, A2]], n: int) -> Lens[A1, A2, list[A1], list[A2]]:
-    def run(a: A1) -> tuple[list[A1], Callable[[list[A2]], A2]]:
-        return [a] * n, lambda ds: reduce(lambda u, v: jax.tree.map(jnp.add, u, v), ds)
+def diagonal[X, DX](
+    _: Proxy[tuple[X, DX]],
+    n: int,
+    zero: Callable[[X], DX],
+    add: Callable[[DX, DX], DX],
+) -> Lens[X, DX, list[X], list[DX]]:
+    def run(x: X) -> tuple[list[X], Callable[[list[DX]], DX]]:
+        return [x] * n, lambda dxs: reduce(add, dxs, zero(x))
 
     return Lens(run)

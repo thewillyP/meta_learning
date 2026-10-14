@@ -78,3 +78,12 @@ def snd[Z, X, DX](_: Proxy[tuple[Z, X, DX]]) -> Lens[tuple[Z, X], tuple[Z, DX], 
 
 def diagonal[X](_: Proxy[X], n: int) -> Lens[X, X, list[X], list[X]]:
     return structural.diagonal(Proxy[tuple[X, X]](), n, zero_cotangent_like, add_cotangents)
+
+
+learning_rate: Lens[jax.Array, jax.Array, Unit, Unit] = Lens(lambda loss: ((), lambda _: jnp.ones_like(loss)))
+
+learning_rate_log: Lens[jax.Array, jax.Array, jax.Array, jax.Array] = (
+    copy(Proxy[tuple[jax.Array, jax.Array]]())
+    >> learning_rate.first(Proxy[tuple[jax.Array, jax.Array]]())
+    >> snd(Proxy[tuple[Unit, jax.Array, jax.Array]]())
+)

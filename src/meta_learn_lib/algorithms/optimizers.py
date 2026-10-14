@@ -1,11 +1,13 @@
-from meta_learn_lib.category.lens import *
-from meta_learn_lib.category.paralens import ParaLens
-from meta_learn_lib.utility.util import zero_cotangent_like
+from typing import Callable, cast
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-from typing import Callable, cast
+
+from ..category.lib_types import Unit
+from ..category.paralens import ParaLens
+from .combinators import update_rule
 
 
 def exponentiated[T](theta: T, updates: optax.Updates) -> T:
@@ -13,7 +15,7 @@ def exponentiated[T](theta: T, updates: optax.Updates) -> T:
 
 
 def additive[T](theta: T, updates: optax.Updates) -> T:
-    return jax.tree.map(lambda t, u: t + u, theta, updates)
+    return eqx.apply_updates(theta, updates)
 
 
 def scale_by_sign_of_param() -> optax.GradientTransformation:
@@ -43,20 +45,25 @@ def exponentiated_gradient[H](
 def optimizer[T, K](
     make: Callable[[K], optax.GradientTransformation],
     apply: Callable[[T, optax.Updates], T],
-) -> ParaLens[K, K, tuple[optax.OptState, T], tuple[optax.OptState, T], T, T]:
-    def run(
-        k_st: tuple[K, tuple[optax.OptState, T]],
-    ) -> tuple[T, Callable[[T], tuple[K, tuple[optax.OptState, T]]]]:
-        k, (opt_st, theta) = k_st
+) -> ParaLens[K, Unit, tuple[optax.OptState, T], tuple[optax.OptState, T], T, T]:
+    def get(k: K, state: tuple[optax.OptState, T]) -> T:
+        _, theta = state
+        return theta
 
-        def rev(d_theta: T) -> tuple[K, tuple[optax.OptState, T]]:
-            updates, opt_st1 = make(k).update(cast(optax.Params, d_theta), opt_st, cast(optax.Params, theta))
-            theta1 = apply(theta, updates)
-            return zero_cotangent_like(k), (opt_st1, theta1)
+    def update(k: K, state: tuple[optax.OptState, T], dtheta: T) -> tuple[optax.OptState, T]:
+        memory, theta = state
+        updates, memory_next = make(k).update(cast(optax.Params, dtheta), memory, cast(optax.Params, theta))
+        return memory_next, apply(theta, updates)
 
-        return theta, rev
+    return update_rule(get, update)
 
-    return ParaLens(Lens(run))
+
+def init_optimizer[T, K](
+    make: Callable[[K], optax.GradientTransformation],
+    k: K,
+    theta: T,
+) -> tuple[optax.OptState, T]:
+    return make(k).init(cast(optax.Params, theta)), theta
 
 
 def sgd(lr: jax.Array, wd: jax.Array, momentum: jax.Array) -> optax.GradientTransformation:

@@ -1,13 +1,42 @@
 from dataclasses import dataclass
+from typing import Callable
 
 from .lib_types import Proxy, Unit
-from .lens import Lens, assocL, assocR, exchange, identity, swap
+from .lens import Lens, assocL, assocR, exchange, identity, snd, swap
+from .optics import Focus
 from .paralens import ParaLens, unit
 
 
 @dataclass(frozen=True)
 class Mealy[P, DP, S, DS, X, DX, Y, DY]:
     step: ParaLens[P, DP, tuple[S, X], tuple[DS, DX], tuple[S, Y], tuple[DS, DY]]
+
+    def within[W, DW](
+        self,
+        state: Focus[W, S],
+        feedback: Focus[DW, DS],
+    ) -> "Mealy[P, DP, W, DW, X, DX, Y, DY]":
+        def run(p_wx: tuple[P, tuple[W, X]]) -> tuple[tuple[W, Y], Callable[[tuple[DW, DY]], tuple[DP, tuple[DW, DX]]]]:
+            p, (whole, x) = p_wx
+            s, replace_state = state.run(whole)
+            (s_next, y), back = self.step.arrow.run((p, (s, x)))
+
+            def backward(dw_dy: tuple[DW, DY]) -> tuple[DP, tuple[DW, DX]]:
+                dw, dy = dw_dy
+                ds, replace_feedback = feedback.run(dw)
+                dp, (ds_previous, dx) = back((ds, dy))
+                return dp, (replace_feedback(ds_previous), dx)
+
+            return (replace_state(s_next), y), backward
+
+        return Mealy(ParaLens(Lens(run)))
+
+    def local_state[Q, DQ](
+        self,
+        initial: Lens[Q, DQ, S, DS],
+        close: Callable[[S], DS],
+    ) -> ParaLens[tuple[Q, P], tuple[DQ, DP], X, DX, Y, DY]:
+        return self.step.pre(initial.first(Proxy[tuple[X, DX]]())).post(snd(Proxy[tuple[S, DS, Y, DY]](), close)).join()
 
     def then[Q, DQ, T, DT, Z, DZ](
         self,

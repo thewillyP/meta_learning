@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from functools import reduce
+from itertools import repeat
 from typing import Callable
+
+from pyrsistent import PList, plist
 
 from .lib_types import Proxy, Unit
 
@@ -196,21 +199,21 @@ def diagonal[X, DX](
     n: int,
     zero: Callable[[X], DX],
     add: Callable[[DX, DX], DX],
-) -> Lens[X, DX, list[X], list[DX]]:
-    def run(x: X) -> tuple[list[X], Callable[[list[DX]], DX]]:
-        return [x] * n, lambda dxs: reduce(add, dxs, zero(x))
+) -> Lens[X, DX, PList[X], PList[DX]]:
+    def run(x: X) -> tuple[PList[X], Callable[[PList[DX]], DX]]:
+        return plist(repeat(x, n)), lambda dxs: reduce(add, dxs, zero(x))
 
     return Lens(run)
 
 
-def sequence[X, DX, Y, DY](local: Lens[X, DX, Y, DY]) -> Lens[list[X], list[DX], list[Y], list[DY]]:
-    def run(xs: list[X]) -> tuple[list[Y], Callable[[list[DY]], list[DX]]]:
-        executed = list(map(local.run, xs))
-        ys = [y for y, _ in executed]
-        backs = [back for _, back in executed]
+def sequence[X, DX, Y, DY](local: Lens[X, DX, Y, DY]) -> Lens[PList[X], PList[DX], PList[Y], PList[DY]]:
+    def run(xs: PList[X]) -> tuple[PList[Y], Callable[[PList[DY]], PList[DX]]]:
+        executed = plist(map(local.run, xs))
+        ys = plist(y for y, _ in executed)
+        backs = plist(back for _, back in executed)
 
-        def backward(dys: list[DY]) -> list[DX]:
-            return [back(dy) for back, dy in zip(backs, dys, strict=True)]
+        def backward(dys: PList[DY]) -> PList[DX]:
+            return plist(back(dy) for back, dy in zip(backs, dys, strict=True))
 
         return ys, backward
 

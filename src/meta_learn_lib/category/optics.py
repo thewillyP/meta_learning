@@ -33,24 +33,24 @@ def over[W, S](at: Focus[W, S], operation: Callable[[S], S], whole: W) -> W:
     return replace(operation(part))
 
 
-def flatten[A, B]() -> Lens[list[list[A]], list[list[B]], list[A], list[B]]:
-    def run(groups: list[list[A]]) -> tuple[list[A], Callable[[list[B]], list[list[B]]]]:
+def flatten[A, B]() -> Lens[PList[PList[A]], PList[PList[B]], PList[A], PList[B]]:
+    def run(groups: PList[PList[A]]) -> tuple[PList[A], Callable[[PList[B]], PList[PList[B]]]]:
         sizes = tuple(map(len, groups))
 
-        def backward(values: list[B]) -> list[list[B]]:
+        def backward(values: PList[B]) -> PList[PList[B]]:
             if len(values) != (count := sum(sizes)):
                 raise ValueError(f"expected {count} positions, received {len(values)}")
             it = iter(values)
-            return [list(islice(it, n)) for n in sizes]
+            return plist(plist(islice(it, n)) for n in sizes)
 
-        return list(chain.from_iterable(groups)), backward
+        return plist(chain.from_iterable(groups)), backward
 
     return Lens(run)
 
 
 @dataclass(frozen=True)
 class Traversal[W, T, A, B]:
-    parts: Lens[W, T, list[A], list[B]]
+    parts: Lens[W, T, PList[A], PList[B]]
 
     def then[C, D](self, inner: "Traversal[A, B, C, D]") -> "Traversal[W, T, C, D]":
         return Traversal(self.parts >> sequence(inner.parts) >> flatten())
@@ -63,14 +63,14 @@ class Traversal[W, T, A, B]:
 
     def interpret[R](
         self,
-        interpreter: Callable[[list[A], Callable[[list[B]], T]], R],
+        interpreter: Callable[[PList[A], Callable[[PList[B]], T]], R],
         whole: W,
     ) -> R:
         selected, rebuild = self.parts.run(whole)
         return interpreter(selected, rebuild)
 
     def map(self, operation: Callable[[A], B], whole: W) -> T:
-        return self.interpret(lambda values, rebuild: rebuild(list(map(operation, values))), whole)
+        return self.interpret(lambda values, rebuild: rebuild(plist(map(operation, values))), whole)
 
     def map_accum[S](
         self,
@@ -83,10 +83,10 @@ class Traversal[W, T, A, B]:
             next_state, result = step(state, value)
             return next_state, results.cons(result)
 
-        def run(values: list[A], rebuild: Callable[[list[B]], T]) -> tuple[S, T]:
+        def run(values: PList[A], rebuild: Callable[[PList[B]], T]) -> tuple[S, T]:
             start: tuple[S, PList[B]] = initial, plist()
             final, results = reduce(advance, values, start)
-            return final, rebuild(list(results.reverse()))
+            return final, rebuild(results.reverse())
 
         return self.interpret(run, whole)
 
@@ -94,9 +94,9 @@ class Traversal[W, T, A, B]:
         self,
         local: Lens[A, DA, B, DB],
         feedback: "Traversal[DT, DW, DB, DA]",
-        repeat: Callable[[Lens[A, DA, B, DB]], Lens[list[A], list[DA], list[B], list[DB]]],
+        repeat: Callable[[Lens[A, DA, B, DB]], Lens[PList[A], PList[DA], PList[B], PList[DB]]],
     ) -> Lens[W, DW, T, DT]:
-        def run(values: list[A], rebuild: Callable[[list[B]], T]) -> tuple[T, Callable[[DT], DW]]:
+        def run(values: PList[A], rebuild: Callable[[PList[B]], T]) -> tuple[T, Callable[[DT], DW]]:
             results, back = repeat(local).run(values)
 
             def backward(dt: DT) -> DW:
@@ -109,18 +109,18 @@ class Traversal[W, T, A, B]:
 
 
 def select[W, T, A, B](optic: Lens[W, T, A, B]) -> Traversal[W, T, A, B]:
-    def single(values: list[B]) -> B:
+    def single(values: PList[B]) -> B:
         [value] = values
         return value
 
-    singleton: Lens[A, B, list[A], list[B]] = wiring(lambda value: [value], single)
+    singleton: Lens[A, B, PList[A], PList[B]] = wiring(lambda value: plist((value,)), single)
     return Traversal(optic >> singleton)
 
 
-def each[A, B]() -> Traversal[list[A], list[B], A, B]:
-    def run(values: list[A]) -> tuple[list[A], Callable[[list[B]], list[B]]]:
-        def backward(replacements: list[B]) -> list[B]:
-            return [value for _, value in zip(values, replacements, strict=True)]
+def each[A, B]() -> Traversal[PList[A], PList[B], A, B]:
+    def run(values: PList[A]) -> tuple[PList[A], Callable[[PList[B]], PList[B]]]:
+        def backward(replacements: PList[B]) -> PList[B]:
+            return plist(value for _, value in zip(values, replacements, strict=True))
 
         return values, backward
 
@@ -128,8 +128,8 @@ def each[A, B]() -> Traversal[list[A], list[B], A, B]:
 
 
 def optional[A, B]() -> Traversal[A | None, B | None, A, B]:
-    def run(value: A | None) -> tuple[list[A], Callable[[list[B]], B | None]]:
-        def backward(values: list[B]) -> B | None:
+    def run(value: A | None) -> tuple[PList[A], Callable[[PList[B]], B | None]]:
+        def backward(values: PList[B]) -> B | None:
             match value, values:
                 case None, []:
                     return None
@@ -140,6 +140,6 @@ def optional[A, B]() -> Traversal[A | None, B | None, A, B]:
                 case _, _:
                     raise ValueError(f"expected 1 position, received {len(values)}")
 
-        return ([] if value is None else [value]), backward
+        return (plist() if value is None else plist((value,))), backward
 
     return Traversal(Lens(run))

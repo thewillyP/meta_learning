@@ -28,6 +28,12 @@ class Mealy[P, DP, S, DS, X, DX, Y, DY]:
             .post(assocR(Proxy[tuple[S, DS, T, DT, Z, DZ]]()))
         )
 
+    def then_shared[Q, DQ, Z, DZ](
+        self,
+        g: "Mealy[Q, DQ, S, DS, Y, DY, Z, DZ]",
+    ) -> "Mealy[tuple[P, Q], tuple[DP, DQ], S, DS, X, DX, Z, DZ]":
+        return Mealy(self.step >> g.step)
+
     def tensor[Q, DQ, T, DT, U, DU, V, DV](
         self,
         g: "Mealy[Q, DQ, T, DT, U, DU, V, DV]",

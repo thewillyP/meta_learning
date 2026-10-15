@@ -201,3 +201,17 @@ def diagonal[X, DX](
         return [x] * n, lambda dxs: reduce(add, dxs, zero(x))
 
     return Lens(run)
+
+
+def sequence[X, DX, Y, DY](local: Lens[X, DX, Y, DY]) -> Lens[list[X], list[DX], list[Y], list[DY]]:
+    def run(xs: list[X]) -> tuple[list[Y], Callable[[list[DY]], list[DX]]]:
+        executed = list(map(local.run, xs))
+        ys = [y for y, _ in executed]
+        backs = [back for _, back in executed]
+
+        def backward(dys: list[DY]) -> list[DX]:
+            return [back(dy) for back, dy in zip(backs, dys, strict=True)]
+
+        return ys, backward
+
+    return Lens(run)

@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jaxtyping import PyTree
 
 from .category import lens as structural
+from .category import state as stateful
 from .category.lib_types import Proxy, Unit
 from .category.lens import Lens
 from .category.mealy import Mealy
@@ -86,6 +87,13 @@ def mealy_autodiff[P: PyTree, S: PyTree, X: PyTree, Y: PyTree](
         return f(p, s, x)
 
     return Mealy(para_autodiff(transition))
+
+
+def local_state[Q, DQ, P, DP, S, X, DX, Y, DY](
+    initial: Lens[Q, DQ, S, S],
+    body: Mealy[P, DP, S, S, X, DX, Y, DY],
+) -> ParaLens[tuple[Q, P], tuple[DQ, DP], X, DX, Y, DY]:
+    return stateful.local_state(initial, body, zero_cotangent_like)
 
 
 def copy[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[X, X], tuple[DX, DX]]:

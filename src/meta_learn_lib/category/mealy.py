@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .lib_types import Proxy, Unit
-from .lens import Lens, assocL, assocR, exchange, identity, snd, swap
-from .optics import Focus
+from .lens import Lens, assocL, assocR, exchange, snd, swap
+from .optics import Focus, first as focus_first, second as focus_second
 from .paralens import ParaLens, unit
 
 
@@ -42,20 +42,15 @@ class Mealy[P, DP, S, DS, X, DX, Y, DY]:
         self,
         g: "Mealy[Q, DQ, T, DT, Y, DY, Z, DZ]",
     ) -> "Mealy[tuple[P, Q], tuple[DP, DQ], tuple[S, T], tuple[DS, DT], X, DX, Z, DZ]":
-        return Mealy(
-            self.step.second(Proxy[tuple[T, DT]]())
-            .pre(
-                (swap(Proxy[tuple[S, DS, T, DT]]()) @ identity(Proxy[tuple[X, DX]]()))
-                >> assocL(Proxy[tuple[T, DT, S, DS, X, DX]]())
-            )
-            .post(
-                assocR(Proxy[tuple[T, DT, S, DS, Y, DY]]())
-                >> (swap(Proxy[tuple[T, DT, S, DS]]()) @ identity(Proxy[tuple[Y, DY]]()))
-                >> assocL(Proxy[tuple[S, DS, T, DT, Y, DY]]())
-            )
-            .then(g.step.second(Proxy[tuple[S, DS]]()))
-            .post(assocR(Proxy[tuple[S, DS, T, DT, Z, DZ]]()))
+        left = self.within(
+            focus_first(Proxy[tuple[S, T]]()),
+            focus_first(Proxy[tuple[DS, DT]]()),
         )
+        right = g.within(
+            focus_second(Proxy[tuple[S, T]]()),
+            focus_second(Proxy[tuple[DS, DT]]()),
+        )
+        return left.then_shared(right)
 
     def then_shared[Q, DQ, Z, DZ](
         self,

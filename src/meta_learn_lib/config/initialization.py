@@ -142,6 +142,13 @@ class Input[P](Initialization[P, P]):
 
 
 @dataclass(frozen=True)
+class Apply[P, A](Initialization[P, A]):
+    """Compute a value from the supplied context without drawing randomness."""
+
+    function: Callable[[P], A]
+
+
+@dataclass(frozen=True)
 class Pair[P, A, B](Initialization[P, tuple[A, B]]):
     """A heterogeneous pair whose two output types remain distinct."""
 
@@ -195,6 +202,11 @@ def compile_initial[P](description: Array[P]) -> Callable[[P, jax.Array], jax.Ar
 @overload
 def compile_initial[P](description: Input[P]) -> Callable[[P, jax.Array], P]:
     return lambda parameters, key: parameters
+
+
+@overload
+def compile_initial[P, A](description: Apply[P, A]) -> Callable[[P, jax.Array], A]:
+    return lambda context, key: description.function(context)
 
 
 @overload

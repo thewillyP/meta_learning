@@ -118,6 +118,18 @@ class Scan[P, S, DS, X, DX, Y, DY](Program[P, P, S, DS, X, DX, Y, DY]):
 
 
 @dataclass(frozen=True)
+class ScanEach[P, DP, S, DS, X, DX, Y, DY](Program[P, DP, S, DS, X, DX, Y, DY]):
+    body: Program[P, DP, S, DS, X, DX, Y, DY]
+    length: int
+
+
+@dataclass(frozen=True)
+class ScanMixed[Z, P, DP, S, DS, X, DX, Y, DY](Program[tuple[Z, P], tuple[Z, DP], S, DS, X, DX, Y, DY]):
+    body: Program[tuple[Z, P], tuple[Z, DP], S, DS, X, DX, Y, DY]
+    length: int
+
+
+@dataclass(frozen=True)
 class Batch[Z, P, DP, S, DS, X, DX, Y, DY](Program[tuple[Z, P], tuple[Z, DP], S, DS, X, DX, Y, DY]):
     body: Program[tuple[Z, P], tuple[Z, DP], S, DS, X, DX, Y, DY]
     size: int
@@ -258,6 +270,20 @@ def execute[P, S, DS, X, DX, Y, DY](
     term: Scan[P, S, DS, X, DX, Y, DY],
 ) -> Mealy[P, P, S, DS, X, DX, Y, DY]:
     return combinators.scan_shared(execute(term.body), term.length)
+
+
+@overload
+def execute[Z, P, DP, S, DS, X, DX, Y, DY](
+    term: ScanMixed[Z, P, DP, S, DS, X, DX, Y, DY],
+) -> Mealy[tuple[Z, P], tuple[Z, DP], S, DS, X, DX, Y, DY]:
+    return combinators.mapAccum(execute(term.body), term.length)
+
+
+@overload
+def execute[P, DP, S, DS, X, DX, Y, DY](
+    term: ScanEach[P, DP, S, DS, X, DX, Y, DY],
+) -> Mealy[P, DP, S, DS, X, DX, Y, DY]:
+    return combinators.scan(execute(term.body), term.length)
 
 
 @overload

@@ -174,6 +174,10 @@ def unit_intro[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[Unit, X], tup
     return wiring(lambda x: ((), x), backward)
 
 
+def with_unit[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[X, Unit], tuple[DX, Unit]]:
+    return unit_intro(Proxy[tuple[X, DX]]()) >> swap(Proxy[tuple[Unit, Unit, X, DX]]())
+
+
 def unit_elim[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[tuple[X, Unit], tuple[DX, Unit], X, DX]:
     return swap(Proxy[tuple[X, DX, Unit, Unit]]()) >> snd(Proxy[tuple[Unit, Unit, X, DX]](), lambda _: ())
 

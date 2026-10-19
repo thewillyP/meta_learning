@@ -50,6 +50,10 @@ def select(requested: Requested) -> Selection:
     return Selection(requested.source, requested.refs)
 
 
+def remaining(selected: Selection) -> Layout:
+    return Layout(tuple(ref for ref in selected.source.refs if ref not in selected.refs))
+
+
 def route[A, DA](
     requested: Requested,
     zero: Callable[[A], DA],
@@ -71,17 +75,36 @@ def route[A, DA](
     return Lens(run)
 
 
-def split[A, DA](size: int) -> Lens[Values[A], Values[DA], Parts[A], Parts[DA]]:
-    def join(parts: Parts[DA]) -> Values[DA]:
-        left, right = parts
-        return left + right
+def split_values[A](values: Values[A], size: int) -> Parts[A]:
+    return values[:size], values[size:]
 
-    return wiring(lambda values: (values[:size], values[size:]), join)
+
+def join_values[A](parts: Parts[A]) -> Values[A]:
+    left, right = parts
+    return left + right
+
+
+def split[A, DA](size: int) -> Partition[A, DA]:
+    return wiring(lambda values: split_values(values, size), join_values)
+
+
+def merge[A, DA](size: int) -> Assembly[A, DA]:
+    return wiring(join_values, lambda feedback: split_values(feedback, size))
+
+
+def paired[A, DA](
+    source: Layout,
+    left: Refs,
+    right: Refs,
+    zero: Callable[[A], DA],
+    add: Callable[[DA, DA], DA],
+) -> Partition[A, DA]:
+    return route(request(source, left + right), zero, add) >> split(len(left))
 
 
 def parse_selection[A, DA](requested: Selection) -> tuple[Partition[A, DA], Assembly[A, DA]]:
     source, refs = requested.source, requested.refs
-    rest = tuple(ref for ref in source.refs if ref not in refs)
+    rest = remaining(requested).refs
     ordered = refs + rest
     indices = tuple(source.refs.index(ref) for ref in ordered)
     inverse = tuple(ordered.index(ref) for ref in source.refs)
@@ -89,11 +112,10 @@ def parse_selection[A, DA](requested: Selection) -> tuple[Partition[A, DA], Asse
 
     def separate[T](values: Values[T]) -> Parts[T]:
         values = tuple(values[i] for i in indices)
-        return values[:size], values[size:]
+        return split_values(values, size)
 
     def join[T](parts: Parts[T]) -> Values[T]:
-        selected, remaining = parts
-        values = selected + remaining
+        values = join_values(parts)
         return tuple(values[i] for i in inverse)
 
     return wiring(separate, join), wiring(join, separate)

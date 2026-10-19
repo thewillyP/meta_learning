@@ -2,7 +2,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import overload
 
-import jax
 from plum import dispatch
 
 from ..algorithms import combinators
@@ -12,6 +11,7 @@ from ..category.mealy import Mealy, lift
 from ..category.optics import Focus
 from ..category.paralens import ParaLens
 from ..jax_backend import autodiff, mealy_autodiff
+from ..lib_types import PRNG
 from .initialization import Initialization, compile_initial
 
 
@@ -25,7 +25,7 @@ class Call[P, DP, S, DS, X, DX, Y, DY](Program[P, DP, S, DS, X, DX, Y, DY]):
 
 
 @dataclass(frozen=True)
-class Create[C, A](Program[Unit, Unit, Unit, Unit, tuple[C, jax.Array], tuple[C, jax.Array], A, A]):
+class Create[C, A](Program[Unit, Unit, Unit, Unit, tuple[C, PRNG], tuple[C, None], A, A]):
     initial: Initialization[C, A]
 
 
@@ -147,8 +147,8 @@ def execute[P, DP, S, DS, X, DX, Y, DY](term: Call[P, DP, S, DS, X, DX, Y, DY]) 
 
 
 @overload
-def execute[C, A](term: Create[C, A]) -> Mealy[Unit, Unit, Unit, Unit, tuple[C, jax.Array], tuple[C, jax.Array], A, A]:
-    def initialize(context_key: tuple[C, jax.Array]) -> A:
+def execute[C, A](term: Create[C, A]) -> Mealy[Unit, Unit, Unit, Unit, tuple[C, PRNG], tuple[C, None], A, A]:
+    def initialize(context_key: tuple[C, PRNG]) -> A:
         context, key = context_key
         return compile_initial(term.initial)(context, key)
 

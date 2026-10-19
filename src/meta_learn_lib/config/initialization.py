@@ -10,7 +10,7 @@ from ..algorithms.lib_types import UORO_AUX
 from ..utility.distributions import rademacher, uniform_unit
 from ..utility.util import to_vector
 
-type Initialize[P, A] = Callable[[P, jax.Array], A]
+type Initialize[P, A] = Callable[[P, PRNG], A]
 
 
 @dataclass(frozen=True)
@@ -195,24 +195,24 @@ class WithRankOne[P, S](Initialization[P, tuple[S, UORO_AUX]]):
 
 
 @overload
-def compile_initial[P](description: Array[P]) -> Callable[[P, jax.Array], jax.Array]:
+def compile_initial[P](description: Array[P]) -> Callable[[P, PRNG], jax.Array]:
     return lambda p, key: initializer(description.init)(key, description.shape, description.dtype)
 
 
 @overload
-def compile_initial[P](description: Input[P]) -> Callable[[P, jax.Array], P]:
+def compile_initial[P](description: Input[P]) -> Callable[[P, PRNG], P]:
     return lambda parameters, key: parameters
 
 
 @overload
-def compile_initial[P, A](description: Apply[P, A]) -> Callable[[P, jax.Array], A]:
+def compile_initial[P, A](description: Apply[P, A]) -> Callable[[P, PRNG], A]:
     return lambda context, key: description.function(context)
 
 
 @overload
-def compile_initial[P, A, B](description: Pair[P, A, B]) -> Callable[[P, jax.Array], tuple[A, B]]:
+def compile_initial[P, A, B](description: Pair[P, A, B]) -> Callable[[P, PRNG], tuple[A, B]]:
 
-    def run(parameters: P, key: jax.Array) -> tuple[A, B]:
+    def run(parameters: P, key: PRNG) -> tuple[A, B]:
         first = compile_initial(description.first)
         second = compile_initial(description.second)
         first_key, second_key = jax.random.split(key)
@@ -222,8 +222,8 @@ def compile_initial[P, A, B](description: Pair[P, A, B]) -> Callable[[P, jax.Arr
 
 
 @overload
-def compile_initial[P, A](description: Product[P, A]) -> Callable[[P, jax.Array], tuple[A, ...]]:
-    def run(parameters: P, key: jax.Array) -> tuple[A, ...]:
+def compile_initial[P, A](description: Product[P, A]) -> Callable[[P, PRNG], tuple[A, ...]]:
+    def run(parameters: P, key: PRNG) -> tuple[A, ...]:
         parts = tuple(compile_initial(part) for part in description.parts)
         return tuple(make(parameters, k) for make, k in zip(parts, jax.random.split(key, len(parts)), strict=True))
 
@@ -231,8 +231,8 @@ def compile_initial[P, A](description: Product[P, A]) -> Callable[[P, jax.Array]
 
 
 @overload
-def compile_initial[P, A, B](description: Then[P, A, B]) -> Callable[[P, jax.Array], B]:
-    def run(parameters: P, key: jax.Array) -> B:
+def compile_initial[P, A, B](description: Then[P, A, B]) -> Callable[[P, PRNG], B]:
+    def run(parameters: P, key: PRNG) -> B:
         first = compile_initial(description.first)
         second = compile_initial(description.second)
         first_key, second_key = jax.random.split(key)
@@ -242,8 +242,8 @@ def compile_initial[P, A, B](description: Then[P, A, B]) -> Callable[[P, jax.Arr
 
 
 @overload
-def compile_initial[P, A](description: Copies[P, A]) -> Callable[[P, jax.Array], A]:
-    def run(parameters: P, key: jax.Array) -> A:
+def compile_initial[P, A](description: Copies[P, A]) -> Callable[[P, PRNG], A]:
+    def run(parameters: P, key: PRNG) -> A:
         body = compile_initial(description.body)
         mapped = eqx.filter_vmap(body, in_axes=(description.in_axes, 0))
         return mapped(parameters, jax.random.split(key, description.size))
@@ -252,8 +252,8 @@ def compile_initial[P, A](description: Copies[P, A]) -> Callable[[P, jax.Array],
 
 
 @overload
-def compile_initial[P, S](description: WithSensitivity[P, S]) -> Callable[[P, jax.Array], tuple[S, jax.Array]]:
-    def run(parameters: P, key: jax.Array) -> tuple[S, jax.Array]:
+def compile_initial[P, S](description: WithSensitivity[P, S]) -> Callable[[P, PRNG], tuple[S, jax.Array]]:
+    def run(parameters: P, key: PRNG) -> tuple[S, jax.Array]:
         make = compile_initial(description.state)
         state = make(parameters, key)
         parameters_flat = to_vector(parameters)
@@ -270,8 +270,8 @@ def compile_initial[P, S](description: WithSensitivity[P, S]) -> Callable[[P, ja
 
 
 @overload
-def compile_initial[P, S](description: WithRankOne[P, S]) -> Callable[[P, jax.Array], tuple[S, UORO_AUX]]:
-    def run(parameters: P, key: jax.Array) -> tuple[S, UORO_AUX]:
+def compile_initial[P, S](description: WithRankOne[P, S]) -> Callable[[P, PRNG], tuple[S, UORO_AUX]]:
+    def run(parameters: P, key: PRNG) -> tuple[S, UORO_AUX]:
         make = compile_initial(description.state)
         draw = sampler(description.noise)
         state_key, noise_key, next_key = jax.random.split(key, 3)
@@ -290,10 +290,10 @@ def compile_initial[P, S](description: WithRankOne[P, S]) -> Callable[[P, jax.Ar
 
 
 @overload
-def compile_initial[P, A](description: Initialization[P, A]) -> Callable[[P, jax.Array], A]:
+def compile_initial[P, A](description: Initialization[P, A]) -> Callable[[P, PRNG], A]:
     raise NotImplementedError
 
 
 @dispatch
-def compile_initial[P, A](description: Initialization[P, A]) -> Callable[[P, jax.Array], A]:
+def compile_initial[P, A](description: Initialization[P, A]) -> Callable[[P, PRNG], A]:
     raise NotImplementedError

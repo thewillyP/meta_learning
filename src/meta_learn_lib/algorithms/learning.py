@@ -3,7 +3,7 @@ from meta_learn_lib.category.lens import *
 from meta_learn_lib.category.paralens import *
 from meta_learn_lib.lib_types import JACOBIAN, PRNG
 from meta_learn_lib.utility.distributions import SAMPLER
-from meta_learn_lib.utility.util import zero_cotangent_like
+from meta_learn_lib.jax_backend import zero_cotangent_like
 
 import equinox as eqx
 import jax.flatten_util

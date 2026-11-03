@@ -137,6 +137,14 @@ class Array[P](Initialization[P, jax.Array]):
 
 
 @dataclass(frozen=True)
+class LinearModule[P](Initialization[P, eqx.nn.Linear]):
+    input_size: int
+    output_size: int
+    dtype: str
+    init: Init
+
+
+@dataclass(frozen=True)
 class Input[P](Initialization[P, P]):
     """Use the supplied values without allocating them again."""
 
@@ -202,6 +210,19 @@ def compile_initial[P](description: Array[P]) -> Callable[[P, PRNG], jax.Array]:
 @overload
 def compile_initial[P](description: Input[P]) -> Callable[[P, PRNG], P]:
     return lambda parameters, key: parameters
+
+
+@overload
+def compile_initial[P](description: LinearModule[P]) -> Callable[[P, PRNG], eqx.nn.Linear]:
+    def run(parameters: P, key: PRNG) -> eqx.nn.Linear:
+        module_key, weight_key = jax.random.split(key)
+        layer = eqx.nn.Linear(description.input_size, description.output_size, use_bias=False, key=module_key)
+        weight = initializer(description.init)(
+            weight_key, (description.output_size, description.input_size), description.dtype
+        )
+        return eqx.tree_at(lambda layer: layer.weight, layer, weight)
+
+    return run
 
 
 @overload

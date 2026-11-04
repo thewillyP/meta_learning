@@ -1,22 +1,21 @@
 from dataclasses import dataclass
-from typing import Callable
 
-from .lib_types import Proxy
-from .lens import Lens, assocL, assocR, copy, exchange, identity, snd, swap, wiring
+from .lib_types import Monoid, Proxy
+from .lens import Lens, assocL, assocR, copy, exchange, identity, snd, swap
 
 
 @dataclass(frozen=True)
 class ParaLens[P, DP, X, DX, Y, DY]:
-    arrow: Lens[tuple[dict[str, P], X], tuple[dict[str, DP], DX], Y, DY]
-    mappend: Callable[[dict[str, DP], dict[str, DP]], dict[str, DP]]
+    arrow: Lens[tuple[P, X], tuple[DP, DX], Y, DY]
+    monoid: Monoid[P, DP]
 
     def then[Z, DZ](self, g: "ParaLens[P, DP, Y, DY, Z, DZ]") -> "ParaLens[P, DP, X, DX, Z, DZ]":
         return ParaLens(
             self.share(Proxy[tuple[X, DX]]())
-            >> assocL(Proxy[tuple[dict[str, P], dict[str, DP], dict[str, P], dict[str, DP], X, DX]]())
-            >> (identity(Proxy[tuple[dict[str, P], dict[str, DP]]]()) @ self.arrow)
+            >> assocL(Proxy[tuple[P, DP, P, DP, X, DX]]())
+            >> (identity(Proxy[tuple[P, DP]]()) @ self.arrow)
             >> g.arrow,
-            self.mappend,
+            self.monoid,
         )
 
     def tensor[U, DU, V, DV](
@@ -25,9 +24,9 @@ class ParaLens[P, DP, X, DX, Y, DY]:
     ) -> "ParaLens[P, DP, tuple[X, U], tuple[DX, DU], tuple[Y, V], tuple[DY, DV]]":
         return ParaLens(
             self.share(Proxy[tuple[tuple[X, U], tuple[DX, DU]]]())
-            >> exchange(Proxy[tuple[dict[str, P], dict[str, DP], dict[str, P], dict[str, DP], X, DX, U, DU]]())
+            >> exchange(Proxy[tuple[P, DP, P, DP, X, DX, U, DU]]())
             >> (self.arrow @ g.arrow),
-            self.mappend,
+            self.monoid,
         )
 
     def __rshift__[B, DB, C, DC, Z, DZ](
@@ -42,30 +41,21 @@ class ParaLens[P, DP, X, DX, Y, DY]:
     ) -> "ParaLens[P, DP, tuple[B, D], tuple[DB, DD], tuple[C, E], tuple[DC, DE]]":
         return f.tensor(g)
 
-    def rename(self, substitution: dict[str, str]) -> "ParaLens[P, DP, X, DX, Y, DY]":
-        inverse = {new: old for old, new in substitution.items()}
-
-        def forward(p: dict[str, P]) -> dict[str, P]:
-            return {inverse.get(k, k): v for k, v in p.items()}
-
-        def backward(dp: dict[str, DP]) -> dict[str, DP]:
-            return {substitution.get(k, k): v for k, v in dp.items()}
-
-        return ParaLens(wiring(forward, backward).first(Proxy[tuple[X, DX]]()) >> self.arrow, self.mappend)
+    def reparam[Q, DQ](self, r: Lens[Q, DQ, P, DP], monoid: Monoid[Q, DQ]) -> "ParaLens[Q, DQ, X, DX, Y, DY]":
+        return ParaLens(r.first(Proxy[tuple[X, DX]]()) >> self.arrow, monoid)
 
     def pre[W, DW](self, f: Lens[W, DW, X, DX]) -> "ParaLens[P, DP, W, DW, Y, DY]":
-        return ParaLens(f.second(Proxy[tuple[dict[str, P], dict[str, DP]]]()) >> self.arrow, self.mappend)
+        return ParaLens(f.second(Proxy[tuple[P, DP]]()) >> self.arrow, self.monoid)
 
     def post[Z, DZ](self, g: Lens[Y, DY, Z, DZ]) -> "ParaLens[P, DP, X, DX, Z, DZ]":
-        return ParaLens(self.arrow >> g, self.mappend)
+        return ParaLens(self.arrow >> g, self.monoid)
 
     def first[C, DC](
         self, _: Proxy[tuple[C, DC]]
     ) -> "ParaLens[P, DP, tuple[X, C], tuple[DX, DC], tuple[Y, C], tuple[DY, DC]]":
         return ParaLens(
-            assocR(Proxy[tuple[dict[str, P], dict[str, DP], X, DX, C, DC]]())
-            >> self.arrow.first(Proxy[tuple[C, DC]]()),
-            self.mappend,
+            assocR(Proxy[tuple[P, DP, X, DX, C, DC]]()) >> self.arrow.first(Proxy[tuple[C, DC]]()),
+            self.monoid,
         )
 
     def second[C, DC](
@@ -79,30 +69,9 @@ class ParaLens[P, DP, X, DX, Y, DY]:
 
     def share[W, DW](
         self, _: Proxy[tuple[W, DW]]
-    ) -> Lens[
-        tuple[dict[str, P], W],
-        tuple[dict[str, DP], DW],
-        tuple[tuple[dict[str, P], dict[str, P]], W],
-        tuple[tuple[dict[str, DP], dict[str, DP]], DW],
-    ]:
-        return copy(Proxy[tuple[dict[str, P], dict[str, DP]]](), self.mappend).first(Proxy[tuple[W, DW]]())
+    ) -> Lens[tuple[P, W], tuple[DP, DW], tuple[tuple[P, P], W], tuple[tuple[DP, DP], DW]]:
+        return copy(Proxy[tuple[P, DP]](), self.monoid.mappend).first(Proxy[tuple[W, DW]]())
 
 
-def mempty[P, DP](_: dict[str, P]) -> dict[str, DP]:
-    return {}
-
-
-def keywise[DP](add: Callable[[DP, DP], DP]) -> Callable[[dict[str, DP], dict[str, DP]], dict[str, DP]]:
-    def mappend(left: dict[str, DP], right: dict[str, DP]) -> dict[str, DP]:
-        both = {name: add(left[name], right[name]) for name in left.keys() & right.keys()}
-        return left | right | both
-
-    return mappend
-
-
-def unit[P, DP, X, DX, Y, DY](
-    _: Proxy[P],
-    f: Lens[X, DX, Y, DY],
-    mappend: Callable[[dict[str, DP], dict[str, DP]], dict[str, DP]],
-) -> ParaLens[P, DP, X, DX, Y, DY]:
-    return ParaLens(snd(Proxy[tuple[dict[str, P], dict[str, DP], X, DX]](), mempty) >> f, mappend)
+def unit[P, DP, X, DX, Y, DY](f: Lens[X, DX, Y, DY], monoid: Monoid[P, DP]) -> ParaLens[P, DP, X, DX, Y, DY]:
+    return ParaLens(snd(Proxy[tuple[P, DP, X, DX]](), monoid.mempty) >> f, monoid)

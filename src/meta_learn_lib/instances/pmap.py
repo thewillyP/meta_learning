@@ -4,11 +4,11 @@ from pyrsistent import pmap
 from pyrsistent.typing import PMap
 
 from ..category.lens import wiring
-from ..category.lib_types import Monoid
+from ..category.lib_types import Monoid, Proxy
 from ..category.paralens import ParaLens
 
 
-def keywise[P, DP](add: Callable[[DP, DP], DP]) -> Monoid[PMap[str, P], PMap[str, DP]]:
+def keywise[P, DP](_: Proxy[P], add: Callable[[DP, DP], DP]) -> Monoid[PMap[str, P], PMap[str, DP]]:
     return Monoid(lambda _: pmap(), lambda left, right: left.update_with(add, right))
 
 

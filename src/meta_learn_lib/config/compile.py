@@ -19,7 +19,7 @@ from ..category.lib_types import Proxy, Unit
 from ..category.mealy import Mealy
 from ..category.optics import Focus, focus, second
 from ..category.paralens import ParaLens
-from ..jax_backend import (
+from ..instances.jax_backend import (
     autodiff,
     learning_rate_log,
     mealy_autodiff,
@@ -195,9 +195,7 @@ def lower(
     return cell.post(autodiff(lambda context: context[1]))
 
 
-def sequence_step(
-    body: Cell[Tree, Tree], get: Callable[[Context], Tree], remember: bool
-) -> Cell[Context, Context]:
+def sequence_step(body: Cell[Tree, Tree], get: Callable[[Context], Tree], remember: bool) -> Cell[Context, Context]:
     def finish(result):
         value, (original, _, results) = result
         return original, value, results + (value,) if remember else results
@@ -232,9 +230,7 @@ def lower(
     term: s.Batch, catalog: Catalog, exposed: Layout, inputs: Shape, stack: tuple[str, ...]
 ) -> Mealy[Unit, Unit, Frame, Frame, Tree, Tree, Tree, Tree]:
     if updates := written(term.body, catalog, stack):
-        raise ValueError(
-            f"batch branches cannot write shared outer bindings: {updates}; give each branch a scope"
-        )
+        raise ValueError(f"batch branches cannot write shared outer bindings: {updates}; give each branch a scope")
     body = lower(term.body, catalog, exposed, unstack(inputs, term.size), stack)
     size = term.size
 
@@ -271,11 +267,7 @@ def lower(
     return (
         body.first(Proxy())
         .pre(autodiff(lambda x: (x["features"], x["target"])))
-        .post(
-            autodiff(
-                lambda prediction_target: reduce_loss(measure(prediction_target[0], prediction_target[1]))
-            )
-        )
+        .post(autodiff(lambda prediction_target: reduce_loss(measure(prediction_target[0], prediction_target[1]))))
     )
 
 
@@ -287,9 +279,7 @@ def initializer(
         controls = value_focus(exposed, algorithm.controls)
         targets = value_focus(exposed, algorithm.targets)
         make = algorithm.make
-        return mealy_autodiff(
-            lambda unit, state, x: (state, make(controls.get(state)).init(targets.get(state)))
-        )
+        return mealy_autodiff(lambda unit, state, x: (state, make(controls.get(state)).init(targets.get(state))))
     return initialize_recipe(catalog.recipes[ref], ref, catalog, exposed, inputs)
 
 
@@ -342,8 +332,7 @@ def enter_scope(
         ready = next((r for r in pending if dependencies(r, catalog, ()) <= set(current.refs)), None)
         if ready is None:
             missing = {
-                r.name: tuple(d.name for d in dependencies(r, catalog, ()) if d not in current.refs)
-                for r in pending
+                r.name: tuple(d.name for d in dependencies(r, catalog, ()) if d not in current.refs) for r in pending
             }
             raise ValueError(f"missing or cyclic initialization dependencies: {missing}")
         cell = initializer(ready, catalog, current, inputs)
@@ -428,9 +417,7 @@ def lower(
     algorithms = catalog.algorithms[term.optimizer]
     opt = reduce(lambda left, right: left @ right, tuple(group_optimizer(a) for a in algorithms))
     if overlap := written(term.body, catalog, stack) & set(opt.targets):
-        raise ValueError(
-            f"objective also writes its optimizer targets: {overlap}; initialize a separate inner copy"
-        )
+        raise ValueError(f"objective also writes its optimizer targets: {overlap}; initialize a separate inner copy")
     selected = select(request(exposed, opt.targets))
     partition, assemble = parse_selection(selected)
     body = lower(term.body, catalog, exposed, inputs, stack)
@@ -455,8 +442,7 @@ def lower(
         key, values = state
         _, rest = partition.get(values)
         groups = tuple(
-            (memory.get(state)[0], target.get(state))
-            for memory, target in zip(memories, targets, strict=True)
+            (memory.get(state)[0], target.get(state)) for memory, target in zip(memories, targets, strict=True)
         )
         (updated, (key, rest)), y = learning.step.arrow.get(
             ((controls.get(state), ()), ((pack_groups(groups), (key, rest)), x))

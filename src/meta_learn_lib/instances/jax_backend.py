@@ -6,11 +6,11 @@ import jax.numpy as jnp
 from jaxtyping import PyTree
 from pyrsistent import PList
 
-from .category import lens as structural
-from .category.lib_types import Proxy, Unit
-from .category.lens import Lens
-from .category.mealy import Mealy
-from .category.paralens import ParaLens
+from ..category import lens as structural
+from ..category.lib_types import Proxy, Unit
+from ..category.lens import Lens
+from ..category.mealy import Mealy
+from ..category.paralens import ParaLens
 
 
 def zero_cotangent_like[T](tree: T) -> T:

@@ -3,9 +3,9 @@ from typing import Callable
 from pyrsistent import pmap
 from pyrsistent.typing import PMap
 
-from .lens import wiring
-from .lib_types import Monoid
-from .paralens import ParaLens
+from ..category.lens import wiring
+from ..category.lib_types import Monoid
+from ..category.paralens import ParaLens
 
 
 def keywise[P, DP](add: Callable[[DP, DP], DP]) -> Monoid[PMap[str, P], PMap[str, DP]]:

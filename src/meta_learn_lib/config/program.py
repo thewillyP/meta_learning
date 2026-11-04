@@ -10,7 +10,7 @@ from ..category.lib_types import Proxy, Unit
 from ..category.mealy import Mealy, lift
 from ..category.optics import Focus
 from ..category.paralens import ParaLens
-from ..jax_backend import autodiff, mealy_autodiff
+from ..instances.jax_backend import autodiff, mealy_autodiff
 from ..lib_types import PRNG
 from .initialization import Initialization, compile_initial
 

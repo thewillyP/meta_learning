@@ -6,7 +6,7 @@ from ..category.lib_types import Proxy, Unit
 from ..category.mealy import lift
 from ..category.paralens import ParaLens
 from ..lib_types import PRNG
-from ..jax_backend import add_cotangents, zero_cotangent_like
+from ..instances.jax_backend import add_cotangents, zero_cotangent_like
 from . import initialization as init
 from . import program as prog
 from .bindings import (

@@ -3,7 +3,7 @@ import jax
 from pyrsistent import PClass, field
 from pyrsistent.typing import PMap
 
-from ..pytree.pyrsistent import register_pclass
+from ..backend.pytree import register_pclass
 
 
 @register_pclass

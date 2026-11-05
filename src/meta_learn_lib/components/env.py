@@ -7,6 +7,6 @@ from ..pytree.pyrsistent import register_pclass
 
 
 @register_pclass
-class World(PClass):
+class Env(PClass):
     arrays: PMap[str, jax.Array] = field()
     norms: PMap[str, eqx.nn.LayerNorm | eqx.nn.GroupNorm] = field()

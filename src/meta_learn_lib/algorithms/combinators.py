@@ -7,7 +7,7 @@ from ..category.lib_types import Proxy, Unit
 from ..category.lens import Lens, swap, unit_intro
 from ..category.mealy import Mealy
 from ..category.paralens import ParaLens
-from ..backend.jax_backend import add_cotangents, filter_scan, fst, mealy_autodiff, snd, zero_cotangent_like
+from ..backend.jax import add_cotangents, filter_scan, fst, mealy_autodiff, snd, zero_cotangent_like
 
 
 def update_rule[H, Z, P, DP](

@@ -2,7 +2,7 @@ from collections.abc import Hashable, Iterable
 from typing import Protocol, Self
 
 import jax
-from pyrsistent import PMap, plist, pmap, pvector
+from pyrsistent import PClass, PMap, plist, pmap, pvector
 from pyrsistent._pvector import PythonPVector, python_pvector
 
 
@@ -30,3 +30,15 @@ jax.tree_util.register_pytree_with_keys(PythonPVector, _sequence_flatten, lambda
 
 if type(pvector()) is not PythonPVector:
     jax.tree_util.register_pytree_with_keys(type(pvector()), _sequence_flatten, lambda _, values: pvector(values))
+
+
+def register_pclass[C: PClass](cls: type[C]) -> type[C]:
+    names = tuple(sorted(cls.__annotations__))
+
+    def flatten(obj: C) -> tuple[tuple[tuple[Hashable, object], ...], None]:
+        return tuple((jax.tree_util.GetAttrKey(name), getattr(obj, name)) for name in names), None
+
+    jax.tree_util.register_pytree_with_keys(
+        cls, flatten, lambda _, values: cls(**dict(zip(names, values, strict=True)))
+    )
+    return cls

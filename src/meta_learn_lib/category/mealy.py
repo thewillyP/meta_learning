@@ -1,9 +1,7 @@
 from dataclasses import dataclass
-from typing import Callable
 
-from .lib_types import Proxy, Unit
-from .lens import Lens, assocL, assocR, exchange, snd, swap
-from .optics import Focus, first as focus_first, second as focus_second
+from .lib_types import Monoid, Proxy
+from .lens import Lens, assocL, assocR, swap
 from .paralens import ParaLens, unit
 
 
@@ -11,77 +9,29 @@ from .paralens import ParaLens, unit
 class Mealy[P, DP, S, DS, X, DX, Y, DY]:
     step: ParaLens[P, DP, tuple[S, X], tuple[DS, DX], tuple[S, Y], tuple[DS, DY]]
 
-    def within[W, DW](
-        self,
-        state: Focus[W, S],
-        feedback: Focus[DW, DS],
-    ) -> "Mealy[P, DP, W, DW, X, DX, Y, DY]":
-        def run(p_wx: tuple[P, tuple[W, X]]) -> tuple[tuple[W, Y], Callable[[tuple[DW, DY]], tuple[DP, tuple[DW, DX]]]]:
-            p, (whole, x) = p_wx
-            s, replace_state = state.run(whole)
-            (s_next, y), back = self.step.arrow.run((p, (s, x)))
-
-            def backward(dw_dy: tuple[DW, DY]) -> tuple[DP, tuple[DW, DX]]:
-                dw, dy = dw_dy
-                ds, replace_feedback = feedback.run(dw)
-                dp, (ds_previous, dx) = back((ds, dy))
-                return dp, (replace_feedback(ds_previous), dx)
-
-            return (replace_state(s_next), y), backward
-
-        return Mealy(ParaLens(Lens(run)))
-
-    def local_state[Q, DQ](
-        self,
-        initial: Lens[Q, DQ, S, DS],
-        close: Callable[[S], DS],
-    ) -> ParaLens[tuple[Q, P], tuple[DQ, DP], X, DX, Y, DY]:
-        return self.step.pre(initial.first(Proxy[tuple[X, DX]]())).post(snd(Proxy[tuple[S, DS, Y, DY]](), close)).join()
-
-    def then[Q, DQ, T, DT, Z, DZ](
-        self,
-        g: "Mealy[Q, DQ, T, DT, Y, DY, Z, DZ]",
-    ) -> "Mealy[tuple[P, Q], tuple[DP, DQ], tuple[S, T], tuple[DS, DT], X, DX, Z, DZ]":
-        left = self.within(
-            focus_first(Proxy[tuple[S, T]]()),
-            focus_first(Proxy[tuple[DS, DT]]()),
-        )
-        right = g.within(
-            focus_second(Proxy[tuple[S, T]]()),
-            focus_second(Proxy[tuple[DS, DT]]()),
-        )
-        return left.then_shared(right)
-
-    def then_shared[Q, DQ, Z, DZ](
-        self,
-        g: "Mealy[Q, DQ, S, DS, Y, DY, Z, DZ]",
-    ) -> "Mealy[tuple[P, Q], tuple[DP, DQ], S, DS, X, DX, Z, DZ]":
+    def then[Z, DZ](self, g: "Mealy[P, DP, S, DS, Y, DY, Z, DZ]") -> "Mealy[P, DP, S, DS, X, DX, Z, DZ]":
         return Mealy(self.step >> g.step)
 
-    def tensor[Q, DQ, T, DT, U, DU, V, DV](
+    def tensor[U, DU, V, DV](
         self,
-        g: "Mealy[Q, DQ, T, DT, U, DU, V, DV]",
-    ) -> "Mealy[tuple[P, Q], tuple[DP, DQ], tuple[S, T], tuple[DS, DT], tuple[X, U], tuple[DX, DU], tuple[Y, V], tuple[DY, DV]]":
-        return Mealy(
-            (self.step @ g.step)
-            .pre(exchange(Proxy[tuple[S, DS, T, DT, X, DX, U, DU]]()))
-            .post(exchange(Proxy[tuple[S, DS, Y, DY, T, DT, V, DV]]()))
-        )
+        g: "Mealy[P, DP, S, DS, U, DU, V, DV]",
+    ) -> "Mealy[P, DP, S, DS, tuple[X, U], tuple[DX, DU], tuple[Y, V], tuple[DY, DV]]":
+        return self.first(Proxy[tuple[U, DU]]()) >> g.second(Proxy[tuple[Y, DY]]())
 
-    def __rshift__[PF, DPF, PG, DPG, SF, DSF, SG, DSG, A, DA, B, DB, C, DC](
-        f: "Mealy[PF, DPF, SF, DSF, A, DA, B, DB]",
-        g: "Mealy[PG, DPG, SG, DSG, B, DB, C, DC]",
-    ) -> "Mealy[tuple[PF, PG], tuple[DPF, DPG], tuple[SF, SG], tuple[DSF, DSG], A, DA, C, DC]":
+    def __rshift__[Q, DQ, T, DT, A, DA, B, DB, C, DC](
+        f: "Mealy[Q, DQ, T, DT, A, DA, B, DB]",
+        g: "Mealy[Q, DQ, T, DT, B, DB, C, DC]",
+    ) -> "Mealy[Q, DQ, T, DT, A, DA, C, DC]":
         return f.then(g)
 
-    def __matmul__[PF, DPF, PG, DPG, SF, DSF, SG, DSG, A, DA, B, DB, C, DC, D, DD](
-        f: "Mealy[PF, DPF, SF, DSF, A, DA, B, DB]",
-        g: "Mealy[PG, DPG, SG, DSG, C, DC, D, DD]",
-    ) -> "Mealy[tuple[PF, PG], tuple[DPF, DPG], tuple[SF, SG], tuple[DSF, DSG], tuple[A, C], tuple[DA, DC], tuple[B, D], tuple[DB, DD]]":
+    def __matmul__[Q, DQ, T, DT, A, DA, B, DB, C, DC, D, DD](
+        f: "Mealy[Q, DQ, T, DT, A, DA, B, DB]",
+        g: "Mealy[Q, DQ, T, DT, C, DC, D, DD]",
+    ) -> "Mealy[Q, DQ, T, DT, tuple[A, C], tuple[DA, DC], tuple[B, D], tuple[DB, DD]]":
         return f.tensor(g)
 
-    def reparam[Q, DQ](self, r: Lens[Q, DQ, P, DP]) -> "Mealy[Q, DQ, S, DS, X, DX, Y, DY]":
-        return Mealy(self.step.reparam(r))
+    def reparam[Q, DQ](self, r: Lens[Q, DQ, P, DP], monoid: Monoid[Q, DQ]) -> "Mealy[Q, DQ, S, DS, X, DX, Y, DY]":
+        return Mealy(self.step.reparam(r, monoid))
 
     def pre[W, DW](self, f: Lens[W, DW, X, DX]) -> "Mealy[P, DP, S, DS, W, DW, Y, DY]":
         return Mealy(self.step.pre(f.second(Proxy[tuple[S, DS]]())))
@@ -108,9 +58,16 @@ class Mealy[P, DP, S, DS, X, DX, Y, DY]:
         )
 
 
-def stateless[P, DP, X, DX, Y, DY](f: ParaLens[P, DP, X, DX, Y, DY]) -> Mealy[P, DP, Unit, Unit, X, DX, Y, DY]:
-    return Mealy(f.second(Proxy[tuple[Unit, Unit]]()))
+def stateless[P, DP, S, DS, X, DX, Y, DY](
+    _: Proxy[tuple[S, DS]],
+    f: ParaLens[P, DP, X, DX, Y, DY],
+) -> Mealy[P, DP, S, DS, X, DX, Y, DY]:
+    return Mealy(f.second(Proxy[tuple[S, DS]]()))
 
 
-def lift[X, DX, Y, DY](f: Lens[X, DX, Y, DY]) -> Mealy[Unit, Unit, Unit, Unit, X, DX, Y, DY]:
-    return stateless(unit(f))
+def lift[P, DP, S, DS, X, DX, Y, DY](
+    _: Proxy[tuple[S, DS]],
+    f: Lens[X, DX, Y, DY],
+    monoid: Monoid[P, DP],
+) -> Mealy[P, DP, S, DS, X, DX, Y, DY]:
+    return stateless(Proxy[tuple[S, DS]](), unit(f, monoid))

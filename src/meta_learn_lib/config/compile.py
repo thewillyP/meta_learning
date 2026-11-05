@@ -19,7 +19,7 @@ from ..category.lib_types import Proxy, Unit
 from ..category.mealy import Mealy
 from ..category.optics import Focus, focus, second
 from ..category.paralens import ParaLens
-from ..instances.jax_backend import (
+from ..backend.jax_backend import (
     autodiff,
     learning_rate_log,
     mealy_autodiff,

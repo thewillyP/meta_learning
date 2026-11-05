@@ -29,16 +29,16 @@ class ParaLens[P, DP, X, DX, Y, DY]:
             self.monoid,
         )
 
-    def __rshift__[B, DB, C, DC, Z, DZ](
-        f: "ParaLens[P, DP, B, DB, C, DC]",
-        g: "ParaLens[P, DP, C, DC, Z, DZ]",
-    ) -> "ParaLens[P, DP, B, DB, Z, DZ]":
+    def __rshift__[Q, DQ, A, DA, B, DB, C, DC](
+        f: "ParaLens[Q, DQ, A, DA, B, DB]",
+        g: "ParaLens[Q, DQ, B, DB, C, DC]",
+    ) -> "ParaLens[Q, DQ, A, DA, C, DC]":
         return f.then(g)
 
-    def __matmul__[B, DB, C, DC, D, DD, E, DE](
-        f: "ParaLens[P, DP, B, DB, C, DC]",
-        g: "ParaLens[P, DP, D, DD, E, DE]",
-    ) -> "ParaLens[P, DP, tuple[B, D], tuple[DB, DD], tuple[C, E], tuple[DC, DE]]":
+    def __matmul__[Q, DQ, A, DA, B, DB, C, DC, D, DD](
+        f: "ParaLens[Q, DQ, A, DA, B, DB]",
+        g: "ParaLens[Q, DQ, C, DC, D, DD]",
+    ) -> "ParaLens[Q, DQ, tuple[A, C], tuple[DA, DC], tuple[B, D], tuple[DB, DD]]":
         return f.tensor(g)
 
     def reparam[Q, DQ](self, r: Lens[Q, DQ, P, DP], monoid: Monoid[Q, DQ]) -> "ParaLens[Q, DQ, X, DX, Y, DY]":

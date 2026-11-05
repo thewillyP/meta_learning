@@ -7,25 +7,11 @@ from jaxtyping import PyTree
 from pyrsistent import PList
 
 from ..category import lens as structural
-from ..category.lib_types import Proxy, Unit
+from ..category.lib_types import Monoid, Proxy, Unit
 from ..category.lens import Lens
 from ..category.mealy import Mealy
 from ..category.paralens import ParaLens
-
-
-def zero_cotangent_like[T](tree: T) -> T:
-    return jax.tree.map(jnp.zeros_like, eqx.filter(tree, eqx.is_inexact_array))
-
-
-def add_cotangents[T](a: T, b: T) -> T:
-    return eqx.combine(
-        jax.tree.map(
-            jnp.add,
-            eqx.filter(a, eqx.is_inexact_array),
-            eqx.filter(b, eqx.is_inexact_array),
-        ),
-        eqx.filter(a, eqx.is_inexact_array, inverse=True),
-    )
+from ..utility.util import add_cotangents, zero_cotangent_like
 
 
 def filter_scan[S, X, Y](
@@ -71,29 +57,24 @@ def autodiff[X: PyTree, Y: PyTree](f: Callable[[X], Y]) -> Lens[X, X, Y, Y]:
 
 def para_autodiff[P: PyTree, X: PyTree, Y: PyTree](
     f: Callable[[P, X], Y],
+    monoid: Monoid[P, P],
 ) -> ParaLens[P, P, X, X, Y, Y]:
     def uncurried(px: tuple[P, X]) -> Y:
         p, x = px
         return f(p, x)
 
-    return ParaLens(autodiff(uncurried))
+    return ParaLens(autodiff(uncurried), monoid)
 
 
 def mealy_autodiff[P: PyTree, S: PyTree, X: PyTree, Y: PyTree](
     f: Callable[[P, S, X], tuple[S, Y]],
+    monoid: Monoid[P, P],
 ) -> Mealy[P, P, S, S, X, X, Y, Y]:
     def transition(p: P, sx: tuple[S, X]) -> tuple[S, Y]:
         s, x = sx
         return f(p, s, x)
 
-    return Mealy(para_autodiff(transition))
-
-
-def local_state[Q, DQ, P, DP, S, X, DX, Y, DY](
-    initial: Lens[Q, DQ, S, S],
-    body: Mealy[P, DP, S, S, X, DX, Y, DY],
-) -> ParaLens[tuple[Q, P], tuple[DQ, DP], X, DX, Y, DY]:
-    return body.local_state(initial, zero_cotangent_like)
+    return Mealy(para_autodiff(transition, monoid))
 
 
 def copy[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[X, X], tuple[DX, DX]]:
@@ -116,10 +97,13 @@ def diagonal[X](_: Proxy[X], n: int) -> Lens[X, X, PList[X], PList[X]]:
     return structural.diagonal(Proxy[tuple[X, X]](), n, zero_cotangent_like, add_cotangents)
 
 
-learning_rate: Lens[jax.Array, jax.Array, Unit, Unit] = Lens(lambda loss: ((), lambda _: jnp.ones_like(loss)))
+def learning_rate() -> Lens[jax.Array, jax.Array, Unit, Unit]:
+    return Lens(lambda loss: ((), lambda _: jnp.ones_like(loss)))
 
-learning_rate_log: Lens[jax.Array, jax.Array, jax.Array, jax.Array] = (
-    copy(Proxy[tuple[jax.Array, jax.Array]]())
-    >> learning_rate.first(Proxy[tuple[jax.Array, jax.Array]]())
-    >> snd(Proxy[tuple[Unit, jax.Array, jax.Array]]())
-)
+
+def learning_rate_log() -> Lens[jax.Array, jax.Array, jax.Array, jax.Array]:
+    return (
+        copy(Proxy[tuple[jax.Array, jax.Array]]())
+        >> learning_rate().first(Proxy[tuple[jax.Array, jax.Array]]())
+        >> snd(Proxy[tuple[Unit, jax.Array, jax.Array]]())
+    )

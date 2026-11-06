@@ -7,7 +7,7 @@ from pyrsistent import PList
 
 from ..category import lens as structural
 from ..category.lib_types import Monoid, Proxy, Unit
-from ..category.lens import Lens, assocR, swap
+from ..category.lens import Lens, assocR, swap, wiring
 from ..category.mealy import Mealy
 from ..category.paralens import ParaLens
 from ..components.env import Env
@@ -181,6 +181,50 @@ def learn[X, DX, Y](
     opt: Optimizer, body: Mealy[Env, Env, Env, Env, X, DX, Y, Y]
 ) -> Mealy[Env, Env, Env, Env, X, X, Y, Y]:
     return put(Mealy(optimised(opt, body.step)), opt.state)
+
+
+def batch[X, DX, Y, DY](
+    cell: Mealy[Env, Env, Env, Env, X, DX, Y, DY],
+    to_map: frozenset[str],
+    size: int | None,
+) -> Mealy[Env, Env, Env, Env, X, DX, Y, DY]:
+    merge = cell.step.monoid.mappend
+
+    def run(
+        p_sxs: tuple[Env, tuple[Env, X]],
+    ) -> tuple[tuple[Env, Y], Callable[[tuple[Env, DY]], tuple[Env, tuple[Env, DX]]]]:
+        params, (state, xs) = p_sxs
+        p_share, ps = without_keys(to_map)(params), restrict_keys(to_map)(params)
+
+        def forward(p: Env, s: Env, x: X) -> tuple[Env, Y]:
+            return cell.step.arrow.get((merge(p_share, p), (s, x)))
+
+        def reverse(p: Env, s: Env, x: X, ds: Env, dy: DY) -> tuple[Env, tuple[Env, DX]]:
+            return cell.step.arrow.set((merge(p_share, p), (s, x)), (ds, dy))
+
+        s_final, ys = eqx.filter_vmap(forward, axis_size=size)(ps, state, xs)
+
+        def backward(ds_dys: tuple[Env, DY]) -> tuple[Env, tuple[Env, DX]]:
+            ds_final, dys = ds_dys
+            dp, ds_dxs = eqx.filter_vmap(reverse, axis_size=size)(ps, state, xs, ds_final, dys)
+            dp_share = jax.tree.map(lambda a: a.sum(0), without_keys(to_map)(dp))
+            return merge(dp_share, restrict_keys(to_map)(dp)), ds_dxs
+
+        return (s_final, ys), backward
+
+    return Mealy(ParaLens(Lens(run), cell.step.monoid))
+
+
+def cut[X](_: Proxy[X]) -> Lens[X, X, X, X]:
+    return wiring(lambda x: x, zero_cotangent_like)
+
+
+def detach[X](_: Proxy[X]) -> Lens[X, X, X, X]:
+    return wiring(lambda x: x, jax.lax.stop_gradient)
+
+
+def first_order(opt: Optimizer) -> Optimizer:
+    return Optimizer(ParaLens(opt.rule.arrow >> detach(Proxy[Env]()), opt.rule.monoid), opt.targets, opt.state)
 
 
 def copy[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[X, X], tuple[DX, DX]]:

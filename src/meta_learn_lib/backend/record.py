@@ -1,6 +1,5 @@
 from functools import reduce
 from typing import Callable
-
 import jax
 import pyrsistent
 from pyrsistent import pmap
@@ -26,11 +25,15 @@ def recordwise() -> Monoid[Env, Env]:
     return Monoid(mapwise(lambda _: pmap()), mappend)
 
 
-def restrict(names: frozenset[str]) -> Callable[[Env], Env]:
+def names(e: Env) -> frozenset[str]:
+    return frozenset().union(*(m.keys() for m in jax.tree.leaves(e, is_leaf=lambda x: isinstance(x, pyrsistent.PMap))))
+
+
+def restrict_keys(names: frozenset[str]) -> Callable[[Env], Env]:
     return mapwise(lambda m: pmap({k: v for k, v in m.items() if k in names}))
 
 
-def without(names: frozenset[str]) -> Callable[[Env], Env]:
+def without_keys(names: frozenset[str]) -> Callable[[Env], Env]:
     return mapwise(lambda m: pmap({k: v for k, v in m.items() if k not in names}))
 
 
@@ -39,7 +42,7 @@ def split(names: frozenset[str], monoid: Monoid[Env, Env]) -> Lens[Env, Env, tup
         chosen, rest = parts
         return monoid.mappend(chosen, rest)
 
-    return wiring(lambda e: (restrict(names)(e), without(names)(e)), backward)
+    return wiring(lambda e: (restrict_keys(names)(e), without_keys(names)(e)), backward)
 
 
 def rename[X, DX, Y, DY](

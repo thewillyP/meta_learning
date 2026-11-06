@@ -1,5 +1,4 @@
 from typing import Callable
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -11,6 +10,8 @@ from ..category.lib_types import Monoid, Proxy, Unit
 from ..category.lens import Lens
 from ..category.mealy import Mealy
 from ..category.paralens import ParaLens
+from ..components.env import Env
+from .record import restrict_keys, without_keys
 from ..utility.util import add_cotangents, zero_cotangent_like
 
 
@@ -75,6 +76,64 @@ def mealy_autodiff[P: PyTree, S: PyTree, X: PyTree, Y: PyTree](
         return f(p, s, x)
 
     return Mealy(para_autodiff(transition, monoid))
+
+
+def scan[X, DX, Y, DY](
+    cell: Mealy[Env, Env, Env, Env, X, DX, Y, DY],
+    to_reset: frozenset[str],
+    to_scan: frozenset[str],
+    length: int | None,
+) -> Mealy[Env, Env, Env, Env, X, DX, Y, DY]:
+    merge = cell.step.monoid.mappend
+
+    def run(
+        p_sxs: tuple[Env, tuple[Env, X]],
+    ) -> tuple[tuple[Env, Y], Callable[[tuple[Env, DY]], tuple[Env, tuple[Env, DX]]]]:
+        params, (state, xs) = p_sxs
+        p_share, ps = without_keys(to_scan)(params), restrict_keys(to_scan)(params)
+
+        def reset(_s: Env, _p: Env) -> Env:
+            return merge(without_keys(to_reset)(_s), restrict_keys(to_reset)(_p))
+
+        def forward(s: Env, px: tuple[Env, X]) -> tuple[Env, tuple[Env, Y]]:
+            p, x = px
+            p = merge(p_share, p)
+            s = reset(s, p)
+            s_next, y = cell.step.arrow.get((p, (s, x)))
+            return s_next, (s, y)
+
+        # first element of parameters (peel index 0) defines initial state
+        first = merge(p_share, jax.tree.map(lambda a: a[0] if eqx.is_array(a) else a, ps))
+        s_final, (tape, ys) = filter_scan(forward, reset(state, first), (ps, xs), length)
+
+        def backward(ds_dys: tuple[Env, DY]) -> tuple[Env, tuple[Env, DX]]:
+            ds_final, dys = ds_dys
+
+            def reverse(
+                acc: tuple[Env, Env],
+                step: tuple[Env, tuple[Env, X], DY],
+            ) -> tuple[tuple[Env, Env], tuple[Env, DX]]:
+                ds, dp_share = acc
+                s, (p, x), dy = step
+                p = merge(p_share, p)
+                dp, (ds_prev, dx) = cell.step.arrow.set((p, (s, x)), (ds, dy))
+                dp = merge(dp, restrict_keys(to_reset)(ds_prev))
+                ds_prev = merge(without_keys(to_reset)(ds_prev), zero_cotangent_like(restrict_keys(to_reset)(s)))
+                return (ds_prev, merge(dp_share, without_keys(to_scan)(dp))), (restrict_keys(to_scan)(dp), dx)
+
+            (ds_initial, dp_share), (dps, dxs) = filter_scan(
+                reverse,
+                (ds_final, zero_cotangent_like(p_share)),
+                (tape, (ps, xs), dys),
+                length,
+                True,
+            )
+            ds_initial = merge(without_keys(to_reset)(ds_initial), zero_cotangent_like(restrict_keys(to_reset)(state)))
+            return merge(dp_share, dps), (ds_initial, dxs)
+
+        return (s_final, ys), backward
+
+    return Mealy(ParaLens(Lens(run), cell.step.monoid))
 
 
 def copy[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[X, X], tuple[DX, DX]]:

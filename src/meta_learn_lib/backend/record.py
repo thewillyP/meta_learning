@@ -25,10 +25,6 @@ def recordwise() -> Monoid[Env, Env]:
     return Monoid(mapwise(lambda _: pmap()), mappend)
 
 
-def names(e: Env) -> frozenset[str]:
-    return frozenset().union(*(m.keys() for m in jax.tree.leaves(e, is_leaf=lambda x: isinstance(x, pyrsistent.PMap))))
-
-
 def restrict_keys(names: frozenset[str]) -> Callable[[Env], Env]:
     return mapwise(lambda m: pmap({k: v for k, v in m.items() if k in names}))
 
@@ -43,6 +39,14 @@ def split(names: frozenset[str], monoid: Monoid[Env, Env]) -> Lens[Env, Env, tup
         return monoid.mappend(chosen, rest)
 
     return wiring(lambda e: (restrict_keys(names)(e), without_keys(names)(e)), backward)
+
+
+def join(names: frozenset[str], monoid: Monoid[Env, Env]) -> Lens[tuple[Env, Env], tuple[Env, Env], Env, Env]:
+    def forward(parts: tuple[Env, Env]) -> Env:
+        chosen, rest = parts
+        return monoid.mappend(chosen, rest)
+
+    return wiring(forward, lambda e: (restrict_keys(names)(e), without_keys(names)(e)))
 
 
 def rename[X, DX, Y, DY](

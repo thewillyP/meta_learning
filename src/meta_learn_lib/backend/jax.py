@@ -7,11 +7,12 @@ from pyrsistent import PList
 
 from ..category import lens as structural
 from ..category.lib_types import Monoid, Proxy, Unit
-from ..category.lens import Lens
+from ..category.lens import Lens, assocR, swap
 from ..category.mealy import Mealy
 from ..category.paralens import ParaLens
 from ..components.env import Env
-from .record import restrict_keys, without_keys
+from ..components.optimizer import Optimizer
+from .record import join, restrict_keys, split, without_keys
 from ..utility.util import add_cotangents, zero_cotangent_like
 
 
@@ -134,6 +135,52 @@ def scan[X, DX, Y, DY](
         return (s_final, ys), backward
 
     return Mealy(ParaLens(Lens(run), cell.step.monoid))
+
+
+def update_rule(
+    get: Callable[[Env, Env], Env],
+    update: Callable[[Env, Env, Env], Env],
+    monoid: Monoid[Env, Env],
+) -> ParaLens[Env, Env, Env, Env, Env, Env]:
+    def run(hz: tuple[Env, Env]) -> tuple[Env, Callable[[Env], tuple[Env, Env]]]:
+        h, z = hz
+        return get(h, z), lambda dp: (monoid.mempty(h), update(h, z, dp))
+
+    return ParaLens(Lens(run), monoid)
+
+
+def optimised[X, DX, Y, DY](opt: Optimizer, body: ParaLens[Env, Env, X, DX, Y, DY]) -> ParaLens[Env, Env, X, DX, Y, DY]:
+    monoid = body.monoid
+    reparam = (
+        split(opt.state, monoid)
+        >> structural.copy(Proxy[tuple[Env, Env]](), monoid.mappend).second(Proxy[tuple[Env, Env]]())
+        >> assocR(Proxy[tuple[Env, Env, Env, Env, Env, Env]]())
+        >> swap(Proxy[tuple[Env, Env, Env, Env]]()).first(Proxy[tuple[Env, Env]]())
+        >> opt.rule.arrow.first(Proxy[tuple[Env, Env]]())
+        >> join(opt.targets, monoid)
+    )
+    return body.reparam(reparam, monoid)
+
+
+def put[X, DX, Y](
+    body: Mealy[Env, Env, Env, Env, X, DX, Y, Y],
+    state: frozenset[str],
+) -> Mealy[Env, Env, Env, Env, X, X, Y, Y]:
+    monoid = body.step.monoid
+
+    def transition(r: Env, zs: Env, x: X) -> tuple[Env, Y]:
+        z, s = restrict_keys(state)(zs), without_keys(state)(zs)
+        (s_next, y), backward = body.step.arrow.run((monoid.mappend(z, without_keys(state)(r)), (s, x)))
+        dq, _ = backward((zero_cotangent_like(s_next), zero_cotangent_like(y)))
+        return monoid.mappend(restrict_keys(state)(dq), s_next), y
+
+    return mealy_autodiff(transition, monoid)
+
+
+def learn[X, DX, Y](
+    opt: Optimizer, body: Mealy[Env, Env, Env, Env, X, DX, Y, Y]
+) -> Mealy[Env, Env, Env, Env, X, X, Y, Y]:
+    return put(Mealy(optimised(opt, body.step)), opt.state)
 
 
 def copy[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[X, DX, tuple[X, X], tuple[DX, DX]]:

@@ -83,4 +83,4 @@ def fold(log: PVector[Env]) -> Env:
             raise ValueError(f"logged twice: {sorted(clash)}")
         return recordwise().mappend(acc, entry)
 
-    return reduce(step, log, Env(arrays=pmap(), norms=pmap()))
+    return reduce(step, log, Env())

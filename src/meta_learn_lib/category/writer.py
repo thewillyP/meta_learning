@@ -2,12 +2,12 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import Callable, Generator
 from pyrsistent import PList, PVector, plist, pvector
+import equinox as eqx
 
 from .lib_types import Proxy
 
 
-@dataclass(frozen=True)
-class Writer[E, A]:
+class Writer[E, A](eqx.Module):
     value: A
     log: PVector[E]
 

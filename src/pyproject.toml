@@ -7,7 +7,7 @@ name = "meta_learn_lib"
 version = "0.1.0"
 description = "Online/Offline Meta Learning Library"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["donotation"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

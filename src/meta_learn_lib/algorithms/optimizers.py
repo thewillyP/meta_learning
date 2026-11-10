@@ -1,13 +1,15 @@
-from typing import Callable, cast
-
+from typing import Callable
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
 
-from ..category.lib_types import Unit
+from ..backend.jax import detach, update_rule
+from ..category.lib_types import Monoid, Proxy
 from ..category.paralens import ParaLens
-from .combinators import update_rule
+from ..category.writer import pure
+from ..components.env import Env
+from ..components.optimizer import Optimizer
 
 
 def exponentiated[T](theta: T, updates: optax.Updates) -> T:
@@ -32,38 +34,47 @@ def add_scalar_wd(wd_value: jax.Array) -> optax.GradientTransformation:
     return optax.stateless(f)
 
 
-def exponentiated_gradient[H](
-    base: Callable[[H], optax.GradientTransformation],
-) -> Callable[[tuple[jax.Array, H]], optax.GradientTransformation]:
-    def make(hp: tuple[jax.Array, H]) -> optax.GradientTransformation:
-        wd, base_hp = hp
-        return optax.chain(scale_by_sign_of_param(), add_scalar_wd(wd), base(base_hp))
+def exponentiated_gradient(
+    base: Callable[[Env], optax.GradientTransformation],
+    wd: str,
+) -> Callable[[Env], optax.GradientTransformation]:
+    def make(h: Env) -> optax.GradientTransformation:
+        return optax.chain(scale_by_sign_of_param(), add_scalar_wd(h.arrays[wd]), base(h))
 
     return make
 
 
-def optimizer[T, K](
-    make: Callable[[K], optax.GradientTransformation],
-    apply: Callable[[T, optax.Updates], T],
-) -> ParaLens[K, Unit, tuple[optax.OptState, T], tuple[optax.OptState, T], T, T]:
-    def get(k: K, state: tuple[optax.OptState, T]) -> T:
-        _, theta = state
-        return theta
+def optimizer(
+    make: Callable[[Env], optax.GradientTransformation],
+    apply: Callable[[Env, optax.Updates], Env],
+    targets: frozenset[str],
+    name: str,
+    monoid: Monoid[Env, Env],
+) -> Optimizer:
+    def theta(z: Env) -> Env:
+        return z.set(optstates=z.optstates.discard(name))
 
-    def update(k: K, state: tuple[optax.OptState, T], dtheta: T) -> tuple[optax.OptState, T]:
-        memory, theta = state
-        updates, memory_next = make(k).update(cast(optax.Params, dtheta), memory, cast(optax.Params, theta))
-        return memory_next, apply(theta, updates)
+    def get(h: Env, z: Env) -> Env:
+        return theta(z)
 
-    return update_rule(get, update)
+    def update(h: Env, z: Env, dp: Env):
+        params, static = eqx.partition(theta(z), eqx.is_inexact_array)
+        updates, optstate = make(h).update(eqx.filter(dp, eqx.is_inexact_array), z.optstates[name], params)
+        return pure(
+            Proxy[Env](),
+            eqx.combine(apply(params, updates), static).set(optstates=z.optstates.set(name, optstate)),
+        )
+
+    return Optimizer(update_rule(get, update, monoid), targets, targets | {name})
 
 
-def init_optimizer[T, K](
-    make: Callable[[K], optax.GradientTransformation],
-    k: K,
-    theta: T,
-) -> tuple[optax.OptState, T]:
-    return make(k).init(cast(optax.Params, theta)), theta
+def init_optimizer(make: Callable[[Env], optax.GradientTransformation], h: Env, theta: Env, name: str) -> Env:
+    params, _ = eqx.partition(theta, eqx.is_inexact_array)
+    return theta.set(optstates=theta.optstates.set(name, make(h).init(params)))
+
+
+def first_order(opt: Optimizer) -> Optimizer:
+    return Optimizer(ParaLens(opt.rule.arrow >> detach(Proxy[Env]()), opt.rule.monoid), opt.targets, opt.state)
 
 
 def sgd(lr: jax.Array, wd: jax.Array, momentum: jax.Array) -> optax.GradientTransformation:

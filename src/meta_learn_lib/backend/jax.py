@@ -12,7 +12,7 @@ from ..category.lens import Lens, assocR, swap, wiring
 from ..category.mealy import Mealy
 from ..category.paralens import ParaLens
 from ..category.writer import Writer, pure
-from ..components.env import Env
+from ..components.env import HP, Env, Log, Par, St
 from ..components.optimizer import Optimizer
 from .record import join, restrict_keys, split, without_keys
 from ..utility.util import add_cotangents, zero_cotangent_like
@@ -86,11 +86,11 @@ def mealy_autodiff[P: PyTree, S: PyTree, X: PyTree, Y: PyTree](
 
 
 def scan[X, DX, Y, DY](
-    cell: Mealy[Env, Env, Env, Env, Env, X, DX, Y, DY],
+    cell: Mealy[Log, Par, Par, St, St, X, DX, Y, DY],
     to_reset: frozenset[str],
     to_scan: frozenset[str],
     length: int | None,
-) -> Mealy[Env, Env, Env, Env, Env, X, DX, Y, DY]:
+) -> Mealy[Log, Par, Par, St, St, X, DX, Y, DY]:
     merge = cell.step.monoid.mappend
 
     def run(
@@ -145,67 +145,55 @@ def scan[X, DX, Y, DY](
     return Mealy(ParaLens(Lens(run), cell.step.monoid))
 
 
-def update_rule(
-    get: Callable[[Env, Env], Env],
-    update: Callable[[Env, Env, Env], Writer[Env, Env]],
-    monoid: Monoid[Env, Env],
-) -> ParaLens[Env, Env, Env, Env, Env, Env, Env]:
-    def run(hz: tuple[Env, Env]) -> Writer[Env, tuple[Env, Callable[[Env], Writer[Env, tuple[Env, Env]]]]]:
+def optimizer_reparam(
+    get: Callable[[HP, Par], Par],
+    update: Callable[[HP, Par, Par], Writer[Log, Par]],
+    monoid: Monoid[HP, HP],
+) -> ParaLens[Log, HP, HP, Par, Par, Par, Par]:
+    def run(hz: tuple[HP, Par]) -> Writer[Log, tuple[Par, Callable[[Par], Writer[Log, tuple[HP, Par]]]]]:
         h, z = hz
 
         @do()
-        def backward(dp: Env):
+        def backward(dp: Par):
             z_next = yield from update(h, z, dp)
-            return pure(Proxy[Env](), (monoid.mempty(h), z_next))
+            return pure(Proxy[Log](), (monoid.mempty(h), z_next))
 
-        return pure(Proxy[Env](), (get(h, z), backward))
+        return pure(Proxy[Log](), (get(h, z), backward))
 
     return ParaLens(Lens(run), monoid)
 
 
-def optimised[X, DX, Y, DY](
+def learn[X, DX, Y](
     opt: Optimizer,
-    body: ParaLens[Env, Env, Env, X, DX, Y, DY],
-) -> ParaLens[Env, Env, Env, X, DX, Y, DY]:
-    monoid = body.monoid
+    body: Mealy[Log, Par, Par, St, St, X, DX, Y, Y],
+) -> Mealy[Log, HP, HP, Par, Par, X, X, Y, Y]:
+    monoid = body.step.monoid
     reparam = (
         split(opt.state, monoid)
         >> structural.copy(Proxy[tuple[Env, Env, Env]](), monoid.mappend).second(Proxy[tuple[Env, Env]]())
         >> assocR(Proxy[tuple[Env, Env, Env, Env, Env, Env, Env]]())
         >> swap(Proxy[tuple[Env, Env, Env, Env, Env]]()).first(Proxy[tuple[Env, Env]]())
-        >> opt.rule.arrow.first(Proxy[tuple[Env, Env]]())
+        >> opt.reparam.arrow.first(Proxy[tuple[Env, Env]]())
         >> join(opt.targets, monoid)
     )
-    return body.reparam(reparam, monoid)
-
-
-def put[X, DX, Y](
-    body: Mealy[Env, Env, Env, Env, Env, X, DX, Y, Y],
-    state: frozenset[str],
-) -> Mealy[Env, Env, Env, Env, Env, X, X, Y, Y]:
-    monoid = body.step.monoid
+    optimised = body.step.reparam(reparam, monoid)
 
     @do()
-    def transition(r: Env, zs: Env, x: X):
-        z, s = restrict_keys(state)(zs), without_keys(state)(zs)
-        (s_next, y), backward = yield from body.step.arrow.run((monoid.mappend(z, without_keys(state)(r)), (s, x)))
+    def transition(r: HP, zs: Par, x: X):
+        z, s = restrict_keys(opt.state)(zs), without_keys(opt.state)(zs)
+        (s_next, y), backward = yield from optimised.arrow.run((monoid.mappend(z, without_keys(opt.state)(r)), (s, x)))
         dq, _ = yield from backward((zero_cotangent_like(s_next), zero_cotangent_like(y)))
-        return pure(Proxy[Env](), (monoid.mappend(restrict_keys(state)(dq), s_next), y))
+        zs_next = monoid.mappend(restrict_keys(opt.state)(dq), s_next)
+        return pure(Proxy[Log](), (zs_next, y))
 
     return mealy_autodiff(transition, monoid)
 
 
-def learn[X, DX, Y](
-    opt: Optimizer, body: Mealy[Env, Env, Env, Env, Env, X, DX, Y, Y]
-) -> Mealy[Env, Env, Env, Env, Env, X, X, Y, Y]:
-    return put(Mealy(optimised(opt, body.step)), opt.state)
-
-
 def batch[X, DX, Y, DY](
-    cell: Mealy[Env, Env, Env, Env, Env, X, DX, Y, DY],
+    cell: Mealy[Log, Par, Par, St, St, X, DX, Y, DY],
     to_map: frozenset[str],
     size: int | None,
-) -> Mealy[Env, Env, Env, Env, Env, X, DX, Y, DY]:
+) -> Mealy[Log, Par, Par, St, St, X, DX, Y, DY]:
     merge = cell.step.monoid.mappend
 
     def run(
@@ -240,10 +228,6 @@ def cut[X](_: Proxy[X]) -> Lens[Env, X, X, X, X]:
 
 def detach[X](_: Proxy[X]) -> Lens[Env, X, X, X, X]:
     return wiring(Proxy[Env](), lambda x: x, jax.lax.stop_gradient)
-
-
-def first_order(opt: Optimizer) -> Optimizer:
-    return Optimizer(ParaLens(opt.rule.arrow >> detach(Proxy[Env]()), opt.rule.monoid), opt.targets, opt.state)
 
 
 def copy[X, DX](_: Proxy[tuple[X, DX]]) -> Lens[Env, X, DX, tuple[X, X], tuple[DX, DX]]:

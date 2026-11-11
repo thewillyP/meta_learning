@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
 from ..category.paralens import ParaLens
-from .env import Env
+from .env import HP, Log, Par, St
 
 
 @dataclass(frozen=True)
 class Optimizer:
-    rule: ParaLens[Env, Env, Env, Env, Env, Env, Env]
+    reparam: ParaLens[Log, HP, HP, St, St, Par, Par]
     targets: frozenset[str]
     state: frozenset[str]

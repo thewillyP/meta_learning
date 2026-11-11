@@ -4,11 +4,11 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from ..backend.jax import detach, update_rule
+from ..backend.jax import detach, optimizer_reparam
 from ..category.lib_types import Monoid, Proxy
 from ..category.paralens import ParaLens
-from ..category.writer import pure
-from ..components.env import Env
+from ..category.writer import Writer, pure
+from ..components.env import HP, Log, Par
 from ..components.optimizer import Optimizer
 
 
@@ -35,46 +35,43 @@ def add_scalar_wd(wd_value: jax.Array) -> optax.GradientTransformation:
 
 
 def exponentiated_gradient(
-    base: Callable[[Env], optax.GradientTransformation],
+    base: Callable[[HP], optax.GradientTransformation],
     wd: str,
-) -> Callable[[Env], optax.GradientTransformation]:
-    def make(h: Env) -> optax.GradientTransformation:
+) -> Callable[[HP], optax.GradientTransformation]:
+    def make(h: HP) -> optax.GradientTransformation:
         return optax.chain(scale_by_sign_of_param(), add_scalar_wd(h.arrays[wd]), base(h))
 
     return make
 
 
 def optimizer(
-    make: Callable[[Env], optax.GradientTransformation],
-    apply: Callable[[Env, optax.Updates], Env],
+    make: Callable[[HP], optax.GradientTransformation],
+    apply: Callable[[Par, optax.Updates], Par],
     targets: frozenset[str],
-    name: str,
-    monoid: Monoid[Env, Env],
+    optstate: str,
+    monoid: Monoid[HP, HP],
 ) -> Optimizer:
-    def theta(z: Env) -> Env:
-        return z.set(optstates=z.optstates.discard(name))
+    def theta(z: Par) -> Par:
+        return z.set(optstates=z.optstates.discard(optstate))
 
-    def get(h: Env, z: Env) -> Env:
-        return theta(z)
-
-    def update(h: Env, z: Env, dp: Env):
+    def update(h: HP, z: Par, dp: Par) -> Writer[Log, Par]:
         params, static = eqx.partition(theta(z), eqx.is_inexact_array)
-        updates, optstate = make(h).update(eqx.filter(dp, eqx.is_inexact_array), z.optstates[name], params)
+        updates, optstate_next = make(h).update(eqx.filter(dp, eqx.is_inexact_array), z.optstates[optstate], params)
         return pure(
-            Proxy[Env](),
-            eqx.combine(apply(params, updates), static).set(optstates=z.optstates.set(name, optstate)),
+            Proxy[Log](),
+            eqx.combine(apply(params, updates), static).set(optstates=z.optstates.set(optstate, optstate_next)),
         )
 
-    return Optimizer(update_rule(get, update, monoid), targets, targets | {name})
+    return Optimizer(optimizer_reparam(lambda h, z: theta(z), update, monoid), targets, targets | {optstate})
 
 
-def init_optimizer(make: Callable[[Env], optax.GradientTransformation], h: Env, theta: Env, name: str) -> Env:
+def init_optimizer(make: Callable[[HP], optax.GradientTransformation], h: HP, theta: Par, optstate: str) -> Par:
     params, _ = eqx.partition(theta, eqx.is_inexact_array)
-    return theta.set(optstates=theta.optstates.set(name, make(h).init(params)))
+    return theta.set(optstates=theta.optstates.set(optstate, make(h).init(params)))
 
 
 def first_order(opt: Optimizer) -> Optimizer:
-    return Optimizer(ParaLens(opt.rule.arrow >> detach(Proxy[Env]()), opt.rule.monoid), opt.targets, opt.state)
+    return Optimizer(ParaLens(opt.reparam.arrow >> detach(Proxy[Par]()), opt.reparam.monoid), opt.targets, opt.state)
 
 
 def sgd(lr: jax.Array, wd: jax.Array, momentum: jax.Array) -> optax.GradientTransformation:

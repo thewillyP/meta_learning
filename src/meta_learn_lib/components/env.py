@@ -12,3 +12,9 @@ class Env(PClass):
     arrays: PMap[str, jax.Array] = field(initial=pmap())
     norms: PMap[str, eqx.nn.LayerNorm | eqx.nn.GroupNorm] = field(initial=pmap())
     optstates: PMap[str, optax.OptState] = field(initial=pmap())
+
+
+type Log = Env
+type HP = Env
+type Par = Env
+type St = Env

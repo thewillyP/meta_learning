@@ -8,7 +8,7 @@ from pyrsistent.typing import PMap
 from ..category.lens import Lens, wiring
 from ..category.lib_types import Monoid, Proxy
 from ..category.paralens import ParaLens
-from ..components.env import Env
+from ..components.env import Env, Log, Par
 from ..utility.util import add_cotangents
 
 
@@ -54,9 +54,9 @@ def join(names: frozenset[str], monoid: Monoid[Env, Env]) -> Lens[Env, tuple[Env
 
 
 def rename[X, DX, Y, DY](
-    para: ParaLens[Env, Env, Env, X, DX, Y, DY],
+    para: ParaLens[Log, Par, Par, X, DX, Y, DY],
     transpositions: tuple[tuple[str, str], ...],
-) -> ParaLens[Env, Env, Env, X, DX, Y, DY]:
+) -> ParaLens[Log, Par, Par, X, DX, Y, DY]:
     def transpose[V](m: PMap[str, V], ab: tuple[str, str]) -> PMap[str, V]:
         def swap_name(k: str) -> str:
             a, b = ab

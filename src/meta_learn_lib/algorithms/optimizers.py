@@ -8,7 +8,7 @@ from ..backend.jax import detach, optimizer_reparam
 from ..category.lib_types import Monoid, Proxy
 from ..category.paralens import ParaLens
 from ..category.writer import Writer, pure
-from ..components.env import HP, Log, Par
+from ..components.env import HP, Env, Log, Par
 from ..components.optimizer import Optimizer
 
 
@@ -52,14 +52,14 @@ def optimizer(
     monoid: Monoid[HP, HP],
 ) -> Optimizer:
     def theta(z: Par) -> Par:
-        return z.set(optstates=z.optstates.discard(optstate))
+        return Env.optstates.over(z, lambda o: o.discard(optstate))
 
     def update(h: HP, z: Par, dp: Par) -> Writer[Log, Par]:
         params, static = eqx.partition(theta(z), eqx.is_inexact_array)
         updates, optstate_next = make(h).update(eqx.filter(dp, eqx.is_inexact_array), z.optstates[optstate], params)
         return pure(
             Proxy[Log](),
-            eqx.combine(apply(params, updates), static).set(optstates=z.optstates.set(optstate, optstate_next)),
+            Env.optstates[optstate].set(eqx.combine(apply(params, updates), static), optstate_next),
         )
 
     return Optimizer(optimizer_reparam(lambda h, z: theta(z), update, monoid), targets, targets | {optstate})
@@ -67,7 +67,7 @@ def optimizer(
 
 def init_optimizer(make: Callable[[HP], optax.GradientTransformation], h: HP, theta: Par, optstate: str) -> Par:
     params, _ = eqx.partition(theta, eqx.is_inexact_array)
-    return theta.set(optstates=theta.optstates.set(optstate, make(h).init(params)))
+    return Env.optstates[optstate].set(theta, make(h).init(params))
 
 
 def first_order(opt: Optimizer) -> Optimizer:

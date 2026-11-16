@@ -250,6 +250,13 @@ def diagonal[X](_: Proxy[X], n: int) -> Lens[Env, X, X, PList[X], PList[X]]:
     return structural.diagonal(Proxy[tuple[Env, X, X]](), n, zero_cotangent_like, add_cotangents)
 
 
+def parametrize(name: str, f: Callable[[jax.Array], jax.Array]) -> Lens[Log, Par, Par, Par, Par]:
+    def cooked(p: Par) -> Writer[Log, Par]:
+        return pure(Proxy[Log](), p.set(arrays=p.arrays.set(name, f(p.arrays[name]))))
+
+    return autodiff(cooked)
+
+
 def learning_rate() -> Lens[Env, jax.Array, jax.Array, Unit, Unit]:
     return Lens(lambda loss: pure(Proxy[Env](), ((), lambda _: pure(Proxy[Env](), jnp.ones_like(loss)))))
 

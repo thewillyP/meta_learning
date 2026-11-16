@@ -12,7 +12,7 @@ from ..category.lib_types import Proxy
 from ..category.mealy import Mealy
 from ..category.paralens import ParaLens
 from ..category.writer import pure
-from ..components.env import Log, Par, St
+from ..components.env import Env, Log, Par, St
 from ..lib_types import JACOBIAN, PRNG
 from ..utility.distributions import SAMPLER
 from ..utility.util import zero_cotangent_like
@@ -104,7 +104,7 @@ def rtrl[X, Y](
             J_p = immediate_influence(push, row, (n, p))
             jmp_M0 = jax.vmap(lambda col: push(jnp.zeros(p), col), in_axes=1, out_axes=1)(M0)
             M1 = jmp_M0 + J_p
-        return w0.set(influences=w0.influences.set(influence, JACOBIAN(M1)))
+        return Env.influences[influence].set(w0, JACOBIAN(M1))
 
     def boundary(m: Par, ds_final: St, dy: Y, ds0: jax.Array, w0: St) -> jax.Array:
         return ds0 @ w0.influences[influence]
@@ -134,7 +134,9 @@ def uoro[X, Y](
         rho1 = jnp.sqrt(optax.safe_norm(nu_J_p, 1e-12) / optax.safe_norm(nu, 1e-12))
         A1: jax.Array = rho0 * jmp_A0 + rho1 * nu
         B1: jax.Array = B0 / rho0 + nu_J_p / rho1
-        return w0.set(uoros=w0.uoros.set(aux, (A1, B1)), prngs=w0.prngs.set(prng, PRNG(key1)))
+        w1 = Env.uoros[aux].set(w0, (A1, B1))
+        w2 = Env.prngs[prng].set(w1, PRNG(key1))
+        return w2
 
     def boundary(m: Par, ds_final: St, dy: Y, ds0: jax.Array, w0: St) -> jax.Array:
         A0, B0 = w0.uoros[aux]
@@ -147,7 +149,7 @@ def rflo[X, Y](
     cell: Mealy[Log, Par, Par, St, St, X, X, Y, Y],
     targets: frozenset[str],
     influence: str,
-    decay: Callable[[Par], jax.Array],
+    decay: str,
 ) -> Mealy[Log, Par, Par, St, St, X, X, Y, Y]:
     def update_influence(
         m: Par,
@@ -155,14 +157,14 @@ def rflo[X, Y](
         row: Callable[[jax.Array], jax.Array],
         w0: St,
     ) -> St:
-        alpha = decay(m)
+        alpha = m.arrays[decay]
         M0 = w0.influences[influence]
         n, p = M0.shape
         J_p = immediate_influence(push, row, (n, p))
-        return w0.set(influences=w0.influences.set(influence, JACOBIAN((1 - alpha) * M0 + J_p)))
+        return Env.influences[influence].set(w0, JACOBIAN((1 - alpha) * M0 + J_p))
 
     def boundary(m: Par, ds_final: St, dy: Y, ds0: jax.Array, w0: St) -> jax.Array:
-        alpha = decay(m)
+        alpha = m.arrays[decay]
         c_state, _ = jax.flatten_util.ravel_pytree(ds_final)
         c_out, _ = jax.flatten_util.ravel_pytree(dy)
         return (1 - alpha) * ((c_state + c_out) @ w0.influences[influence])

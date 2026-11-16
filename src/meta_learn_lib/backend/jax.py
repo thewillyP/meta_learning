@@ -63,6 +63,10 @@ def autodiff[X: PyTree, Y: PyTree](f: Callable[[X], Writer[Env, Y]]) -> Lens[Env
     return Lens(run)
 
 
+def R[X: PyTree, Y: PyTree](f: Callable[[X], Y]) -> Lens[Env, X, X, Y, Y]:
+    return autodiff(lambda x: pure(Proxy[Env](), f(x)))
+
+
 def para_autodiff[P: PyTree, X: PyTree, Y: PyTree](
     f: Callable[[P, X], Writer[Env, Y]],
     monoid: Monoid[P, P],
@@ -248,13 +252,6 @@ def snd[Z, X, DX](_: Proxy[tuple[Z, X, DX]]) -> Lens[Env, tuple[Z, X], tuple[Z, 
 
 def diagonal[X](_: Proxy[X], n: int) -> Lens[Env, X, X, PList[X], PList[X]]:
     return structural.diagonal(Proxy[tuple[Env, X, X]](), n, zero_cotangent_like, add_cotangents)
-
-
-def parametrize(name: str, f: Callable[[jax.Array], jax.Array]) -> Lens[Log, Par, Par, Par, Par]:
-    def cooked(p: Par) -> Writer[Log, Par]:
-        return pure(Proxy[Log](), p.set(arrays=p.arrays.set(name, f(p.arrays[name]))))
-
-    return autodiff(cooked)
 
 
 def learning_rate() -> Lens[Env, jax.Array, jax.Array, Unit, Unit]:

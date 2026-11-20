@@ -42,6 +42,9 @@ class Focus[S, A]:
     def over(self, s: S, f: Callable[[A], A]) -> S:
         return self.put(s, f(self.get(s)))
 
+    def map(self, f: Callable[[A], A]) -> Callable[[S], S]:
+        return lambda s: self.over(s, f)
+
     def __rshift__[B](self, other: "Focus[A, B]") -> "Focus[S, B]":
         return Focus(lambda s: other.get(self.get(s)), lambda s, b: self.put(s, other.put(self.get(s), b)))
 
